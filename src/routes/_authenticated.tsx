@@ -24,9 +24,19 @@ import {
   Video,
   Shield,
   CheckCircle2,
+  Layers,
+  CircleDashed,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   FolderSelectionProvider,
   useFolderSelection,
@@ -133,9 +143,9 @@ function AuthedLayoutInner({
         }}
       />
 
-      {/* Desktop sidebar */}
-      <aside className="relative z-10 hidden w-64 shrink-0 border-r border-sidebar-border bg-sidebar/80 backdrop-blur-sm md:flex md:flex-col">
-        <SidebarInner />
+      {/* Desktop: icon rail + folder panel */}
+      <aside className="relative z-10 hidden shrink-0 md:flex">
+        <DesktopRails />
       </aside>
 
       {/* Mobile drawer */}
@@ -175,11 +185,12 @@ function AuthedLayoutInner({
   );
 }
 
-function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
+/** Shared data + selection plumbing for the desktop rails and the mobile
+ * drawer: accounts, folders, labels, unread counts, admin flag, and the
+ * `pick` handler that selects a view/folder and routes back to /inbox. */
+function useSidebarData(onNavigate?: () => void) {
   const { selected, setSelected } = useFolderSelection();
   const { activeAccountId, setActiveAccountId } = useAccountSelection();
-  const [addOpen, setAddOpen] = useState(false);
-  const [editing, setEditing] = useState<Folder | null>(null);
 
   const listAccounts = useServerFn(listMyGmailAccounts);
   const listLabelsFn = useServerFn(listGmailLabels);
@@ -291,6 +302,316 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
     if (pathname !== "/inbox") navigate({ to: "/inbox" });
     queueMicrotask(() => onNavigate?.());
   };
+
+  return {
+    selected,
+    accounts,
+    accountsQ,
+    accountId,
+    isAdmin,
+    foldersQ,
+    labelsQ,
+    counts,
+    countsQ,
+    navigate,
+    pathname,
+    pick,
+  };
+}
+
+/** One icon in the 56px app rail. */
+function RailIcon({
+  label,
+  active,
+  onClick,
+  dot = false,
+  children,
+}: {
+  label: string;
+  active?: boolean;
+  onClick: () => void;
+  dot?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      className={`relative grid h-9 w-9 place-items-center rounded-sm transition-colors ${
+        active
+          ? "bg-sidebar-accent text-sidebar-accent-foreground"
+          : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
+      }`}
+    >
+      {children}
+      {dot && (
+        <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-primary" aria-hidden />
+      )}
+    </button>
+  );
+}
+
+/** A "Views" row in the folder panel (Inbox / All mail / No rules). */
+function ViewRow({
+  icon,
+  label,
+  active,
+  count,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+  count?: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-center gap-2 rounded-sm border-l-2 px-2 py-1.5 text-left text-[13px] transition-colors ${
+        active
+          ? "border-l-primary bg-sidebar-accent text-sidebar-accent-foreground"
+          : "border-l-transparent text-sidebar-foreground/80 hover:bg-sidebar-accent/60"
+      }`}
+    >
+      {icon}
+      <span className="flex-1 truncate">{label}</span>
+      {typeof count === "number" && count > 0 && (
+        <span className="font-mono text-[11px] font-semibold text-primary">{count}</span>
+      )}
+    </button>
+  );
+}
+
+/** Desktop shell chrome: 56px icon rail (app nav) + 224px contextual panel
+ * (account, views, folders, sync status). Mobile keeps SidebarInner. */
+function DesktopRails() {
+  const [addOpen, setAddOpen] = useState(false);
+  const [editing, setEditing] = useState<Folder | null>(null);
+  const {
+    selected,
+    accounts,
+    accountsQ,
+    accountId,
+    isAdmin,
+    foldersQ,
+    labelsQ,
+    counts,
+    countsQ,
+    navigate,
+    pathname,
+    pick,
+  } = useSidebarData();
+
+  const accountEmail = accounts.find((a) => a.id === accountId)?.email_address ?? null;
+  const avatarInitial = (accountEmail ?? "?").charAt(0).toUpperCase();
+  const lastSyncUtc = countsQ.dataUpdatedAt
+    ? new Date(countsQ.dataUpdatedAt).toISOString().slice(11, 16)
+    : null;
+
+  const go = (to: string) => navigate({ to });
+
+  return (
+    <>
+      {/* Icon rail */}
+      <div className="flex w-14 shrink-0 flex-col items-center gap-1 border-r border-sidebar-border bg-sidebar/90 py-3 backdrop-blur-sm">
+        <button
+          type="button"
+          onClick={() => pick("all")}
+          title="Zerrow"
+          aria-label="Zerrow — Inbox"
+          className="mb-3 grid h-8 w-8 place-items-center rounded-sm bg-primary font-mono text-sm font-bold text-primary-foreground"
+        >
+          Z
+        </button>
+        <RailIcon
+          label="Inbox"
+          active={pathname === "/inbox"}
+          onClick={() => pick("all")}
+          dot={counts.total > 0}
+        >
+          <Inbox className="h-[17px] w-[17px]" />
+        </RailIcon>
+        <RailIcon label="Reports" active={pathname === "/reports"} onClick={() => go("/reports")}>
+          <BarChart3 className="h-[17px] w-[17px]" />
+        </RailIcon>
+        <RailIcon label="Tasks" active={pathname.startsWith("/tasks")} onClick={() => go("/tasks")}>
+          <CheckCircle2 className="h-[17px] w-[17px]" />
+        </RailIcon>
+        <RailIcon
+          label="Contacts"
+          active={pathname.startsWith("/contacts")}
+          onClick={() => go("/contacts")}
+        >
+          <Users className="h-[17px] w-[17px]" />
+        </RailIcon>
+        <RailIcon
+          label="Meetings"
+          active={pathname === "/meetings"}
+          onClick={() => go("/meetings")}
+        >
+          <Video className="h-[17px] w-[17px]" />
+        </RailIcon>
+        <div className="flex-1" />
+        {isAdmin && (
+          <RailIcon label="Admin" active={pathname === "/admin"} onClick={() => go("/admin")}>
+            <Shield className="h-[17px] w-[17px]" />
+          </RailIcon>
+        )}
+        <RailIcon
+          label="Settings"
+          active={pathname === "/settings"}
+          onClick={() => go("/settings")}
+        >
+          <Settings className="h-[17px] w-[17px]" />
+        </RailIcon>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              title={accountEmail ?? "Account"}
+              aria-label="Account menu"
+              className="mt-1 grid h-8 w-8 place-items-center rounded-full border border-sidebar-border bg-card font-mono text-[11px] font-semibold text-amber-400"
+            >
+              {avatarInitial}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="right" align="end" className="w-60">
+            <DropdownMenuLabel className="truncate font-normal text-muted-foreground">
+              {accountEmail ?? "No Gmail connected"}
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={async () => {
+                await supabase.auth.signOut();
+                window.location.href = "/login";
+              }}
+            >
+              <LogOut className="mr-2 h-4 w-4" /> Sign out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {/* Folder panel */}
+      <div className="flex w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar/70 p-3 backdrop-blur-sm">
+        <div className="mb-2">
+          <AccountSwitcher
+            accounts={accounts}
+            loading={accountsQ.isLoading}
+            failed={accountsQ.isError}
+          />
+        </div>
+
+        <div className="px-1.5 pb-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+          Views
+        </div>
+        <ViewRow
+          icon={<Inbox className="h-3.5 w-3.5" />}
+          label="Inbox"
+          active={selected === "all"}
+          count={counts.total}
+          onClick={() => pick("all")}
+        />
+        <ViewRow
+          icon={<Layers className="h-3.5 w-3.5" />}
+          label="All mail"
+          active={selected === "all_mail"}
+          onClick={() => pick("all_mail")}
+        />
+        <ViewRow
+          icon={<CircleDashed className="h-3.5 w-3.5" />}
+          label="No rules"
+          active={selected === "no_rules"}
+          count={counts.byFolder.get("no_rules") ?? 0}
+          onClick={() => pick("no_rules")}
+        />
+
+        <div className="mt-3 flex items-center justify-between px-1.5 pb-1">
+          <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+            Folders
+          </span>
+          <button
+            onClick={() => setAddOpen(true)}
+            disabled={!accountId}
+            className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground disabled:opacity-40"
+            title="Add folder"
+            aria-label="Add folder"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto">
+          {(foldersQ.data ?? []).map((f) => (
+            <FolderRow
+              key={f.id}
+              active={selected === f.id}
+              onSelect={() => pick(f.id as FolderSelection)}
+              color={f.color}
+              label={f.name}
+              count={counts.byFolder.get(f.id) ?? 0}
+              onEdit={() => setEditing(f)}
+            />
+          ))}
+          {accountId && (foldersQ.data ?? []).length === 0 && (
+            <p className="px-3 py-3 text-xs text-muted-foreground">
+              No folders yet. Click + to add one.
+            </p>
+          )}
+          {!accountId && !accountsQ.isLoading && (
+            <p className="px-3 py-3 text-xs text-muted-foreground">
+              Connect Gmail in{" "}
+              <button type="button" className="underline" onClick={() => go("/settings")}>
+                Settings
+              </button>
+              .
+            </p>
+          )}
+        </div>
+
+        <div className="mt-2 flex items-center gap-2 border-t border-sidebar-border pt-2.5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-400" aria-hidden />
+          {lastSyncUtc ? `Synced · ${lastSyncUtc} UTC` : "Syncing…"}
+        </div>
+
+        <AddFolderDialog
+          open={addOpen}
+          onOpenChange={setAddOpen}
+          accountId={accountId}
+          labels={labelsQ.data ?? []}
+        />
+        <EditFolderDialog
+          folder={editing}
+          labels={labelsQ.data ?? []}
+          open={!!editing}
+          onOpenChange={(v) => {
+            if (!v) setEditing(null);
+          }}
+        />
+      </div>
+    </>
+  );
+}
+
+function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
+  const [addOpen, setAddOpen] = useState(false);
+  const [editing, setEditing] = useState<Folder | null>(null);
+  const {
+    selected,
+    accounts,
+    accountsQ,
+    accountId,
+    isAdmin,
+    foldersQ,
+    labelsQ,
+    counts,
+    pathname,
+    navigate,
+    pick,
+  } = useSidebarData(onNavigate);
 
   return (
     <div className="flex h-full flex-col p-4">
@@ -492,16 +813,20 @@ function FolderRow({
 }) {
   return (
     <div
-      className={`group flex items-center rounded-md text-sm transition-colors ${active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent/60"}`}
+      className={`group flex items-center rounded-sm border-l-2 text-[13px] transition-colors ${
+        active
+          ? "border-l-primary bg-sidebar-accent text-sidebar-accent-foreground"
+          : "border-l-transparent text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+      }`}
     >
       <button
         onClick={onSelect}
-        className="flex flex-1 items-center gap-2 truncate px-3 py-1.5 text-left"
+        className="flex flex-1 items-center gap-2 truncate px-2 py-1.5 text-left"
       >
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
         <span className="flex-1 truncate">{label}</span>
         {typeof count === "number" && count > 0 && (
-          <span className="rounded-full bg-primary/20 px-1.5 text-[10px] text-primary">
+          <span className="rounded-full bg-primary/15 px-1.5 font-mono text-[10px] font-semibold text-primary">
             {count}
           </span>
         )}

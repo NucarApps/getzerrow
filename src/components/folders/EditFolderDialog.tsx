@@ -17,12 +17,14 @@ export function EditFolderDialog({
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
-        <SheetHeader>
+      {/* Folder studio: wide surface — the editor's own header (name, color,
+          re-learn, save, stats) is the visible title. */}
+      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-3xl xl:max-w-4xl">
+        <SheetHeader className="sr-only">
           <SheetTitle>Edit folder</SheetTitle>
         </SheetHeader>
         {folder && (
-          <div className="mt-4">
+          <div className="mt-2">
             <FolderEditor
               folder={folder}
               labels={labels}

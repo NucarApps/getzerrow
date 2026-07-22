@@ -10,6 +10,7 @@ import {
   memo,
   lazy,
   Suspense,
+  Fragment,
 } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -118,7 +119,6 @@ import {
 import { metaKeyFor, loadInboxMeta, saveInboxMeta } from "@/lib/inbox-meta-cache";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { formatDistanceToNow } from "date-fns";
 import { useFolderSelection } from "@/lib/folder-selection";
 import { useAccountSelection } from "@/lib/account-selection";
 import { MoveSimilarDialog } from "@/components/emails/MoveSimilarDialog";
@@ -200,6 +200,34 @@ type Folder = {
 const PAGE_SIZE = 50;
 
 type ServerFnCall<A> = (args: { data: A }) => Promise<unknown>;
+
+/** Compact row timestamp: HH:MM today, weekday within a week, then M/D. */
+function shortRowTime(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  }
+  const days = (now.getTime() - d.getTime()) / 86_400_000;
+  if (days < 7) return d.toLocaleDateString([], { weekday: "short" });
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+/** Day-group header label for the list (Today / Yesterday / …). */
+function dayGroupLabel(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.floor((startOfDay(new Date()) - startOfDay(d)) / 86_400_000);
+  if (diffDays <= 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return "This week";
+  if (diffDays < 31) return "This month";
+  return "Earlier";
+}
 
 type EmailListRowProps = {
   e: Email;
@@ -300,10 +328,11 @@ const EmailListRow = memo(function EmailListRow({
           >
             <Checkbox checked={isChecked} onCheckedChange={() => toggleCheck()} />
           </div>
-          {!e.is_read && !isChecked && !selectionMode && (
+          {!e.is_read && (
             <span
-              className="absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary group-hover:opacity-0"
+              className="absolute bottom-0 left-0 top-0 w-0.5 bg-primary"
               aria-hidden
+              title="Unread"
             />
           )}
           <div className="flex items-baseline justify-between gap-2">
@@ -316,14 +345,12 @@ const EmailListRow = memo(function EmailListRow({
                 decodeEntities(e.from_name) || e.from_addr || "Unknown"
               )}
             </span>
-            <span className="shrink-0 text-[11px] text-muted-foreground">
+            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
               {settledOut
                 ? settledFolderName
                   ? `Filed to ${settledFolderName}`
                   : "Filed"
-                : e.received_at
-                  ? formatDistanceToNow(new Date(e.received_at), { addSuffix: false })
-                  : ""}
+                : shortRowTime(e.received_at)}
             </span>
           </div>
           <div className="flex items-center gap-1.5">
@@ -1421,16 +1448,21 @@ function InboxPage() {
   const coldLoading =
     (accountsQ.isLoading && !accountId) || (emailsQ.isLoading && rawEmails.length === 0);
 
+  const unreadCount = filtered.filter((e) => !e.is_read && !e.__placeholder).length;
+
   return (
-    <div className="flex h-full min-h-0 flex-col md:grid md:grid-cols-[400px_1fr]">
+    <div className="flex h-full min-h-0 flex-col md:grid md:grid-cols-[384px_1fr]">
       {/* List */}
       <div
         className={`h-full min-h-0 flex-col overflow-hidden border-r border-border ${selected && selectedListItem ? "hidden md:flex" : "flex"}`}
       >
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3">
           <div className="flex items-baseline gap-2 min-w-0">
-            <h2 className="truncate font-display text-xl">{headerLabel}</h2>
-            <span className="shrink-0 text-xs text-muted-foreground">{filtered.length}</span>
+            <h2 className="truncate font-display text-[22px] leading-7">{headerLabel}</h2>
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+              {filtered.length}
+              {unreadCount > 0 ? ` · ${unreadCount} unread` : ""}
+            </span>
             {(syncMut.isPending || bgSyncing) && (
               <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground animate-pulse">
                 Syncing…
@@ -1813,27 +1845,40 @@ function InboxPage() {
             </div>
           )}
 
-          {filtered.map((e) => (
-            <EmailListRow
-              key={e.id}
-              e={e}
-              folderList={folderList}
-              selectedFolder={selectedFolder}
-              isSearching={isSearching}
-              isNoRules={isNoRules}
-              isSelected={selectedId === e.id}
-              isChecked={selectedIds.has(e.id)}
-              selectionMode={selectionMode}
-              qc={qc}
-              setSelectedId={setSelectedId}
-              setSelectedIds={setSelectedIds}
-              setFilterPrompt={setFilterPrompt}
-              moveInboxFn={moveInboxFn}
-              moveFolderFn={moveFolderFn}
-              archFn={archFnList}
-              trashFn={trashFnList}
-            />
-          ))}
+          {filtered.map((e, i) => {
+            const groupLabel = e.__placeholder ? null : dayGroupLabel(e.received_at);
+            const prevLabel =
+              i > 0 && !filtered[i - 1].__placeholder
+                ? dayGroupLabel(filtered[i - 1].received_at)
+                : null;
+            return (
+              <Fragment key={e.id}>
+                {groupLabel && groupLabel !== prevLabel && (
+                  <div className="border-b border-border px-4 pb-1 pt-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                    {groupLabel}
+                  </div>
+                )}
+                <EmailListRow
+                  e={e}
+                  folderList={folderList}
+                  selectedFolder={selectedFolder}
+                  isSearching={isSearching}
+                  isNoRules={isNoRules}
+                  isSelected={selectedId === e.id}
+                  isChecked={selectedIds.has(e.id)}
+                  selectionMode={selectionMode}
+                  qc={qc}
+                  setSelectedId={setSelectedId}
+                  setSelectedIds={setSelectedIds}
+                  setFilterPrompt={setFilterPrompt}
+                  moveInboxFn={moveInboxFn}
+                  moveFolderFn={moveFolderFn}
+                  archFn={archFnList}
+                  trashFn={trashFnList}
+                />
+              </Fragment>
+            );
+          })}
         </PullToRefresh>
         {(!isSearching || page > 1 || hasMoreSearch) && (
           <div className="flex shrink-0 items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">
@@ -1878,6 +1923,13 @@ function InboxPage() {
             email={selected}
             folders={foldersQ.data ?? []}
             onBack={() => setSelectedId(null)}
+            onFilterLikeThis={(e) =>
+              setFilterPrompt({
+                fromAddr: e.from_addr,
+                subject: e.subject,
+                currentFolderId: e.folder_id ?? null,
+              })
+            }
           />
         ) : (
           <Suspense fallback={null}>
@@ -2049,10 +2101,12 @@ function Reader({
   email,
   folders,
   onBack,
+  onFilterLikeThis,
 }: {
   email: Email;
   folders: Folder[];
   onBack?: () => void;
+  onFilterLikeThis?: (email: Email) => void;
 }) {
   const isMobile = useIsMobile();
   const qc = useQueryClient();
@@ -2166,456 +2220,575 @@ function Reader({
     }
   }
 
-  return (
-    <div className="relative flex h-full flex-col">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3 md:px-6">
-        <div className="flex min-w-0 items-center gap-2">
-          {onBack && (
-            <button
-              onClick={onBack}
-              className="grid h-8 w-8 place-items-center rounded-md hover:bg-accent md:hidden"
-              aria-label="Back"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-          )}
-          {folder && (
-            <Badge variant="outline" className="hidden gap-1.5 md:inline-flex">
-              <span className="h-2 w-2 rounded-full" style={{ background: folder.color }} />
-              {folder.name}
-            </Badge>
-          )}
-          {email.ai_confidence != null && email.ai_summary && (
-            <Badge variant="outline" className="hidden gap-1 text-xs md:inline-flex">
-              <Sparkles className="h-3 w-3" />
-              AI · {Math.round(email.ai_confidence * 100)}%
-            </Badge>
-          )}
-        </div>
-        <div className="flex flex-nowrap gap-0.5 overflow-x-auto md:gap-1">
-          <Button
-            size="sm"
-            variant="default"
-            onClick={() => setReplyOpen(true)}
-            className="h-8 px-2.5"
-          >
-            <Reply className="mr-1.5 h-3.5 w-3.5" />
-            Reply
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-8 w-8 p-0"
-            disabled={reanalyzing}
-            title="Re-analyze with current folders & rules"
-            onClick={async () => {
-              setReanalyzing(true);
-              try {
-                const r = await reanalyzeFn({ data: { email_id: email.id } });
-                qc.invalidateQueries({ queryKey: ["emails"] });
-                qc.invalidateQueries({ queryKey: ["emails-summary"] });
-                if (r.classified_by === "ai_error") {
-                  toast.error(r.classification_reason || "AI classifier failed");
-                } else if (r.classified_by === "kept") {
-                  const name = folders.find((f) => f.id === r.folder_id)?.name;
-                  toast.message(
-                    name
-                      ? `No better folder — kept in ${name}.`
-                      : "No better folder — kept current.",
-                  );
-                } else if (!r.changed) {
-                  toast.success("Re-analyzed — no change");
-                } else if (r.folder_id && r.folder_name) {
-                  toast.success(`Re-analyzed → ${r.folder_name}`);
-                } else {
-                  toast.success("Re-analyzed → Inbox");
-                }
-              } catch (e) {
-                toast.error(errMsg(e));
-              } finally {
-                setReanalyzing(false);
-              }
-            }}
-          >
-            <RotateCw className={`h-4 w-4 ${reanalyzing ? "animate-spin" : ""}`} />
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-8 px-1.5"
-                disabled={moving}
-                title="Move to folder"
-              >
-                <FolderInput className="h-4 w-4" />
-                <ChevronDown className="ml-0.5 h-3 w-3 opacity-60" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>Move to</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {email.folder_id && (
-                <>
-                  <DropdownMenuItem
-                    onSelect={async () => {
-                      setMoving(true);
-                      qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                        prev?.map((e) =>
-                          e.id === email.id
-                            ? {
-                                ...e,
-                                folder_id: null,
-                                is_archived: false,
-                                raw_labels: withInbox(e.raw_labels),
-                              }
-                            : e,
-                        ),
-                      );
-                      try {
-                        const r = await inboxFn({
-                          data: { email_id: email.id, add_override: null },
-                        });
-                        qc.invalidateQueries({ queryKey: ["emails"] });
-                        qc.invalidateQueries({ queryKey: ["emails-summary"] });
-                        toast.success("Moved to Inbox");
-                        if (r.from_addr || r.domain) {
-                          setAlwaysInbox({ fromAddr: r.from_addr, domain: r.domain });
-                        }
-                      } catch (e) {
-                        qc.invalidateQueries({ queryKey: ["emails"] });
-                        toast.error(errMsg(e));
-                      } finally {
-                        setMoving(false);
-                      }
-                    }}
-                  >
-                    <Inbox className="mr-2 h-4 w-4" />
-                    Inbox (no folder)
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                </>
-              )}
-              {otherFolders.map((f) => (
-                <DropdownMenuItem key={f.id} onSelect={() => moveTo(f)}>
-                  <span className="mr-2 h-2.5 w-2.5 rounded-full" style={{ background: f.color }} />
-                  {f.name}
-                </DropdownMenuItem>
-              ))}
-              {otherFolders.length === 0 && !email.folder_id && (
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">No other folders</div>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-8 w-8 p-0"
-            onClick={() => {
-              const next = !email.is_read;
-              qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                prev?.map((e) => (e.id === email.id ? { ...e, is_read: next } : e)),
-              );
-              markFn({ data: { id: email.id, read: next } }).catch(() =>
-                qc.invalidateQueries({ queryKey: ["emails"] }),
-              );
-            }}
-          >
-            {email.is_read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-8 w-8 p-0"
-            onClick={async () => {
-              qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                prev?.map((e) =>
-                  e.id === email.id
-                    ? { ...e, is_archived: true, raw_labels: withoutInbox(e.raw_labels) }
-                    : e,
-                ),
-              );
-              try {
-                await archFn({ data: { id: email.id } });
-                toast.success("Archived");
-              } catch (e) {
-                qc.invalidateQueries({ queryKey: ["emails"] });
-                toast.error(errMsg(e));
-              }
-            }}
-          >
-            <Archive className="h-4 w-4" />
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-8 w-8 p-0"
-            onClick={async () => {
-              qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                prev?.filter((e) => e.id !== email.id),
-              );
-              try {
-                await trashFn({ data: { id: email.id } });
-                toast.success("Trashed");
-              } catch (e) {
-                qc.invalidateQueries({ queryKey: ["emails"] });
-                toast.error(errMsg(e));
-              }
-            }}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-8 w-8 p-0"
-            disabled={resyncing}
-            title="Resync labels from Gmail"
-            onClick={async () => {
-              setResyncing(true);
-              try {
-                const r = await resyncFn({ data: { id: email.id } });
-                qc.invalidateQueries({ queryKey: ["emails"] });
-                qc.invalidateQueries({ queryKey: ["emails-summary"] });
-                if ((r as { deleted?: boolean }).deleted)
-                  toast.message("Removed — no longer in Gmail");
-                else if ((r as { in_inbox?: boolean }).in_inbox)
-                  toast.success("Resynced — back in Inbox");
-                else toast.success("Resynced from Gmail");
-              } catch (e) {
-                toast.error(errMsg(e));
-              } finally {
-                setResyncing(false);
-              }
-            }}
-          >
-            <RefreshCw className={`h-4 w-4 ${resyncing ? "animate-spin" : ""}`} />
-          </Button>
-        </div>
-      </div>
+  async function runReanalyze() {
+    setReanalyzing(true);
+    try {
+      const r = await reanalyzeFn({ data: { email_id: email.id } });
+      qc.invalidateQueries({ queryKey: ["emails"] });
+      qc.invalidateQueries({ queryKey: ["emails-summary"] });
+      if (r.classified_by === "ai_error") {
+        toast.error(r.classification_reason || "AI classifier failed");
+      } else if (r.classified_by === "kept") {
+        const name = folders.find((f) => f.id === r.folder_id)?.name;
+        toast.message(
+          name ? `No better folder — kept in ${name}.` : "No better folder — kept current.",
+        );
+      } else if (!r.changed) {
+        toast.success("Re-analyzed — no change");
+      } else if (r.folder_id && r.folder_name) {
+        toast.success(`Re-analyzed → ${r.folder_name}`);
+      } else {
+        toast.success("Re-analyzed → Inbox");
+      }
+    } catch (e) {
+      toast.error(errMsg(e));
+    } finally {
+      setReanalyzing(false);
+    }
+  }
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3 md:px-6">
-        <h1 className="font-display text-lg leading-tight line-clamp-3 md:line-clamp-none md:text-2xl">
-          {email.subject || "(no subject)"}
-        </h1>
-        <p className="mt-1 flex flex-wrap items-center gap-x-1 gap-y-1 text-xs text-muted-foreground">
-          <strong className="text-foreground">{email.from_name || email.from_addr}</strong>
-          {email.from_name && email.from_addr ? (
-            <span className="hidden md:inline">{` <${email.from_addr}>`}</span>
-          ) : null}
-          {email.received_at && (
-            <span>{` · ${new Date(email.received_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}`}</span>
-          )}
-          {email.from_addr && (
+  async function suggestReply() {
+    setGenerating(true);
+    try {
+      const r = await genFn({ data: { id: email.id } });
+      setReply(r.draft);
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+    setGenerating(false);
+  }
+
+  const senderInitials = (email.from_name || email.from_addr || "?")
+    .split(/\s+/)
+    .map((w) => w.charAt(0))
+    .filter((c) => /[a-z0-9]/i.test(c))
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+  const senderFirstName = (email.from_name || email.from_addr || "").split(/\s+/)[0] ?? "";
+  const senderDomain = email.from_addr?.includes("@")
+    ? (email.from_addr.split("@")[1]?.toLowerCase() ?? null)
+    : null;
+
+  return (
+    <div className="flex h-full min-h-0">
+      <div className="relative flex h-full min-w-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3 md:px-6">
+          <div className="flex min-w-0 items-center gap-2">
+            {onBack && (
+              <button
+                onClick={onBack}
+                className="grid h-8 w-8 place-items-center rounded-md hover:bg-accent md:hidden"
+                aria-label="Back"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+            )}
+            {folder && (
+              <Badge variant="outline" className="hidden gap-1.5 rounded-full md:inline-flex">
+                <span className="h-2 w-2 rounded-full" style={{ background: folder.color }} />
+                {folder.name}
+              </Badge>
+            )}
+            <span className="hidden md:inline-flex">
+              <ClassifiedChip by={email.classified_by} confidence={email.ai_confidence} />
+            </span>
+          </div>
+          <div className="flex flex-nowrap gap-0.5 overflow-x-auto md:gap-1">
+            <Button
+              size="sm"
+              variant="default"
+              onClick={() => setReplyOpen(true)}
+              className="h-8 px-2.5"
+            >
+              <Reply className="mr-1.5 h-3.5 w-3.5" />
+              Reply
+            </Button>
             <Button
               size="sm"
               variant="ghost"
-              className="ml-1 h-6 gap-1 px-2 text-xs"
-              disabled={addingContact}
+              className="h-8 w-8 p-0"
+              disabled={reanalyzing}
+              title="Re-analyze with current folders & rules"
+              onClick={runReanalyze}
+            >
+              <RotateCw className={`h-4 w-4 ${reanalyzing ? "animate-spin" : ""}`} />
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 px-1.5"
+                  disabled={moving}
+                  title="Move to folder"
+                >
+                  <FolderInput className="h-4 w-4" />
+                  <ChevronDown className="ml-0.5 h-3 w-3 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Move to</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {email.folder_id && (
+                  <>
+                    <DropdownMenuItem
+                      onSelect={async () => {
+                        setMoving(true);
+                        qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                          prev?.map((e) =>
+                            e.id === email.id
+                              ? {
+                                  ...e,
+                                  folder_id: null,
+                                  is_archived: false,
+                                  raw_labels: withInbox(e.raw_labels),
+                                }
+                              : e,
+                          ),
+                        );
+                        try {
+                          const r = await inboxFn({
+                            data: { email_id: email.id, add_override: null },
+                          });
+                          qc.invalidateQueries({ queryKey: ["emails"] });
+                          qc.invalidateQueries({ queryKey: ["emails-summary"] });
+                          toast.success("Moved to Inbox");
+                          if (r.from_addr || r.domain) {
+                            setAlwaysInbox({ fromAddr: r.from_addr, domain: r.domain });
+                          }
+                        } catch (e) {
+                          qc.invalidateQueries({ queryKey: ["emails"] });
+                          toast.error(errMsg(e));
+                        } finally {
+                          setMoving(false);
+                        }
+                      }}
+                    >
+                      <Inbox className="mr-2 h-4 w-4" />
+                      Inbox (no folder)
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                {otherFolders.map((f) => (
+                  <DropdownMenuItem key={f.id} onSelect={() => moveTo(f)}>
+                    <span
+                      className="mr-2 h-2.5 w-2.5 rounded-full"
+                      style={{ background: f.color }}
+                    />
+                    {f.name}
+                  </DropdownMenuItem>
+                ))}
+                {otherFolders.length === 0 && !email.folder_id && (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">No other folders</div>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 w-8 p-0"
+              onClick={() => {
+                const next = !email.is_read;
+                qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                  prev?.map((e) => (e.id === email.id ? { ...e, is_read: next } : e)),
+                );
+                markFn({ data: { id: email.id, read: next } }).catch(() =>
+                  qc.invalidateQueries({ queryKey: ["emails"] }),
+                );
+              }}
+            >
+              {email.is_read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 w-8 p-0"
               onClick={async () => {
-                setAddingContact(true);
+                qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                  prev?.map((e) =>
+                    e.id === email.id
+                      ? { ...e, is_archived: true, raw_labels: withoutInbox(e.raw_labels) }
+                      : e,
+                  ),
+                );
                 try {
-                  const r = await addContactFn({ data: { emailId: email.id } });
-                  qc.invalidateQueries({ queryKey: ["contacts"] });
-                  if (!r.contact) {
-                    toast.success("Added to contacts");
-                  } else {
-                    toast.success(
-                      <span>
-                        Added <strong>{r.contact.name || r.contact.email}</strong> to contacts ·{" "}
-                        <Link
-                          to="/contacts/$id"
-                          params={{ id: r.contact.id }}
-                          className="underline"
-                        >
-                          View
-                        </Link>
-                      </span>,
-                    );
-                  }
+                  await archFn({ data: { id: email.id } });
+                  toast.success("Archived");
+                } catch (e) {
+                  qc.invalidateQueries({ queryKey: ["emails"] });
+                  toast.error(errMsg(e));
+                }
+              }}
+            >
+              <Archive className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 w-8 p-0"
+              onClick={async () => {
+                qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
+                  prev?.filter((e) => e.id !== email.id),
+                );
+                try {
+                  await trashFn({ data: { id: email.id } });
+                  toast.success("Trashed");
+                } catch (e) {
+                  qc.invalidateQueries({ queryKey: ["emails"] });
+                  toast.error(errMsg(e));
+                }
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 w-8 p-0"
+              disabled={resyncing}
+              title="Resync labels from Gmail"
+              onClick={async () => {
+                setResyncing(true);
+                try {
+                  const r = await resyncFn({ data: { id: email.id } });
+                  qc.invalidateQueries({ queryKey: ["emails"] });
+                  qc.invalidateQueries({ queryKey: ["emails-summary"] });
+                  if ((r as { deleted?: boolean }).deleted)
+                    toast.message("Removed — no longer in Gmail");
+                  else if ((r as { in_inbox?: boolean }).in_inbox)
+                    toast.success("Resynced — back in Inbox");
+                  else toast.success("Resynced from Gmail");
                 } catch (e) {
                   toast.error(errMsg(e));
                 } finally {
-                  setAddingContact(false);
+                  setResyncing(false);
                 }
               }}
             >
-              <UserPlus className={`h-3.5 w-3.5 ${addingContact ? "animate-pulse" : ""}`} />
-              {addingContact ? "Adding…" : "Add contact"}
+              <RefreshCw className={`h-4 w-4 ${resyncing ? "animate-spin" : ""}`} />
             </Button>
-          )}
-        </p>
-        {email.ai_summary && (
-          <div className="mt-2 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-sm">
-            <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-            <span>
-              <span className="font-medium text-primary">Summary · </span>
-              {email.ai_summary}
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-24 pt-3 md:px-6">
+          <h1 className="font-display text-lg leading-tight line-clamp-3 md:line-clamp-none md:text-[27px] md:leading-[1.2]">
+            {email.subject || "(no subject)"}
+          </h1>
+          <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            <span
+              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-card font-mono text-[11px] font-semibold text-[#6bd1e0]"
+              aria-hidden
+            >
+              {senderInitials}
             </span>
+            <span>
+              <strong className="text-foreground">{email.from_name || email.from_addr}</strong>
+              {email.from_name && email.from_addr ? (
+                <span className="hidden md:inline">{` <${email.from_addr}>`}</span>
+              ) : null}
+            </span>
+            {email.received_at && (
+              <span className="font-mono text-[10px]">
+                {new Date(email.received_at).toLocaleString([], {
+                  dateStyle: "short",
+                  timeStyle: "short",
+                })}
+              </span>
+            )}
+            {email.from_addr && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="ml-1 h-6 gap-1 px-2 text-xs"
+                disabled={addingContact}
+                onClick={async () => {
+                  setAddingContact(true);
+                  try {
+                    const r = await addContactFn({ data: { emailId: email.id } });
+                    qc.invalidateQueries({ queryKey: ["contacts"] });
+                    if (!r.contact) {
+                      toast.success("Added to contacts");
+                    } else {
+                      toast.success(
+                        <span>
+                          Added <strong>{r.contact.name || r.contact.email}</strong> to contacts ·{" "}
+                          <Link
+                            to="/contacts/$id"
+                            params={{ id: r.contact.id }}
+                            className="underline"
+                          >
+                            View
+                          </Link>
+                        </span>,
+                      );
+                    }
+                  } catch (e) {
+                    toast.error(errMsg(e));
+                  } finally {
+                    setAddingContact(false);
+                  }
+                }}
+              >
+                <UserPlus className={`h-3.5 w-3.5 ${addingContact ? "animate-pulse" : ""}`} />
+                {addingContact ? "Adding…" : "Add contact"}
+              </Button>
+            )}
+          </p>
+          {email.ai_summary ? (
+            <div className="mt-3 rounded-sm border border-primary/25 bg-primary/5 px-3 py-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-primary">
+                  <Sparkles className="h-3 w-3" />
+                  AI summary
+                </span>
+                <button
+                  onClick={() => setWhyOpen(true)}
+                  className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                >
+                  Why this folder?
+                  <ChevronLeft className="h-3 w-3 rotate-180" />
+                </button>
+              </div>
+              <p className="mt-1.5 text-sm leading-relaxed">{email.ai_summary}</p>
+            </div>
+          ) : (
+            <button
+              onClick={() => setWhyOpen(true)}
+              className="mt-3 flex w-full items-center justify-between rounded-sm border border-border bg-card/30 px-3 py-1.5 text-left text-sm hover:bg-accent/40"
+            >
+              <span className="flex min-w-0 flex-1 items-center gap-2">
+                <HelpCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate text-muted-foreground">Why this folder?</span>
+                <ClassifiedChip by={email.classified_by} confidence={email.ai_confidence} />
+              </span>
+              <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                AI decision
+                <ChevronLeft className="h-3.5 w-3.5 rotate-180" />
+              </span>
+            </button>
+          )}
+
+          <AiDecisionDrawer
+            open={whyOpen}
+            onOpenChange={setWhyOpen}
+            email={email}
+            folders={folders}
+            folderRule={folderRulesQ.data?.folder ?? null}
+            filters={folderRulesQ.data?.filters ?? []}
+          />
+
+          <div className="mt-4">
+            {email.body_html && hasVisibleHtml(email.body_html) ? (
+              isMobile ? (
+                <EmailBodyInline key={email.id} html={email.body_html} />
+              ) : (
+                <EmailBodyFrame key={email.id} html={email.body_html} />
+              )
+            ) : (
+              <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
+                {email.body_text || email.snippet || ""}
+              </pre>
+            )}
+          </div>
+        </div>
+
+        {/* Docked reply bar — expands into the reply editor. */}
+        {!replyOpen && (
+          <div className="pointer-events-none absolute inset-x-4 bottom-4 z-10 md:inset-x-6">
+            <div className="pointer-events-auto flex items-center gap-2.5 rounded-sm border border-border bg-card/95 px-3 py-2 shadow-xl backdrop-blur">
+              <Reply className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              <button
+                type="button"
+                onClick={() => setReplyOpen(true)}
+                className="min-w-0 flex-1 truncate text-left text-sm text-muted-foreground hover:text-foreground"
+              >
+                Reply to {senderFirstName || "sender"}…
+              </button>
+              <button
+                type="button"
+                disabled={generating}
+                onClick={() => {
+                  setReplyOpen(true);
+                  if (!reply.trim()) void suggestReply();
+                }}
+                className="flex shrink-0 items-center gap-1.5 text-xs text-primary hover:underline disabled:opacity-60"
+              >
+                <Sparkles className={`h-3.5 w-3.5 ${generating ? "animate-pulse" : ""}`} />
+                Suggest reply
+              </button>
+              <button
+                type="button"
+                onClick={() => setReplyOpen(true)}
+                aria-label="Open reply editor"
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-sm bg-primary text-primary-foreground hover:opacity-90"
+              >
+                <Send className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
         )}
 
-        <button
-          onClick={() => setWhyOpen(true)}
-          className="mt-1.5 flex w-full items-center justify-between rounded-md border border-border bg-card/30 px-3 py-1 text-left text-sm hover:bg-accent/40"
+        <div
+          className={`absolute inset-x-0 bottom-0 z-20 border-t border-border bg-card shadow-2xl transition-transform duration-300 ease-out ${
+            replyOpen ? "translate-y-0" : "translate-y-full"
+          }`}
         >
-          <span className="flex min-w-0 flex-1 items-center gap-2">
-            <HelpCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            {(() => {
-              const currentFolder = email.folder_id
-                ? folders.find((f) => f.id === email.folder_id)
-                : null;
-              if (currentFolder) {
-                return (
-                  <>
-                    <span className="hidden shrink-0 text-muted-foreground sm:inline">In</span>
-                    <span
-                      className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-xs"
-                      title={currentFolder.name}
-                    >
-                      <span
-                        className="h-2 w-2 shrink-0 rounded-full"
-                        style={{ background: currentFolder.color }}
-                      />
-                      <span className="truncate">{currentFolder.name}</span>
-                    </span>
-                  </>
-                );
-              }
-              return <span className="truncate text-muted-foreground">Why this folder?</span>;
-            })()}
-            <ClassifiedChip by={email.classified_by} />
-          </span>
-          <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-            AI decision
-            <ChevronLeft className="h-3.5 w-3.5 rotate-180" />
-          </span>
-        </button>
-
-        <AiDecisionDrawer
-          open={whyOpen}
-          onOpenChange={setWhyOpen}
-          email={email}
-          folders={folders}
-          folderRule={folderRulesQ.data?.folder ?? null}
-          filters={folderRulesQ.data?.filters ?? []}
-        />
-
-        <div className="mt-4">
-          {email.body_html && hasVisibleHtml(email.body_html) ? (
-            isMobile ? (
-              <EmailBodyInline key={email.id} html={email.body_html} />
-            ) : (
-              <EmailBodyFrame key={email.id} html={email.body_html} />
-            )
-          ) : (
-            <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
-              {email.body_text || email.snippet || ""}
-            </pre>
-          )}
-        </div>
-      </div>
-
-      <div
-        className={`absolute inset-x-0 bottom-0 z-20 border-t border-border bg-card shadow-2xl transition-transform duration-300 ease-out ${
-          replyOpen ? "translate-y-0" : "translate-y-full"
-        }`}
-      >
-        <div className="flex items-center justify-between border-b border-border px-4 py-2">
-          <span className="truncate text-xs uppercase tracking-widest text-muted-foreground">
-            Reply to {email.from_name || email.from_addr}
-          </span>
-          <div className="flex items-center gap-1">
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={generating}
-              onClick={async () => {
-                setGenerating(true);
-                try {
-                  const r = await genFn({ data: { id: email.id } });
-                  setReply(r.draft);
-                } catch (e) {
-                  toast.error(errMsg(e));
-                }
-                setGenerating(false);
-              }}
-            >
-              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-              {generating ? "Drafting…" : "Suggest reply"}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setReplyOpen(false)}
-              aria-label="Close reply"
-            >
-              <X className="h-4 w-4" />
-            </Button>
+          <div className="flex items-center justify-between border-b border-border px-4 py-2">
+            <span className="truncate text-xs uppercase tracking-widest text-muted-foreground">
+              Reply to {email.from_name || email.from_addr}
+            </span>
+            <div className="flex items-center gap-1">
+              <Button size="sm" variant="ghost" disabled={generating} onClick={suggestReply}>
+                <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                {generating ? "Drafting…" : "Suggest reply"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setReplyOpen(false)}
+                aria-label="Close reply"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          <div className="p-4">
+            <Textarea
+              rows={6}
+              value={reply}
+              onChange={(e) => setReply(e.target.value)}
+              placeholder="Write a reply…"
+              autoFocus={replyOpen}
+            />
+            <div className="mt-2 flex justify-end">
+              <Button
+                size="sm"
+                disabled={!reply.trim() || sending}
+                onClick={async () => {
+                  setSending(true);
+                  try {
+                    await sendFn({ data: { id: email.id, body: reply } });
+                    toast.success("Sent");
+                    setReply("");
+                    setReplyOpen(false);
+                  } catch (e) {
+                    toast.error(errMsg(e));
+                  }
+                  setSending(false);
+                }}
+              >
+                <Send className="mr-1.5 h-3.5 w-3.5" />
+                Send
+              </Button>
+            </div>
           </div>
         </div>
-        <div className="p-4">
-          <Textarea
-            rows={6}
-            value={reply}
-            onChange={(e) => setReply(e.target.value)}
-            placeholder="Write a reply…"
-            autoFocus={replyOpen}
+
+        {similarPrompt && (
+          <MoveSimilarDialog
+            open={!!similarPrompt}
+            onOpenChange={(v) => {
+              if (!v) setSimilarPrompt(null);
+            }}
+            emailId={email.id}
+            fromFolderId={similarPrompt.fromFolderId}
+            fromAddr={similarPrompt.fromAddr}
+            domain={similarPrompt.domain}
+            toFolder={similarPrompt.toFolder}
+            folders={folders}
           />
-          <div className="mt-2 flex justify-end">
-            <Button
-              size="sm"
-              disabled={!reply.trim() || sending}
-              onClick={async () => {
-                setSending(true);
-                try {
-                  await sendFn({ data: { id: email.id, body: reply } });
-                  toast.success("Sent");
-                  setReply("");
-                  setReplyOpen(false);
-                } catch (e) {
-                  toast.error(errMsg(e));
-                }
-                setSending(false);
-              }}
-            >
-              <Send className="mr-1.5 h-3.5 w-3.5" />
-              Send
-            </Button>
-          </div>
-        </div>
+        )}
+        {alwaysInbox && (
+          <AlwaysInboxDialog
+            open={!!alwaysInbox}
+            onOpenChange={(v) => {
+              if (!v) setAlwaysInbox(null);
+            }}
+            emailId={email.id}
+            fromAddr={alwaysInbox.fromAddr}
+            domain={alwaysInbox.domain}
+          />
+        )}
       </div>
 
-      {similarPrompt && (
-        <MoveSimilarDialog
-          open={!!similarPrompt}
-          onOpenChange={(v) => {
-            if (!v) setSimilarPrompt(null);
-          }}
-          emailId={email.id}
-          fromFolderId={similarPrompt.fromFolderId}
-          fromAddr={similarPrompt.fromAddr}
-          domain={similarPrompt.domain}
-          toFolder={similarPrompt.toFolder}
-          folders={folders}
-        />
-      )}
-      {alwaysInbox && (
-        <AlwaysInboxDialog
-          open={!!alwaysInbox}
-          onOpenChange={(v) => {
-            if (!v) setAlwaysInbox(null);
-          }}
-          emailId={email.id}
-          fromAddr={alwaysInbox.fromAddr}
-          domain={alwaysInbox.domain}
-        />
-      )}
+      {/* AI rail — summary, routing provenance, quick actions. */}
+      <aside className="hidden w-[216px] shrink-0 flex-col gap-3 overflow-y-auto border-l border-border bg-card/30 p-3.5 xl:flex">
+        {email.ai_summary && (
+          <div>
+            <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-primary">
+              <Sparkles className="h-3 w-3" />
+              Summary
+            </span>
+            <p className="mt-1.5 text-xs leading-relaxed text-foreground/85">{email.ai_summary}</p>
+          </div>
+        )}
+        <div className={email.ai_summary ? "border-t border-border pt-3" : undefined}>
+          <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+            Filed by
+          </span>
+          <div className="mt-1.5">
+            <ClassifiedChip by={email.classified_by} confidence={email.ai_confidence} />
+          </div>
+          {email.classified_by === "ai" && email.ai_confidence != null && (
+            <div className="mt-2 h-[3px] overflow-hidden rounded-full bg-border">
+              <span
+                className="block h-full bg-primary"
+                style={{ width: `${Math.round(email.ai_confidence * 100)}%` }}
+              />
+            </div>
+          )}
+          {folder && (
+            <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-[11px]">
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: folder.color }} />
+              {folder.name}
+            </div>
+          )}
+          <button
+            onClick={() => setWhyOpen(true)}
+            className="mt-2 block text-left text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            Why this folder? →
+          </button>
+        </div>
+        <div className="flex flex-col gap-1.5 border-t border-border pt-3">
+          <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+            Quick actions
+          </span>
+          {email.from_addr && (
+            <button
+              type="button"
+              onClick={() => setAlwaysInbox({ fromAddr: email.from_addr, domain: senderDomain })}
+              className="rounded-sm border border-border px-2 py-1.5 text-left text-xs text-foreground/85 transition-colors hover:border-primary"
+            >
+              Always keep sender in inbox
+            </button>
+          )}
+          {onFilterLikeThis && (
+            <button
+              type="button"
+              onClick={() => onFilterLikeThis(email)}
+              className="rounded-sm border border-border px-2 py-1.5 text-left text-xs text-foreground/85 transition-colors hover:border-primary"
+            >
+              Filter messages like this…
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={reanalyzing}
+            onClick={runReanalyze}
+            className="rounded-sm border border-border px-2 py-1.5 text-left text-xs text-foreground/85 transition-colors hover:border-primary disabled:opacity-60"
+          >
+            {reanalyzing ? "Re-analyzing…" : "Re-analyze this email"}
+          </button>
+        </div>
+      </aside>
     </div>
   );
 }
 
-function ClassifiedChip({ by }: { by: string | null }) {
+function ClassifiedChip({ by, confidence }: { by: string | null; confidence?: number | null }) {
   const map: Record<string, { label: string; Icon: typeof Bot; cls: string }> = {
     ai: { label: "AI", Icon: Bot, cls: "text-primary" },
     filter: { label: "Rule", Icon: FilterIcon, cls: "text-foreground" },
@@ -2629,11 +2802,13 @@ function ClassifiedChip({ by }: { by: string | null }) {
   const k = by ?? "none";
   const v = map[k] ?? map.none;
   const { Icon } = v;
+  const label =
+    k === "ai" && confidence != null ? `${v.label} · ${Math.round(confidence * 100)}%` : v.label;
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${v.cls}`}
+      className={`inline-flex items-center gap-1 rounded-full border border-border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider ${v.cls}`}
     >
-      <Icon className="h-3 w-3" /> {v.label}
+      <Icon className="h-3 w-3" /> {label}
     </span>
   );
 }
