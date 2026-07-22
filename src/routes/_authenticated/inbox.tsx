@@ -123,6 +123,7 @@ import { useFolderSelection } from "@/lib/folder-selection";
 import { useAccountSelection } from "@/lib/account-selection";
 import { MoveSimilarDialog } from "@/components/emails/MoveSimilarDialog";
 import { AlwaysInboxDialog } from "@/components/emails/AlwaysInboxDialog";
+import { RuleFromEmailDialog } from "@/components/emails/RuleFromEmailDialog";
 import { FilterLikeThisDrawer } from "@/components/emails/FilterLikeThisDrawer";
 import { EditFolderDialog } from "@/components/folders/EditFolderDialog";
 import type { Folder as FolderSettings, GLabel } from "@/components/folders/FolderEditor";
@@ -246,6 +247,7 @@ type EmailListRowProps = {
     subject: string | null;
     currentFolderId: string | null;
   }) => void;
+  setRuleFromEmail: (emailId: string) => void;
   moveInboxFn: ServerFnCall<{ email_id: string }>;
   moveFolderFn: ServerFnCall<{ email_id: string; to_folder_id: string }>;
   archFn: ServerFnCall<{ id: string }>;
@@ -271,6 +273,7 @@ const EmailListRow = memo(function EmailListRow({
   setSelectedId,
   setSelectedIds,
   setFilterPrompt,
+  setRuleFromEmail,
   moveInboxFn,
   moveFolderFn,
   archFn,
@@ -527,6 +530,10 @@ const EmailListRow = memo(function EmailListRow({
               <FilterIcon className="mr-2 h-4 w-4" />
               Filter messages like this…
             </ContextMenuItem>
+            <ContextMenuItem onSelect={() => setRuleFromEmail(e.id)}>
+              <Sparkles className="mr-2 h-4 w-4" />
+              Make rule from this email…
+            </ContextMenuItem>
           </>
         )}
 
@@ -623,6 +630,7 @@ function InboxPage() {
     return () => clearTimeout(h);
   }, [query]);
   const searchInboxFn = useServerFn(searchInbox);
+  const [ruleFromEmailId, setRuleFromEmailId] = useState<string | null>(null);
   const [filterPrompt, setFilterPrompt] = useState<null | {
     fromAddr: string | null;
     subject: string | null;
@@ -1871,6 +1879,7 @@ function InboxPage() {
                   setSelectedId={setSelectedId}
                   setSelectedIds={setSelectedIds}
                   setFilterPrompt={setFilterPrompt}
+                  setRuleFromEmail={setRuleFromEmailId}
                   moveInboxFn={moveInboxFn}
                   moveFolderFn={moveFolderFn}
                   archFn={archFnList}
@@ -1951,6 +1960,14 @@ function InboxPage() {
           currentFolderId={filterPrompt.currentFolderId}
         />
       )}
+
+      <RuleFromEmailDialog
+        emailId={ruleFromEmailId}
+        open={!!ruleFromEmailId}
+        onOpenChange={(v) => {
+          if (!v) setRuleFromEmailId(null);
+        }}
+      />
 
       <AssistantPanel
         open={assistantOpen}
