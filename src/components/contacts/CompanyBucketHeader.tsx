@@ -49,7 +49,7 @@ export function CompanyBucketHeader({
   const tinted = !!(color && domain);
   const style = tinted
     ? {
-        backgroundColor: `color-mix(in oklab, ${color} 14%, #0d1220)`,
+        backgroundColor: `color-mix(in oklab, ${color} 14%, var(--color-sidebar))`,
         borderColor: `color-mix(in oklab, ${color} 35%, transparent)`,
       }
     : undefined;
@@ -57,10 +57,9 @@ export function CompanyBucketHeader({
   return (
     <div
       style={style}
-      className={`sticky top-0 z-[5] flex w-full items-center gap-2.5 border-b px-4 py-4 text-left transition-colors sm:py-1.5 ${
-        tinted ? "" : "border-border bg-[#0d1220]"
+      className={`sticky top-0 z-[5] flex min-h-20 w-full items-center gap-3 border-b px-4 py-4 text-left transition-colors sm:min-h-0 sm:gap-2.5 sm:py-1.5 ${
+        tinted ? "" : "border-border bg-sidebar"
       }`}
-
     >
       {selectable && (
         <Checkbox
@@ -78,7 +77,7 @@ export function CompanyBucketHeader({
           <CompanyLogo
             domain={domain}
             name={name}
-            size={28}
+            size={34}
             onColor={(c) => {
               setColor(c);
               if (c) onColor?.(c);
@@ -119,21 +118,21 @@ export function CompanyBucketHeader({
           disabled={opening}
           aria-label={`Open ${name}`}
           title="Open company page"
-          className="grid h-8 w-8 shrink-0 place-items-center rounded text-muted-foreground hover:bg-background/40 hover:text-primary disabled:opacity-50 sm:h-6 sm:w-6"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded text-muted-foreground hover:bg-background/40 hover:text-primary disabled:opacity-50 sm:h-6 sm:w-6"
         >
           {opening ? (
-            <Loader2 className="h-4 w-4 animate-spin sm:h-3.5 sm:w-3.5" />
+            <Loader2 className="h-5 w-5 animate-spin sm:h-3.5 sm:w-3.5" />
           ) : (
-            <ArrowUpRight className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+            <ArrowUpRight className="h-5 w-5 sm:h-3.5 sm:w-3.5" />
           )}
         </button>
       )}
       <button
         onClick={onToggle}
         aria-label={collapsed ? "Expand" : "Collapse"}
-        className="grid h-8 w-8 shrink-0 place-items-center text-muted-foreground sm:h-6 sm:w-6"
+        className="grid h-10 w-10 shrink-0 place-items-center text-muted-foreground sm:h-6 sm:w-6"
       >
-        <ChevronDown className={`h-5 w-5 transition-transform sm:h-4 sm:w-4 ${collapsed ? "-rotate-90" : ""}`} />
+        <ChevronDown className={`h-6 w-6 transition-transform sm:h-4 sm:w-4 ${collapsed ? "-rotate-90" : ""}`} />
       </button>
     </div>
   );
