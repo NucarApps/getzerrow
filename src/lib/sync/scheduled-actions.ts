@@ -17,10 +17,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { logError } from "@/lib/log.server";
-import { modifyMessage } from "../gmail.server";
+import { modifyMessage, sendMessage, createDraft } from "../gmail.server";
 import { buildWebhookPayload, deliverWebhook } from "../webhook/deliver";
-import { dispatchFolderActions, type FolderActionRow } from "./action-dispatch";
+import {
+  dispatchFolderActions,
+  OUTBOUND_ACTION_TYPES,
+  type FolderActionRow,
+} from "./action-dispatch";
+import { renderTemplate } from "./action-templates";
 import { getEmailsDecrypted } from "./encrypted-reader";
+import { AI_CLASSIFY_ATTEMPT_TIMEOUT_MS } from "./config";
 
 const admin = () => supabaseAdmin as unknown as SupabaseClient;
 
@@ -222,9 +228,131 @@ async function runOne(job: ClaimedJob): Promise<RunOutcome> {
     return { ok: true };
   }
 
+  if (OUTBOUND_ACTION_TYPES.has(fa.action_type)) {
+    return runOutbound(fa.id, fa.action_type, email);
+  }
+
   return {
     ok: false,
     error: `action type not supported by the runner yet: ${fa.action_type}`,
     terminal: true,
   };
+}
+
+type OutboundEmail = {
+  id: string;
+  gmail_account_id: string;
+  gmail_message_id: string;
+  thread_id: string | null;
+  from_addr: string | null;
+  from_name: string | null;
+  subject: string | null;
+  body_text: string | null;
+  received_at: string | null;
+};
+
+/** Race a promise against a hard timeout (AI fallback must stay bounded). */
+async function raceTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race<T>([
+      p,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** Execute reply / draft / send_email (task 8). Templates are decrypted
+ * via the service-role RPC and rendered against whitelisted tokens; a
+ * reply with no template falls back to the timeboxed AI reply drafter.
+ * Nothing rendered or AI-generated is ever persisted — the message goes
+ * straight to Gmail and the only stored copy is the encrypted template. */
+async function runOutbound(
+  actionId: string,
+  actionType: string,
+  email: OutboundEmail,
+): Promise<RunOutcome> {
+  const { data: cfgRows, error: cfgErr } = await admin().rpc("get_folder_action_outbound", {
+    p_action_id: actionId,
+    p_key: process.env.EMAIL_ENC_KEY,
+  });
+  if (cfgErr) return { ok: false, error: cfgErr.message };
+  const cfg = (
+    (cfgRows ?? []) as Array<{
+      subject_template: string | null;
+      body_template: string | null;
+      to_addr: string | null;
+    }>
+  )[0];
+  if (!cfg) return { ok: false, error: "outbound action configuration missing", terminal: true };
+
+  const templateEmail = {
+    from_name: email.from_name,
+    from_addr: email.from_addr,
+    subject: email.subject,
+    body_text: email.body_text,
+    received_at: email.received_at,
+  };
+
+  let body = cfg.body_template ? renderTemplate(cfg.body_template, templateEmail) : "";
+  if (!body && actionType === "reply") {
+    // Template-less reply: draft with AI (timeboxed, via the gateway).
+    const { suggestReply } = await import("../ai.server");
+    body = await raceTimeout(
+      suggestReply({
+        from_name: email.from_name ?? email.from_addr ?? "",
+        subject: email.subject ?? "",
+        body_text: email.body_text ?? "",
+      }),
+      AI_CLASSIFY_ATTEMPT_TIMEOUT_MS,
+      "outbound reply draft",
+    );
+  }
+  if (!body.trim()) {
+    return { ok: false, error: "no body template configured", terminal: true };
+  }
+
+  const replySubject = email.subject?.startsWith("Re:")
+    ? email.subject
+    : `Re: ${email.subject ?? ""}`;
+  const subject = cfg.subject_template
+    ? renderTemplate(cfg.subject_template, templateEmail)
+    : replySubject;
+
+  if (actionType === "send_email") {
+    const to = (cfg.to_addr ?? "").trim();
+    if (!to) return { ok: false, error: "send_email requires to_addr", terminal: true };
+    await sendMessage(email.gmail_account_id, to, subject, body);
+    return { ok: true };
+  }
+
+  const to = (email.from_addr ?? "").trim();
+  if (!to) return { ok: false, error: "email has no sender address", terminal: true };
+
+  if (actionType === "draft") {
+    await createDraft(
+      email.gmail_account_id,
+      to,
+      replySubject,
+      body,
+      email.thread_id ?? undefined,
+      email.gmail_message_id,
+    );
+    return { ok: true };
+  }
+
+  // reply
+  await sendMessage(
+    email.gmail_account_id,
+    to,
+    replySubject,
+    body,
+    email.thread_id ?? undefined,
+    email.gmail_message_id,
+  );
+  return { ok: true };
 }

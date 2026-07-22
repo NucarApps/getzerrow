@@ -257,6 +257,36 @@ export async function sendMessage(
   });
 }
 
+/** Create a Gmail draft (does NOT send). Optionally threaded as a reply. */
+export async function createDraft(
+  accountId: string,
+  to: string,
+  subject: string,
+  body: string,
+  threadId?: string,
+  inReplyTo?: string,
+) {
+  const headers = [
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    inReplyTo ? `In-Reply-To: ${inReplyTo}` : "",
+    inReplyTo ? `References: ${inReplyTo}` : "",
+    'Content-Type: text/plain; charset="UTF-8"',
+  ]
+    .filter(Boolean)
+    .join("\r\n");
+  const message = `${headers}\r\n\r\n${body}`;
+  const raw = Buffer.from(message)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+  return gmailFetch(accountId, "/users/me/drafts", {
+    method: "POST",
+    body: JSON.stringify({ message: { raw, ...(threadId ? { threadId } : {}) } }),
+  });
+}
+
 /** Insert an RFC 822 message directly into the user's mailbox (does NOT send). */
 export async function insertMessage(
   accountId: string,

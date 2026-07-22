@@ -254,11 +254,13 @@ describe("delayed actions", () => {
 
 describe("unimplemented types + synthetic patch gating", () => {
   it("reports 'error' for not-yet-implemented types without breaking the rest", async () => {
+    // reply/draft/send_email became real (queued) actions in task 8 —
+    // notify_channel stays the canonical not-yet-implemented type.
     const { plan, outcomes } = await dispatch([
-      explicitRow({ action_type: "reply" }),
+      explicitRow({ action_type: "notify_channel" }),
       explicitRow({ id: "a2", action_type: "archive" }),
     ]);
-    expect(outcomes[0]).toMatchObject({ action_type: "reply", status: "error" });
+    expect(outcomes[0]).toMatchObject({ action_type: "notify_channel", status: "error" });
     expect(outcomes[0].error).toContain("not implemented");
     expect(outcomes[1].status).toBe("applied");
     expect(plan.removeLabels).toEqual(["INBOX"]);
