@@ -1112,7 +1112,7 @@ function ContactsPage() {
 
           {/* List + docked detail pane */}
           <div className="flex min-h-0 flex-1">
-            <div className="min-w-0 flex-1 overflow-y-auto">
+            <div className="min-w-0 flex-1 overflow-y-auto xl:max-w-[720px]">
               {q.isLoading ? (
                 <div className="grid gap-2 p-4">
                   {Array.from({ length: 8 }).map((_, i) => (
