@@ -1245,7 +1245,7 @@ function ContactsPage() {
                                       aria-label={`Select ${c.name || c.email || "contact"}`}
                                     />
                                     <div
-                                      className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-[11px] font-semibold ${
+                                      className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-semibold sm:h-7 sm:w-7 sm:text-[11px] ${
                                         tint ? "" : "bg-primary/15 text-primary"
                                       }`}
                                       style={
@@ -1259,8 +1259,8 @@ function ContactsPage() {
                                     >
                                       {initialOf(c)}
                                     </div>
-                                    <div className="flex min-w-0 flex-1 items-baseline gap-2">
-                                      <span className="truncate text-sm font-medium text-foreground">
+                                    <div className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
+                                      <span className="truncate text-[15px] font-medium text-foreground sm:text-sm">
                                         {c.name || c.email}
                                       </span>
                                       <span className="min-w-0 truncate text-xs text-muted-foreground">
