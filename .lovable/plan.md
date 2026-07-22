@@ -1,24 +1,22 @@
-## Goal
-Tighten the mobile Contacts header into a single row and give each contact/company row more vertical presence.
+## Problem
+On the company page, both logo previews (header monogram at the top and the thumbnail inside the Logo tab) render only from `photoUrl` (`companies.logo_url`) and the `primaryDomain`. The brand-logo picker (`CompanyLogoPicker`) saves a per-domain choice (`provider` + `source_domain`) into `company_logo_choices`, but the preview `<CompanyLogo>` calls never read that choice — so after selecting "24 Auto Group" the previews keep showing the "D" monogram (default provider on the primary domain fails to load, so it falls back to the initial).
 
-## Changes — `src/routes/_authenticated/contacts.index.tsx`
+Contact rows on the Contacts list already read `company-logo-choices` and pass `provider` / `sourceDomain` to `<CompanyLogo>` — the company page just isn't doing the same.
 
-### 1. Condensed header (mobile) on a single row
-Header block at line 894:
-- Drop `flex-wrap` on mobile so title + action icons stay on one row; keep wrap behavior for `sm:`.
-- Title `<h1>` shrinks to `text-lg` on mobile (keeps `sm:text-xl`) and gets `truncate`.
-- Subtitle line (line 897–903): abbreviate to just `"{count} p"` on mobile, and drop the companies segment entirely. Desktop keeps the current `"N people · M companies"` phrasing via a `hidden sm:inline` span.
-  - Mobile: `487 p`
-  - Desktop: `487 people · 220 companies`
-- Reduce header horizontal padding on mobile (`px-3`) to give the icon row room; `sm:px-5` unchanged.
-- Tighten icon gap on mobile (`gap-1`) so Search / AI / My card / Scan / + all fit.
-- The company-group toggle + collapse buttons (lines 914–943) move into the same right-aligned action cluster on mobile so everything sits on one row.
+## Fix — `src/routes/_authenticated/contacts.companies.$companyId.tsx`
 
-### 2. Taller rows
-- Company bucket row (line 1232): mobile padding `py-3` → `py-4`; keep desktop `sm:py-2`.
-- Contact row (line 1330): mobile padding `py-3` → `py-4`; keep desktop `sm:py-2.5`.
-- Bump mobile avatar from `h-9 w-9` → `h-10 w-10` for balance; desktop unchanged.
-- Contact name text stays `text-[15px]` on mobile.
+1. Load logo choices in the page component:
+   - `import { listCompanyLogoChoices } from "@/lib/company-logo.functions"` (already used elsewhere).
+   - Add `const choicesQ = useQuery({ queryKey: ["company-logo-choices"], queryFn: () => listChoices() })` next to the existing queries.
+   - Derive `const choice = choicesQ.data?.find(c => c.domain === primaryDomain)` → `logoProvider = choice?.provider ?? null`, `logoSourceDomain = choice?.source_domain ?? null`.
+
+2. Pass those into the two `<CompanyLogo>` previews:
+   - Header preview (line 295): add `provider={logoProvider}` and `sourceDomain={logoSourceDomain}`.
+   - `CompanyPhotoSection` thumbnail (line 940): extend the component's props with optional `provider` / `sourceDomain` and forward them; the parent (line 435) passes the derived values.
+
+3. Keep existing `photoUrl` behavior — uploaded photo still wins over brand logo (matches `<CompanyLogo>`'s own precedence: `photoUrl` → provider/source brand logo → monogram).
+
+No changes to picker save logic, no schema changes, no backend changes. `CompanyLogoPicker` already invalidates `["company-logo-choices"]` after a pick, so both previews will refresh instantly.
 
 ## Out of scope
-- Desktop layout, sidebar, AI strip contents, search behavior, and any business logic.
+Contacts list logos (already wired), CardDAV/Google push behavior, `logo_url` upload flow.

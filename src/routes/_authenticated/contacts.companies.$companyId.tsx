@@ -58,6 +58,8 @@ import {
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 import { Field } from "@/components/contacts/Field";
 import { CompanyLogoPicker } from "@/components/contacts/CompanyLogoPicker";
+import { listCompanyLogoChoices } from "@/lib/company-logo.functions";
+
 import { createContactGroup, listContactGroups } from "@/lib/contact-groups.functions";
 import { listCompanyLabels, setCompanyLabels } from "@/lib/company-groups.functions";
 import { uploadCompanyPhoto, removeCompanyPhoto } from "@/lib/companies/company-photo.functions";
@@ -99,6 +101,13 @@ function CompanyDetailPage() {
     queryKey: ["company", companyId],
     queryFn: () => fetchOne({ data: { id: companyId } }),
   });
+
+  const listLogoChoices = useServerFn(listCompanyLogoChoices);
+  const logoChoicesQ = useQuery({
+    queryKey: ["company-logo-choices"],
+    queryFn: () => listLogoChoices(),
+  });
+
 
   const [form, setForm] = useState({
     name: "",
@@ -278,6 +287,12 @@ function CompanyDetailPage() {
 
   const primaryDomain = q.data.domains[0]?.domain ?? null;
   const tags = q.data.tags.map((t) => t.tag);
+  const logoChoice = primaryDomain
+    ? logoChoicesQ.data?.find((c) => c.domain === primaryDomain)
+    : undefined;
+  const logoProvider = logoChoice?.provider ?? null;
+  const logoSourceDomain = logoChoice?.source_domain ?? null;
+
 
   return (
     <div className="h-full overflow-y-auto">
@@ -297,7 +312,10 @@ function CompanyDetailPage() {
               name={form.name}
               size={64}
               photoUrl={(q.data.company as { logo_url?: string | null }).logo_url ?? null}
+              provider={logoProvider}
+              sourceDomain={logoSourceDomain}
             />
+
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Building2 className="h-4 w-4" /> Company
@@ -437,7 +455,10 @@ function CompanyDetailPage() {
                 name={form.name}
                 primaryDomain={primaryDomain}
                 logoUrl={(q.data.company as { logo_url?: string | null }).logo_url ?? null}
+                provider={logoProvider}
+                sourceDomain={logoSourceDomain}
               />
+
               {primaryDomain && (
                 <div className="mt-4 border-t pt-4">
                   <p className="mb-3 text-xs text-muted-foreground">Or pick a brand logo:</p>
@@ -850,12 +871,17 @@ function CompanyPhotoSection({
   name,
   primaryDomain,
   logoUrl,
+  provider = null,
+  sourceDomain = null,
 }: {
   companyId: string;
   name: string;
   primaryDomain: string | null;
   logoUrl: string | null;
+  provider?: number | null;
+  sourceDomain?: string | null;
 }) {
+
   const qc = useQueryClient();
   const uploadFn = useServerFn(uploadCompanyPhoto);
   const removeFn = useServerFn(removeCompanyPhoto);
@@ -937,7 +963,15 @@ function CompanyPhotoSection({
 
   return (
     <div className="flex items-center gap-4">
-      <CompanyLogo domain={primaryDomain} name={name} size={56} photoUrl={logoUrl} />
+      <CompanyLogo
+        domain={primaryDomain}
+        name={name}
+        size={56}
+        photoUrl={logoUrl}
+        provider={provider}
+        sourceDomain={sourceDomain}
+      />
+
       <div className="flex flex-wrap gap-2">
         <Button
           size="sm"
