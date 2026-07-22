@@ -993,8 +993,38 @@ function ContactsPage() {
             </div>
           </div>
 
-          {/* AI strip — live entry points for the AI tools. */}
-          <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border bg-amber-500/5 px-4 py-2 sm:px-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {/* Mobile expanded search row */}
+          {mobileSearchOpen && (
+            <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card/40 px-4 py-2 sm:hidden">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  autoFocus
+                  placeholder="Search people, companies, titles…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="h-9 pl-9"
+                />
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setQuery("");
+                  setMobileSearchOpen(false);
+                }}
+                className="h-8 w-8 shrink-0 p-0"
+                aria-label="Close search"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+
+          {/* AI strip — live entry points for the AI tools. Hidden on mobile unless toggled. */}
+          <div
+            className={`${mobileAiOpen ? "flex" : "hidden"} shrink-0 items-center gap-2 overflow-x-auto border-b border-border bg-amber-500/5 px-4 py-2 sm:flex sm:px-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}
+          >
             <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-400" />
             <AiChip
               label={`${groupSuggestionCount} group suggestion${groupSuggestionCount === 1 ? "" : "s"}`}
@@ -1017,6 +1047,15 @@ function ContactsPage() {
               highlight={enrichPending > 0}
               pulsing={enrichScanning}
             />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setMobileAiOpen(false)}
+              className="ml-auto h-7 w-7 shrink-0 p-0 sm:hidden"
+              aria-label="Close AI suggestions"
+            >
+              <X className="h-4 w-4" />
+            </Button>
           </div>
 
           {/* Mobile groups: horizontal pill scroller */}
