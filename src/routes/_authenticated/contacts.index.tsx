@@ -1395,7 +1395,7 @@ function ContactsPage() {
 
             {/* Docked contact detail pane (≥xl). Below the breakpoint rows
                 open the slide-over ContactDrawer instead. */}
-            <aside className="hidden w-[clamp(420px,42vw,640px)] shrink-0 flex-col border-l border-border bg-card/30 xl:flex">
+            <aside className="hidden min-w-[420px] flex-1 flex-col border-l border-border bg-card/30 xl:flex">
               <div className="min-h-0 flex-1 overflow-y-auto p-5">
                 {paneId ? (
                   <ContactDetailView
