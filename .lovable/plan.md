@@ -1,8 +1,11 @@
-I’ll make the company bucket rows match the taller contact-row feel on mobile.
+## Changes to `src/components/contacts/CompanyBucketHeader.tsx`
 
-Plan:
-1. Update `CompanyBucketHeader` mobile layout so each company row has a fixed larger minimum height/tap target, not just extra padding that can be visually compressed by the sticky header/list styling.
-2. Increase the mobile logo/icon slot and action buttons slightly so the row reads as a true row, not a compact section label.
-3. Keep desktop sizing compact with existing `sm:` overrides.
-4. Replace the hardcoded fallback colors in this component with semantic tokens while touching it, so it stays aligned with the design system.
-5. Verify the mobile contacts page visually after the change.
+1. **Uniform logo sizing on mobile**
+   - Wrap the mobile `CompanyLogo` in a fixed `44x44` container with `overflow-hidden rounded-md` and `shrink-0`, and pass a consistent size so brand-image logos (Axalta, HC, Bettervantage, BlueOwl) and monogram fallbacks (Bell, Bentley) all render at the same visual footprint.
+   - Ensure the inner `<img>`/monogram fills the box (`h-full w-full object-contain`) so square brand images no longer appear larger or smaller than monograms.
+
+2. **Hide domain on mobile**
+   - In the meta line, split domain and count: render `domain · aliasCount` only on `sm:` and up, keep the count visible on mobile.
+   - Result on mobile: just `COMPANY NAME  {count}`; desktop unchanged.
+
+No other files or behaviors change.

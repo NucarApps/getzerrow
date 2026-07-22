@@ -73,11 +73,12 @@ export function CompanyBucketHeader({
         />
       )}
       <button onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
-        <div className="sm:hidden">
+        <div className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-md bg-white ring-1 ring-border/40 sm:hidden">
           <CompanyLogo
             domain={domain}
             name={name}
-            size={34}
+            size={44}
+            className="h-full w-full !rounded-none !p-1 !ring-0"
             onColor={(c) => {
               setColor(c);
               if (c) onColor?.(c);
@@ -105,9 +106,12 @@ export function CompanyBucketHeader({
           {name}
         </span>
         <span className="truncate text-xs text-muted-foreground sm:text-[11px]">
-          {domain ? `${domain}${aliasCount > 0 ? ` +${aliasCount}` : ""} · ` : ""}
+          <span className="hidden sm:inline">
+            {domain ? `${domain}${aliasCount > 0 ? ` +${aliasCount}` : ""} · ` : ""}
+          </span>
           {count}
         </span>
+
       </button>
       {onOpen && (
         <button
