@@ -15,6 +15,9 @@ import {
 import { AccountPicker } from "@/components/settings/AccountPicker";
 import { useScopedAccount } from "@/lib/use-scoped-account";
 import { listExecutedRules, type ExecutedRuleRow } from "@/lib/executed-rules.functions";
+import { flagWrongClassification } from "@/lib/sync/classification-feedback.functions";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { AlertCircle, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/settings/rule-activity")({
@@ -65,8 +68,33 @@ function relTime(iso: string | null): string {
 function RuleActivitySettings() {
   const { activeAccountId, scopedEmail, onAccountChange } = useScopedAccount();
   const fetchRows = useServerFn(listExecutedRules);
+  const flagWrongFn = useServerFn(flagWrongClassification);
+  const qc = useQueryClient();
   const [folderId, setFolderId] = useState<string>("all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [flagging, setFlagging] = useState<string | null>(null);
+
+  /** One-tap "this was wrong": records feedback, re-routes the email,
+   * and stores a few-shot example for the corrected folder (task 12). */
+  async function flagWrong(row: ExecutedRuleRow, correctFolderId: string) {
+    setFlagging(row.id);
+    try {
+      const r = await flagWrongFn({
+        data: { executed_rule_id: row.id, correct_folder_id: correctFolderId },
+      });
+      toast.success(
+        r.moved
+          ? "Thanks — moved it and taught the folder from this example."
+          : "Thanks — feedback recorded.",
+      );
+      qc.invalidateQueries({ queryKey: ["executed-rules"] });
+      qc.invalidateQueries({ queryKey: ["emails"] });
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Couldn't record feedback");
+    } finally {
+      setFlagging(null);
+    }
+  }
 
   const q = useQuery({
     queryKey: ["executed-rules", activeAccountId, folderId],
@@ -219,6 +247,37 @@ function RuleActivitySettings() {
                               )}
                               <dt className="font-medium text-muted-foreground">Message</dt>
                               <dd className="font-mono">{r.gmail_message_id}</dd>
+                              <dt className="font-medium text-muted-foreground">Wrong folder?</dt>
+                              <dd>
+                                <Select
+                                  disabled={flagging === r.id || !r.email_id}
+                                  onValueChange={(v) => flagWrong(r, v)}
+                                >
+                                  <SelectTrigger
+                                    className="h-7 w-56 text-xs"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <SelectValue
+                                      placeholder={
+                                        flagging === r.id
+                                          ? "Moving…"
+                                          : r.email_id
+                                            ? "This was wrong — move to…"
+                                            : "Email no longer exists"
+                                      }
+                                    />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {folders
+                                      .filter((f) => f.id !== r.folder_id)
+                                      .map((f) => (
+                                        <SelectItem key={f.id} value={f.id}>
+                                          {f.name}
+                                        </SelectItem>
+                                      ))}
+                                  </SelectContent>
+                                </Select>
+                              </dd>
                             </dl>
                           </td>
                         </tr>
