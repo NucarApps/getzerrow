@@ -582,8 +582,10 @@ function DesktopRails() {
         </DropdownMenu>
       </div>
 
-      {/* Folder panel */}
+      {/* Folder panel — only relevant on Inbox / mail views. */}
+      {pathname === "/inbox" && (
       <div className="flex w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar/70 p-3 backdrop-blur-sm">
+
         <div className="mb-2">
           <AccountSwitcher
             accounts={accounts}
@@ -678,8 +680,10 @@ function DesktopRails() {
           }}
         />
       </div>
+      )}
     </>
   );
+
 }
 
 function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
