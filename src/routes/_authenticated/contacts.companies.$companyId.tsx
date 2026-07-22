@@ -58,6 +58,8 @@ import {
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 import { Field } from "@/components/contacts/Field";
 import { CompanyLogoPicker } from "@/components/contacts/CompanyLogoPicker";
+import { listCompanyLogoChoices } from "@/lib/company-logo.functions";
+
 import { createContactGroup, listContactGroups } from "@/lib/contact-groups.functions";
 import { listCompanyLabels, setCompanyLabels } from "@/lib/company-groups.functions";
 import { uploadCompanyPhoto, removeCompanyPhoto } from "@/lib/companies/company-photo.functions";
