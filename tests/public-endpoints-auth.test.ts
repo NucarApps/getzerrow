@@ -10,7 +10,10 @@ import { describe, it, expect } from "vitest";
 
 const BASE = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "");
 
+// Every /api/public/* endpoint gated by isAuthorizedCronRequest belongs in
+// this list (task 13 audit brought it back in sync with the routes dir).
 const CRON_ENDPOINTS = [
+  "/api/public/encryption-backfill",
   "/api/public/gmail-poll",
   "/api/public/gmail-process-jobs",
   "/api/public/gmail-renew-watches",
@@ -19,11 +22,24 @@ const CRON_ENDPOINTS = [
   "/api/public/gmail-dlq-replay",
   "/api/public/gmail-retention",
   "/api/public/gmail-rescue-classify",
+  "/api/public/gmail-search-reindex",
   "/api/public/health",
-  "/api/public/hooks/run-folder-summaries",
+  "/api/public/hooks/categorize-senders",
+  "/api/public/hooks/check-folder-retry-alerts",
+  "/api/public/hooks/check-folder-write-alerts",
   "/api/public/hooks/consolidate-label-duplicates",
   "/api/public/hooks/enqueue-contact-enrichment",
+  "/api/public/hooks/google-contacts-sync",
+  "/api/public/hooks/reconcile-meetings",
+  "/api/public/hooks/relearn-folders",
   "/api/public/hooks/run-contact-enrich-jobs",
+  "/api/public/hooks/run-folder-summaries",
+  "/api/public/hooks/run-folder-summary-jobs",
+  "/api/public/hooks/run-scheduled-actions",
+  "/api/public/hooks/schedule-meeting-bots",
+  "/api/public/hooks/send-digest",
+  "/api/public/hooks/sync-calendar-contacts",
+  "/api/public/hooks/tasks-completion-scan",
 ];
 
 async function post(path: string, init: RequestInit = {}) {

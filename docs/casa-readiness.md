@@ -54,16 +54,39 @@ polling — consistent with minimal, purpose-limited access.
     blocks <24h-old releases (supply-chain hygiene).
 - **Logging & audit** — Structured JSON logs; no decrypted content is ever logged.
   Security-lifecycle events emit `audit.*` records (metadata only): `gmail.connected`,
-  `gmail.disconnected`, `account.deleted` (`logAudit` in `src/lib/log.server.ts`).
+  `gmail.disconnected`, `account.deleted`, `rules.feedback_flagged` (`logAudit` in
+  `src/lib/log.server.ts`). Every cron writes a table-backed run row to
+  `pubsub_events` (metadata only) — the rules-engine crons via `logCronRunEvent`
+  (`src/lib/sync/cron-run-log.server.ts`). Rule executions are audited per email in
+  `executed_rules` (classification reason encrypted).
 - **Data retention & deletion** — Disconnecting a mailbox revokes the Google grant and
   purges that mailbox's synced content (`disconnectGmailAccount`). Full account
   deletion erases all user data across every table + the auth user
   (`deleteAccount` in `src/lib/account.functions.ts`). Operational tables
-  (`pubsub_events`, dead-letter jobs) are pruned by the daily retention cron. Behavior
-  matches the published privacy policy (`src/routes/privacy.tsx`).
+  (`pubsub_events`, dead-letter jobs, `scheduled_actions`, `digest_items`) are pruned
+  by the daily retention cron (`cleanup_old_*` service-role RPCs; error/DLQ rows kept
+  longer for forensics). Behavior matches the published privacy policy
+  (`src/routes/privacy.tsx`).
 - **AI processing disclosure** — Email content is sent to the Lovable AI gateway for
   folder classification/summaries only (`src/lib/ai.server.ts`); disclosed in the
   privacy policy. No tokens/secrets are included in AI payloads.
+- **Rules engine (2026-07 upgrade)** — Deterministic rules-first classification with a
+  per-email audit trail and user-configurable actions. New tables (all owner-RLS'd,
+  indexed, tested): `executed_rules`/`executed_actions` (audit log, task 1),
+  `folder_actions`/`scheduled_actions` (action fan-out + delayed queue, tasks 4–5),
+  `digest_items`/`user_settings` (digest, task 9), `classification_feedback`
+  (task 12); plus columns `folders.run_on_threads` (task 6) and
+  `contact_groups.kind` (task 7). Sensitive action config (webhook secrets, reply
+  templates) is encrypted and reachable only via service-role RPCs
+  (`get/set_folder_action_webhook`, `set_folder_action_template` /
+  `get_folder_action_outbound`); queue claiming via `claim_scheduled_actions`
+  (`SKIP LOCKED` + lease). New cron endpoints (all `CRON_SECRET`-gated, fail closed):
+  `hooks/run-scheduled-actions` (1m), `hooks/categorize-senders` (nightly),
+  `hooks/send-digest` (hourly). User-facing AI surfaces (rule proposals, sender
+  categories, digest overviews) treat model output as untrusted — strict Zod
+  validation, bounded inputs inside `<untrusted_email>` boundaries, timeboxed calls,
+  deterministic fallbacks. Per-task detail in `docs/rules/*.md`; control → evidence
+  rows in `casa-asvs-map.md` (V4–V7, V11).
 
 ## 3. Known items to track
 
@@ -72,3 +95,11 @@ polling — consistent with minimal, purpose-limited access.
 - `brace-expansion` advisory (GHSA-jxxr-4gwj-5jf2) is **dev-only** (eslint toolchain),
   excluded from the prod audit gate; clears on the next eslint major bump.
 - CI `lint` step is enforced with `--max-warnings=0` (resolved — commit `c97b980`).
+- Duplicate `executed_rules` migration files: `20260721183630_cdaeab8d-….sql` is
+  Lovable's re-record of `20260721210000_executed_rules_audit_log.sql` as applied to
+  prod (identical objects, comment/order differences only). Prod is unaffected; a
+  fresh-database replay must skip one of the two. Migrations are immutable by project
+  ground rules, so this is documented rather than edited.
+- Rules-upgrade migrations pending prod apply are tracked per task in
+  `docs/rules/*.md` (tasks 4–9, 12–13 added tables/RPCs/crons). `LOVABLE_API_KEY`
+  is the only AI credential; all AI calls go through the Lovable gateway, timeboxed.
