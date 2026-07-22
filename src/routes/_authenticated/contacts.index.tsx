@@ -891,15 +891,21 @@ function ContactsPage() {
 
         {/* Main column: header bar, AI strip, then list + docked detail pane. */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-card/40 px-4 py-3 sm:px-5">
+          <div className="flex flex-nowrap items-center gap-2 border-b border-border bg-card/40 px-3 py-3 sm:flex-wrap sm:gap-x-4 sm:gap-y-2 sm:px-5">
             <div className="min-w-0">
-              <h1 className="font-display text-xl leading-6 text-foreground">Contacts</h1>
+              <h1 className="truncate font-display text-lg leading-6 text-foreground sm:text-xl">Contacts</h1>
               <p className="text-[11px] text-muted-foreground">
-                {q.data
-                  ? `${q.data.contacts.length} people${
-                      groupByCompany && companiesCount > 0 ? ` · ${companiesCount} companies` : ""
-                    }`
-                  : "Loading…"}
+                {q.data ? (
+                  <>
+                    <span className="sm:hidden">{q.data.contacts.length} p</span>
+                    <span className="hidden sm:inline">
+                      {q.data.contacts.length} people
+                      {groupByCompany && companiesCount > 0 ? ` · ${companiesCount} companies` : ""}
+                    </span>
+                  </>
+                ) : (
+                  "Loading…"
+                )}
               </p>
             </div>
             <div className="relative hidden min-w-[160px] max-w-[480px] flex-1 sm:block">
@@ -911,7 +917,7 @@ function ContactsPage() {
                 className="h-9 pl-9"
               />
             </div>
-            <div className="flex shrink-0 items-center gap-1.5">
+            <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
               <Button
                 variant={groupByCompany ? "default" : "outline"}
                 size="sm"
@@ -940,8 +946,6 @@ function ContactsPage() {
                   )}
                 </Button>
               )}
-            </div>
-            <div className="ml-auto flex shrink-0 items-center gap-1.5">
               <Button
                 variant={mobileSearchOpen ? "default" : "outline"}
                 size="sm"
@@ -983,7 +987,7 @@ function ContactsPage() {
               <Button
                 size="sm"
                 onClick={() => setAddOpen(true)}
-                className="h-8 px-2 sm:px-3"
+                className="h-8 w-8 p-0 sm:w-auto sm:px-3"
                 aria-label="Add contact"
                 title="Add contact"
               >
@@ -992,6 +996,7 @@ function ContactsPage() {
               </Button>
             </div>
           </div>
+
 
           {/* Mobile expanded search row */}
           {mobileSearchOpen && (
