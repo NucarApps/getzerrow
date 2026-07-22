@@ -680,8 +680,10 @@ function DesktopRails() {
           }}
         />
       </div>
+      )}
     </>
   );
+
 }
 
 function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
