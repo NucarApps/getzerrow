@@ -221,6 +221,48 @@ export type Database = {
         }
         Relationships: []
       }
+      classification_feedback: {
+        Row: {
+          correct_folder_id: string | null
+          created_at: string
+          executed_rule_id: string | null
+          id: string
+          note: string | null
+          user_id: string
+        }
+        Insert: {
+          correct_folder_id?: string | null
+          created_at?: string
+          executed_rule_id?: string | null
+          id?: string
+          note?: string | null
+          user_id: string
+        }
+        Update: {
+          correct_folder_id?: string | null
+          created_at?: string
+          executed_rule_id?: string | null
+          id?: string
+          note?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "classification_feedback_correct_folder_id_fkey"
+            columns: ["correct_folder_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "classification_feedback_executed_rule_id_fkey"
+            columns: ["executed_rule_id"]
+            isOneToOne: false
+            referencedRelation: "executed_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       companies: {
         Row: {
           address_line1: string | null
@@ -926,6 +968,7 @@ export type Database = {
           created_at: string
           folder_id: string | null
           id: string
+          kind: string
           name: string
           parent_group_id: string | null
           updated_at: string
@@ -939,6 +982,7 @@ export type Database = {
           created_at?: string
           folder_id?: string | null
           id?: string
+          kind?: string
           name: string
           parent_group_id?: string | null
           updated_at?: string
@@ -952,6 +996,7 @@ export type Database = {
           created_at?: string
           folder_id?: string | null
           id?: string
+          kind?: string
           name?: string
           parent_group_id?: string | null
           updated_at?: string
@@ -1191,6 +1236,41 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      digest_items: {
+        Row: {
+          bucket: string
+          created_at: string
+          email_id: string | null
+          id: string
+          sent_at: string | null
+          user_id: string
+        }
+        Insert: {
+          bucket: string
+          created_at?: string
+          email_id?: string | null
+          id?: string
+          sent_at?: string | null
+          user_id: string
+        }
+        Update: {
+          bucket?: string
+          created_at?: string
+          email_id?: string | null
+          id?: string
+          sent_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "digest_items_email_id_fkey"
+            columns: ["email_id"]
+            isOneToOne: false
+            referencedRelation: "emails"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       email_search_index: {
         Row: {
@@ -1482,6 +1562,90 @@ export type Database = {
             columns: ["gmail_account_id"]
             isOneToOne: false
             referencedRelation: "gmail_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      folder_actions: {
+        Row: {
+          action_type: string
+          bcc_addr: string | null
+          body_template_enc: string | null
+          cc_addr: string | null
+          channel_id: string | null
+          created_at: string
+          delay_minutes: number
+          digest_bucket: string | null
+          enabled: boolean
+          folder_id: string
+          id: string
+          include_body: boolean
+          label_id: string | null
+          move_to_folder_id: string | null
+          static_attachments: Json | null
+          subject_template: string | null
+          to_addr: string | null
+          user_id: string
+          webhook_secret_enc: string | null
+          webhook_url: string | null
+        }
+        Insert: {
+          action_type: string
+          bcc_addr?: string | null
+          body_template_enc?: string | null
+          cc_addr?: string | null
+          channel_id?: string | null
+          created_at?: string
+          delay_minutes?: number
+          digest_bucket?: string | null
+          enabled?: boolean
+          folder_id: string
+          id?: string
+          include_body?: boolean
+          label_id?: string | null
+          move_to_folder_id?: string | null
+          static_attachments?: Json | null
+          subject_template?: string | null
+          to_addr?: string | null
+          user_id: string
+          webhook_secret_enc?: string | null
+          webhook_url?: string | null
+        }
+        Update: {
+          action_type?: string
+          bcc_addr?: string | null
+          body_template_enc?: string | null
+          cc_addr?: string | null
+          channel_id?: string | null
+          created_at?: string
+          delay_minutes?: number
+          digest_bucket?: string | null
+          enabled?: boolean
+          folder_id?: string
+          id?: string
+          include_body?: boolean
+          label_id?: string | null
+          move_to_folder_id?: string | null
+          static_attachments?: Json | null
+          subject_template?: string | null
+          to_addr?: string | null
+          user_id?: string
+          webhook_secret_enc?: string | null
+          webhook_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "folder_actions_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "folder_actions_move_to_folder_id_fkey"
+            columns: ["move_to_folder_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
             referencedColumns: ["id"]
           },
         ]
@@ -1903,6 +2067,7 @@ export type Database = {
           overrides_inbox_override: boolean
           priority: number
           relearn_threshold: number
+          run_on_threads: boolean
           skip_ai: boolean
           snooze_hours: number
           surface_ai_rule: string | null
@@ -1935,6 +2100,7 @@ export type Database = {
           overrides_inbox_override?: boolean
           priority?: number
           relearn_threshold?: number
+          run_on_threads?: boolean
           skip_ai?: boolean
           snooze_hours?: number
           surface_ai_rule?: string | null
@@ -1967,6 +2133,7 @@ export type Database = {
           overrides_inbox_override?: boolean
           priority?: number
           relearn_threshold?: number
+          run_on_threads?: boolean
           skip_ai?: boolean
           snooze_hours?: number
           surface_ai_rule?: string | null
@@ -2979,6 +3146,60 @@ export type Database = {
           },
         ]
       }
+      scheduled_actions: {
+        Row: {
+          attempt: number
+          claimed_at: string | null
+          created_at: string
+          email_id: string | null
+          folder_action_id: string | null
+          id: string
+          last_error: string | null
+          run_at: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          attempt?: number
+          claimed_at?: string | null
+          created_at?: string
+          email_id?: string | null
+          folder_action_id?: string | null
+          id?: string
+          last_error?: string | null
+          run_at: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          attempt?: number
+          claimed_at?: string | null
+          created_at?: string
+          email_id?: string | null
+          folder_action_id?: string | null
+          id?: string
+          last_error?: string | null
+          run_at?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_actions_email_id_fkey"
+            columns: ["email_id"]
+            isOneToOne: false
+            referencedRelation: "emails"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_actions_folder_action_id_fkey"
+            columns: ["folder_action_id"]
+            isOneToOne: false
+            referencedRelation: "folder_actions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sync_state: {
         Row: {
           last_history_id: string | null
@@ -3141,6 +3362,30 @@ export type Database = {
           },
         ]
       }
+      user_settings: {
+        Row: {
+          digest_hour: number
+          digest_timezone: string
+          digest_weekly_dow: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          digest_hour?: number
+          digest_timezone?: string
+          digest_weekly_dow?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          digest_hour?: number
+          digest_timezone?: string
+          digest_weekly_dow?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -3232,6 +3477,23 @@ export type Database = {
           user_id: string
         }[]
       }
+      claim_scheduled_actions: {
+        Args: { p_limit?: number }
+        Returns: {
+          attempt: number
+          email_id: string
+          folder_action_id: string
+          id: string
+          user_id: string
+        }[]
+      }
+      cleanup_old_digest_items: {
+        Args: { p_batch_limit?: number; p_keep_days?: number }
+        Returns: {
+          deleted: number
+          total_before: number
+        }[]
+      }
       cleanup_old_dlq_jobs: {
         Args: { p_batch_limit?: number; p_keep_days?: number }
         Returns: {
@@ -3240,6 +3502,18 @@ export type Database = {
         }[]
       }
       cleanup_old_pubsub_events: {
+        Args: {
+          p_batch_limit?: number
+          p_keep_days?: number
+          p_keep_errors_days?: number
+        }
+        Returns: {
+          deleted: number
+          kept_errors: number
+          total_before: number
+        }[]
+      }
+      cleanup_old_scheduled_actions: {
         Args: {
           p_batch_limit?: number
           p_keep_days?: number
@@ -3388,6 +3662,24 @@ export type Database = {
           snippet: string
           subject: string
           to_addrs: string
+        }[]
+      }
+      get_folder_action_outbound: {
+        Args: { p_action_id: string; p_key: string }
+        Returns: {
+          bcc_addr: string
+          body_template: string
+          cc_addr: string
+          subject_template: string
+          to_addr: string
+        }[]
+      }
+      get_folder_action_webhook: {
+        Args: { p_action_id: string; p_key: string }
+        Returns: {
+          include_body: boolean
+          webhook_secret: string
+          webhook_url: string
         }[]
       }
       get_folder_examples_decrypted: {
@@ -3629,6 +3921,27 @@ export type Database = {
           p_relationship_summary: string
         }
         Returns: undefined
+      }
+      set_folder_action_template: {
+        Args: {
+          p_action_id: string
+          p_body: string
+          p_key: string
+          p_subject: string
+          p_to: string
+          p_user_id: string
+        }
+        Returns: boolean
+      }
+      set_folder_action_webhook: {
+        Args: {
+          p_action_id: string
+          p_key: string
+          p_secret: string
+          p_url: string
+          p_user_id: string
+        }
+        Returns: boolean
       }
       set_gmail_oauth_tokens: {
         Args: {
