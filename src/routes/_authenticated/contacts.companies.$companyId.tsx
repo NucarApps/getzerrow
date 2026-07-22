@@ -287,6 +287,12 @@ function CompanyDetailPage() {
 
   const primaryDomain = q.data.domains[0]?.domain ?? null;
   const tags = q.data.tags.map((t) => t.tag);
+  const logoChoice = primaryDomain
+    ? logoChoicesQ.data?.find((c) => c.domain === primaryDomain)
+    : undefined;
+  const logoProvider = logoChoice?.provider ?? null;
+  const logoSourceDomain = logoChoice?.source_domain ?? null;
+
 
   return (
     <div className="h-full overflow-y-auto">
