@@ -177,10 +177,12 @@ function AuthedLayoutInner({
         </div>
         <ReconnectBanner />
         <BackfillBanner />
-        <div className="min-h-0 flex-1">
+        <div className="min-h-0 flex-1 pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0">
           <Outlet />
         </div>
       </main>
+
+      <MobileDock />
     </div>
   );
 }
@@ -383,6 +385,90 @@ function ViewRow({
         <span className="font-mono text-[11px] font-semibold text-primary">{count}</span>
       )}
     </button>
+  );
+}
+
+/** Mobile bottom app tray (hidden ≥ md) — the dock counterpart of the
+ * desktop icon rail. Holds only the app destinations; views/folders and
+ * Reports/Admin stay in the hamburger drawer. Matches the rail's states:
+ * muted icons, orange top indicator when active, unread dot on Inbox. */
+function MobileDock() {
+  const { counts, navigate, pathname, pick } = useSidebarData();
+  const go = (to: string) => navigate({ to });
+
+  const items: Array<{
+    label: string;
+    icon: React.ReactNode;
+    active: boolean;
+    onClick: () => void;
+    dot?: boolean;
+  }> = [
+    {
+      label: "Inbox",
+      icon: <Inbox className="h-5 w-5" />,
+      active: pathname === "/inbox",
+      onClick: () => pick("all"),
+      dot: counts.total > 0,
+    },
+    {
+      label: "Contacts",
+      icon: <Users className="h-5 w-5" />,
+      active: pathname.startsWith("/contacts"),
+      onClick: () => go("/contacts"),
+    },
+    {
+      label: "Tasks",
+      icon: <CheckCircle2 className="h-5 w-5" />,
+      active: pathname.startsWith("/tasks"),
+      onClick: () => go("/tasks"),
+    },
+    {
+      label: "Meetings",
+      icon: <Video className="h-5 w-5" />,
+      active: pathname === "/meetings",
+      onClick: () => go("/meetings"),
+    },
+    {
+      label: "Settings",
+      icon: <Settings className="h-5 w-5" />,
+      active: pathname.startsWith("/settings"),
+      onClick: () => go("/settings"),
+    },
+  ];
+
+  return (
+    <nav
+      aria-label="Primary"
+      className="fixed inset-x-0 bottom-0 z-40 flex border-t border-sidebar-border bg-sidebar/95 backdrop-blur-sm md:hidden"
+      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+    >
+      {items.map((item) => (
+        <button
+          key={item.label}
+          type="button"
+          onClick={item.onClick}
+          aria-label={item.label}
+          aria-current={item.active ? "page" : undefined}
+          className={`relative flex flex-1 flex-col items-center gap-1 pb-1.5 pt-2 transition-colors ${
+            item.active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {item.active && (
+            <span className="absolute inset-x-5 top-0 h-0.5 rounded-full bg-primary" aria-hidden />
+          )}
+          <span className="relative">
+            {item.icon}
+            {item.dot && (
+              <span
+                className="absolute -right-1 -top-0.5 h-1.5 w-1.5 rounded-full bg-primary"
+                aria-hidden
+              />
+            )}
+          </span>
+          <span className="font-mono text-[9px] uppercase tracking-[0.14em]">{item.label}</span>
+        </button>
+      ))}
+    </nav>
   );
 }
 
