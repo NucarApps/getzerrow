@@ -102,6 +102,13 @@ function CompanyDetailPage() {
     queryFn: () => fetchOne({ data: { id: companyId } }),
   });
 
+  const listLogoChoices = useServerFn(listCompanyLogoChoices);
+  const logoChoicesQ = useQuery({
+    queryKey: ["company-logo-choices"],
+    queryFn: () => listLogoChoices(),
+  });
+
+
   const [form, setForm] = useState({
     name: "",
     website: "",
