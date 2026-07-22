@@ -1229,7 +1229,7 @@ function ContactsPage() {
                                         handleRowClick(c.id);
                                       }
                                     }}
-                                    className={`flex w-full cursor-pointer items-center gap-2.5 border-l-2 px-4 py-2 text-left transition-colors hover:bg-accent/40 ${
+                                    className={`flex w-full cursor-pointer items-center gap-3 border-l-2 px-4 py-3 text-left transition-colors hover:bg-accent/40 sm:gap-2.5 sm:py-2 ${
                                       isActive
                                         ? "border-l-primary bg-primary/[0.07]"
                                         : isChecked
@@ -1327,7 +1327,7 @@ function ContactsPage() {
                               handleRowClick(c.id);
                             }
                           }}
-                          className={`flex w-full cursor-pointer items-center gap-2.5 border-l-2 px-4 py-2.5 text-left transition-colors hover:bg-accent/40 ${
+                          className={`flex w-full cursor-pointer items-center gap-3 border-l-2 px-4 py-3 text-left transition-colors hover:bg-accent/40 sm:gap-2.5 sm:py-2.5 ${
                             isActive
                               ? "border-l-primary bg-primary/[0.07]"
                               : isChecked
