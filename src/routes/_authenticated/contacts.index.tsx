@@ -15,6 +15,7 @@ import {
   Settings2,
   ChevronsDownUp,
   ChevronsUpDown,
+  X,
 } from "lucide-react";
 import { GroupSuggestionsDrawer } from "@/components/contacts/GroupSuggestionsDrawer";
 import { GroupEditorDialog, type GroupRow } from "@/components/contacts/GroupEditorDialog";
@@ -202,6 +203,8 @@ function ContactsPage() {
     null | { mode: "create" } | { mode: "edit"; group: GroupRow }
   >(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [mobileAiOpen, setMobileAiOpen] = useState(false);
   const [groupByCompany, setGroupByCompany] = useState(true);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [drawerId, setDrawerId] = useState<string | null>(null);
