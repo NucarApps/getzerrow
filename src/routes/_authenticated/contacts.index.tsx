@@ -873,6 +873,7 @@ function ContactsPage() {
                     onClick={() => selectFilter(g.id)}
                     onEdit={isAuto ? undefined : () => setGroupDialog({ mode: "edit", group: g })}
                     locked={isAuto}
+                    ai={g.kind === "ai_category"}
                   />
                 </div>
               );
@@ -1431,6 +1432,7 @@ function GroupChip({
   onClick,
   onEdit,
   locked,
+  ai,
 }: {
   active: boolean;
   color: string;
@@ -1439,6 +1441,8 @@ function GroupChip({
   onClick: () => void;
   onEdit?: () => void;
   locked?: boolean;
+  /** AI-derived sender category group (contact_groups.kind = ai_category). */
+  ai?: boolean;
 }) {
   return (
     <div
@@ -1450,6 +1454,14 @@ function GroupChip({
       >
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
         <span className="min-w-0 flex-1 truncate">{label}</span>
+        {ai && (
+          <span
+            className="shrink-0 rounded-full border border-primary/40 px-1 font-mono text-[9px] uppercase text-primary"
+            title="AI-derived sender category — maintained nightly"
+          >
+            AI
+          </span>
+        )}
         {/* Fixed-width, right-aligned count column so every badge shares one line. */}
         <span className="flex w-10 shrink-0 justify-end">
           {typeof count === "number" && (
