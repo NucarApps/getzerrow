@@ -57,14 +57,14 @@ export function CompanyBucketHeader({
   return (
     <div
       style={style}
-      className={`sticky top-0 z-[5] flex w-full items-center gap-2.5 border-b px-4 py-3 text-left transition-colors sm:py-1.5 ${
+      className={`sticky top-0 z-[5] flex w-full items-center gap-2.5 border-b px-4 py-4 text-left transition-colors sm:py-1.5 ${
         tinted ? "" : "border-border bg-[#0d1220]"
       }`}
 
     >
       {selectable && (
         <Checkbox
-          className="h-3.5 w-3.5"
+          className="h-4 w-4 sm:h-3.5 sm:w-3.5"
           checked={
             selectionState === "all" ? true : selectionState === "some" ? "indeterminate" : false
           }
@@ -74,22 +74,38 @@ export function CompanyBucketHeader({
         />
       )}
       <button onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
-        <CompanyLogo
-          domain={domain}
-          name={name}
-          size={22}
-          onColor={(c) => {
-            setColor(c);
-            if (c) onColor?.(c);
-          }}
-          provider={logoProvider}
-          sourceDomain={logoSourceDomain}
-          photoUrl={photoUrl}
-        />
-        <span className="truncate text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/90">
+        <div className="sm:hidden">
+          <CompanyLogo
+            domain={domain}
+            name={name}
+            size={28}
+            onColor={(c) => {
+              setColor(c);
+              if (c) onColor?.(c);
+            }}
+            provider={logoProvider}
+            sourceDomain={logoSourceDomain}
+            photoUrl={photoUrl}
+          />
+        </div>
+        <div className="hidden sm:block">
+          <CompanyLogo
+            domain={domain}
+            name={name}
+            size={22}
+            onColor={(c) => {
+              setColor(c);
+              if (c) onColor?.(c);
+            }}
+            provider={logoProvider}
+            sourceDomain={logoSourceDomain}
+            photoUrl={photoUrl}
+          />
+        </div>
+        <span className="truncate text-[13px] font-semibold uppercase tracking-[0.08em] text-foreground/90 sm:text-[11px]">
           {name}
         </span>
-        <span className="truncate text-[11px] text-muted-foreground">
+        <span className="truncate text-xs text-muted-foreground sm:text-[11px]">
           {domain ? `${domain}${aliasCount > 0 ? ` +${aliasCount}` : ""} · ` : ""}
           {count}
         </span>
@@ -103,22 +119,23 @@ export function CompanyBucketHeader({
           disabled={opening}
           aria-label={`Open ${name}`}
           title="Open company page"
-          className="grid h-6 w-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-background/40 hover:text-primary disabled:opacity-50"
+          className="grid h-8 w-8 shrink-0 place-items-center rounded text-muted-foreground hover:bg-background/40 hover:text-primary disabled:opacity-50 sm:h-6 sm:w-6"
         >
           {opening ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Loader2 className="h-4 w-4 animate-spin sm:h-3.5 sm:w-3.5" />
           ) : (
-            <ArrowUpRight className="h-3.5 w-3.5" />
+            <ArrowUpRight className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
           )}
         </button>
       )}
       <button
         onClick={onToggle}
         aria-label={collapsed ? "Expand" : "Collapse"}
-        className="grid h-6 w-6 shrink-0 place-items-center text-muted-foreground"
+        className="grid h-8 w-8 shrink-0 place-items-center text-muted-foreground sm:h-6 sm:w-6"
       >
-        <ChevronDown className={`h-4 w-4 transition-transform ${collapsed ? "-rotate-90" : ""}`} />
+        <ChevronDown className={`h-5 w-5 transition-transform sm:h-4 sm:w-4 ${collapsed ? "-rotate-90" : ""}`} />
       </button>
     </div>
   );
 }
+

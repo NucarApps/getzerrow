@@ -1,22 +1,11 @@
-## Problem
-On the company page, both logo previews (header monogram at the top and the thumbnail inside the Logo tab) render only from `photoUrl` (`companies.logo_url`) and the `primaryDomain`. The brand-logo picker (`CompanyLogoPicker`) saves a per-domain choice (`provider` + `source_domain`) into `company_logo_choices`, but the preview `<CompanyLogo>` calls never read that choice — so after selecting "24 Auto Group" the previews keep showing the "D" monogram (default provider on the primary domain fails to load, so it falls back to the initial).
+## Make company bucket rows taller on mobile
 
-Contact rows on the Contacts list already read `company-logo-choices` and pass `provider` / `sourceDomain` to `<CompanyLogo>` — the company page just isn't doing the same.
+In `src/components/contacts/CompanyBucketHeader.tsx`, bump the mobile-only sizing (desktop stays compact):
 
-## Fix — `src/routes/_authenticated/contacts.companies.$companyId.tsx`
+- Container padding: `py-3` → `py-4` on mobile, keep `sm:py-1.5`.
+- Company logo: `size={22}` → render `28` on mobile, `22` on desktop (via a `useIsMobile`-style check, or pass responsive size prop; simplest: wrap logo in a responsive `<div>` with two `<CompanyLogo>`s hidden/shown, OR pass `size={window.matchMedia` — cleanest is a small `useMediaQuery('(min-width: 640px)')` hook to pick 22 vs 28).
+- Company name label: `text-[11px]` → `text-[13px]` on mobile, `sm:text-[11px]`.
+- Meta (domain · count): `text-[11px]` → `text-xs` on mobile, `sm:text-[11px]`.
+- Open + chevron buttons: `h-6 w-6` → `h-8 w-8` on mobile, `sm:h-6 sm:w-6`; icons `h-4/h-3.5` → `h-5` on mobile, `sm:h-3.5/sm:h-4`.
 
-1. Load logo choices in the page component:
-   - `import { listCompanyLogoChoices } from "@/lib/company-logo.functions"` (already used elsewhere).
-   - Add `const choicesQ = useQuery({ queryKey: ["company-logo-choices"], queryFn: () => listChoices() })` next to the existing queries.
-   - Derive `const choice = choicesQ.data?.find(c => c.domain === primaryDomain)` → `logoProvider = choice?.provider ?? null`, `logoSourceDomain = choice?.source_domain ?? null`.
-
-2. Pass those into the two `<CompanyLogo>` previews:
-   - Header preview (line 295): add `provider={logoProvider}` and `sourceDomain={logoSourceDomain}`.
-   - `CompanyPhotoSection` thumbnail (line 940): extend the component's props with optional `provider` / `sourceDomain` and forward them; the parent (line 435) passes the derived values.
-
-3. Keep existing `photoUrl` behavior — uploaded photo still wins over brand logo (matches `<CompanyLogo>`'s own precedence: `photoUrl` → provider/source brand logo → monogram).
-
-No changes to picker save logic, no schema changes, no backend changes. `CompanyLogoPicker` already invalidates `["company-logo-choices"]` after a pick, so both previews will refresh instantly.
-
-## Out of scope
-Contacts list logos (already wired), CardDAV/Google push behavior, `logo_url` upload flow.
+Result: company rows on mobile visually match the taller contact rows; desktop layout unchanged.
