@@ -50,7 +50,13 @@ export type FolderActionRow = {
   delay_minutes: number;
   /** call_webhook only — validated by the SSRF guard before enqueue. */
   webhook_url?: string | null;
+  /** send_email only — required; reply/draft derive the recipient. */
+  to_addr?: string | null;
 };
+
+/** Outbound actions (task 8): always executed by the runner cron so
+ * Gmail sends never block the classify hot path. */
+export const OUTBOUND_ACTION_TYPES = new Set(["reply", "draft", "send_email"]);
 
 export type MutationPlan = {
   addLabels: string[];
@@ -165,6 +171,19 @@ export async function dispatchFolderActions(input: DispatchInput): Promise<{
         const guard = validateWebhookUrl(action.webhook_url ?? "");
         if (!guard.ok) throw new Error(guard.reason);
         outcome.payload = { webhook_url: action.webhook_url };
+        await enqueue(action.delay_minutes);
+        outcomes.push(outcome);
+        continue;
+      }
+
+      // Outbound email actions (task 8) always run through the queue —
+      // sending mail is network I/O that must never block classify. A
+      // delay of 0 means "next runner tick" (≤1 minute).
+      if (!isSynthetic && OUTBOUND_ACTION_TYPES.has(action.action_type)) {
+        if (action.action_type === "send_email" && !(action.to_addr ?? "").trim()) {
+          throw new Error("send_email requires a recipient (to_addr)");
+        }
+        if (action.to_addr) outcome.payload = { to_addr: action.to_addr };
         await enqueue(action.delay_minutes);
         outcomes.push(outcome);
         continue;
