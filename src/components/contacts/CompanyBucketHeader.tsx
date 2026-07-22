@@ -57,9 +57,10 @@ export function CompanyBucketHeader({
   return (
     <div
       style={style}
-      className={`sticky top-0 z-[5] flex w-full items-center gap-2.5 border-b px-4 py-1.5 text-left transition-colors ${
+      className={`sticky top-0 z-[5] flex w-full items-center gap-2.5 border-b px-4 py-3 text-left transition-colors sm:py-1.5 ${
         tinted ? "" : "border-border bg-[#0d1220]"
       }`}
+
     >
       {selectable && (
         <Checkbox
