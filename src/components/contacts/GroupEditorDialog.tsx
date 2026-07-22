@@ -56,6 +56,8 @@ export type GroupRow = {
   parent_group_id?: string | null;
   auto_company_subgroups?: boolean;
   auto_generated_from_group_id?: string | null;
+  /** 'manual' (default) | 'ai_category' (nightly AI sender categories) | 'imported'. */
+  kind?: string;
   linked_folder?: { name: string; color: string | null } | null;
   /** Companies placed in this label via company_id rules. */
   companies?: Array<{ id: string; name: string }>;

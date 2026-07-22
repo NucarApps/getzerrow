@@ -69,6 +69,7 @@ import { Route as AuthenticatedContactsCompaniesCompanyIdRouteImport } from './r
 import { Route as ApiMobileEmailsActionRouteImport } from './routes/api/mobile/emails.action'
 import { Route as ApiMobileEmailsFeedRouteImport } from './routes/api/mobile/emails.feed'
 import { Route as ApiPublicCarddavSplatRouteImport } from './routes/api/public/carddav/$'
+import { Route as ApiPublicHooksCategorizeSendersRouteImport } from './routes/api/public/hooks/categorize-senders'
 import { Route as ApiPublicHooksCheckFolderRetryAlertsRouteImport } from './routes/api/public/hooks/check-folder-retry-alerts'
 import { Route as ApiPublicHooksCheckFolderWriteAlertsRouteImport } from './routes/api/public/hooks/check-folder-write-alerts'
 import { Route as ApiPublicHooksConsolidateLabelDuplicatesRouteImport } from './routes/api/public/hooks/consolidate-label-duplicates'
@@ -408,6 +409,12 @@ const ApiPublicCarddavSplatRoute = ApiPublicCarddavSplatRouteImport.update({
   path: '/api/public/carddav/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicHooksCategorizeSendersRoute =
+  ApiPublicHooksCategorizeSendersRouteImport.update({
+    id: '/api/public/hooks/categorize-senders',
+    path: '/api/public/hooks/categorize-senders',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksCheckFolderRetryAlertsRoute =
   ApiPublicHooksCheckFolderRetryAlertsRouteImport.update({
     id: '/api/public/hooks/check-folder-retry-alerts',
@@ -558,6 +565,7 @@ export interface FileRoutesByFullPath {
   '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
   '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
   '/api/public/carddav/$': typeof ApiPublicCarddavSplatRoute
+  '/api/public/hooks/categorize-senders': typeof ApiPublicHooksCategorizeSendersRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   '/api/public/hooks/consolidate-label-duplicates': typeof ApiPublicHooksConsolidateLabelDuplicatesRoute
@@ -633,6 +641,7 @@ export interface FileRoutesByTo {
   '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
   '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
   '/api/public/carddav/$': typeof ApiPublicCarddavSplatRoute
+  '/api/public/hooks/categorize-senders': typeof ApiPublicHooksCategorizeSendersRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   '/api/public/hooks/consolidate-label-duplicates': typeof ApiPublicHooksConsolidateLabelDuplicatesRoute
@@ -711,6 +720,7 @@ export interface FileRoutesById {
   '/api/mobile/emails/action': typeof ApiMobileEmailsActionRoute
   '/api/mobile/emails/feed': typeof ApiMobileEmailsFeedRoute
   '/api/public/carddav/$': typeof ApiPublicCarddavSplatRoute
+  '/api/public/hooks/categorize-senders': typeof ApiPublicHooksCategorizeSendersRoute
   '/api/public/hooks/check-folder-retry-alerts': typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   '/api/public/hooks/check-folder-write-alerts': typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   '/api/public/hooks/consolidate-label-duplicates': typeof ApiPublicHooksConsolidateLabelDuplicatesRoute
@@ -789,6 +799,7 @@ export interface FileRouteTypes {
     | '/api/mobile/emails/action'
     | '/api/mobile/emails/feed'
     | '/api/public/carddav/$'
+    | '/api/public/hooks/categorize-senders'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
     | '/api/public/hooks/consolidate-label-duplicates'
@@ -864,6 +875,7 @@ export interface FileRouteTypes {
     | '/api/mobile/emails/action'
     | '/api/mobile/emails/feed'
     | '/api/public/carddav/$'
+    | '/api/public/hooks/categorize-senders'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
     | '/api/public/hooks/consolidate-label-duplicates'
@@ -941,6 +953,7 @@ export interface FileRouteTypes {
     | '/api/mobile/emails/action'
     | '/api/mobile/emails/feed'
     | '/api/public/carddav/$'
+    | '/api/public/hooks/categorize-senders'
     | '/api/public/hooks/check-folder-retry-alerts'
     | '/api/public/hooks/check-folder-write-alerts'
     | '/api/public/hooks/consolidate-label-duplicates'
@@ -996,6 +1009,7 @@ export interface RootRouteChildren {
   ApiMobileEmailsActionRoute: typeof ApiMobileEmailsActionRoute
   ApiMobileEmailsFeedRoute: typeof ApiMobileEmailsFeedRoute
   ApiPublicCarddavSplatRoute: typeof ApiPublicCarddavSplatRoute
+  ApiPublicHooksCategorizeSendersRoute: typeof ApiPublicHooksCategorizeSendersRoute
   ApiPublicHooksCheckFolderRetryAlertsRoute: typeof ApiPublicHooksCheckFolderRetryAlertsRoute
   ApiPublicHooksCheckFolderWriteAlertsRoute: typeof ApiPublicHooksCheckFolderWriteAlertsRoute
   ApiPublicHooksConsolidateLabelDuplicatesRoute: typeof ApiPublicHooksConsolidateLabelDuplicatesRoute
@@ -1435,6 +1449,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicCarddavSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/categorize-senders': {
+      id: '/api/public/hooks/categorize-senders'
+      path: '/api/public/hooks/categorize-senders'
+      fullPath: '/api/public/hooks/categorize-senders'
+      preLoaderRoute: typeof ApiPublicHooksCategorizeSendersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/check-folder-retry-alerts': {
       id: '/api/public/hooks/check-folder-retry-alerts'
       path: '/api/public/hooks/check-folder-retry-alerts'
@@ -1654,6 +1675,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMobileEmailsActionRoute: ApiMobileEmailsActionRoute,
   ApiMobileEmailsFeedRoute: ApiMobileEmailsFeedRoute,
   ApiPublicCarddavSplatRoute: ApiPublicCarddavSplatRoute,
+  ApiPublicHooksCategorizeSendersRoute: ApiPublicHooksCategorizeSendersRoute,
   ApiPublicHooksCheckFolderRetryAlertsRoute:
     ApiPublicHooksCheckFolderRetryAlertsRoute,
   ApiPublicHooksCheckFolderWriteAlertsRoute:
