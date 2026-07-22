@@ -38,6 +38,7 @@
 }
 
 :root {
+  color-scheme: dark;
   --radius: 0.25rem;
   /* Zerrow deep-space palette — mirrored from public/zerrow-landing.css */
   --background: oklch(0.16 0.025 265); /* #0a0e1a */
