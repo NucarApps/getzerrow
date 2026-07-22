@@ -15,6 +15,7 @@ import {
   Settings2,
   ChevronsDownUp,
   ChevronsUpDown,
+  X,
 } from "lucide-react";
 import { GroupSuggestionsDrawer } from "@/components/contacts/GroupSuggestionsDrawer";
 import { GroupEditorDialog, type GroupRow } from "@/components/contacts/GroupEditorDialog";
@@ -202,6 +203,8 @@ function ContactsPage() {
     null | { mode: "create" } | { mode: "edit"; group: GroupRow }
   >(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [mobileAiOpen, setMobileAiOpen] = useState(false);
   const [groupByCompany, setGroupByCompany] = useState(true);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [drawerId, setDrawerId] = useState<string | null>(null);
@@ -899,7 +902,7 @@ function ContactsPage() {
                   : "Loading…"}
               </p>
             </div>
-            <div className="relative min-w-[160px] max-w-[480px] flex-1">
+            <div className="relative hidden min-w-[160px] max-w-[480px] flex-1 sm:block">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Search people, companies, titles…"
@@ -939,6 +942,34 @@ function ContactsPage() {
               )}
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-1.5">
+              <Button
+                variant={mobileSearchOpen ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setMobileSearchOpen((v) => !v);
+                  setMobileAiOpen(false);
+                }}
+                className="h-8 w-8 p-0 sm:hidden"
+                aria-label="Search contacts"
+                aria-pressed={mobileSearchOpen}
+                title="Search"
+              >
+                <Search className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={mobileAiOpen ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setMobileAiOpen((v) => !v);
+                  setMobileSearchOpen(false);
+                }}
+                className="h-8 w-8 p-0 sm:hidden"
+                aria-label="AI suggestions"
+                aria-pressed={mobileAiOpen}
+                title="AI suggestions"
+              >
+                <Sparkles className="h-4 w-4" />
+              </Button>
               <Button variant="outline" size="sm" asChild className="h-8 w-8 p-0">
                 <Link to="/my-card" aria-label="My card" title="My card">
                   <IdCard className="h-4 w-4" />
@@ -962,8 +993,38 @@ function ContactsPage() {
             </div>
           </div>
 
-          {/* AI strip — live entry points for the AI tools. */}
-          <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border bg-amber-500/5 px-4 py-2 sm:px-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {/* Mobile expanded search row */}
+          {mobileSearchOpen && (
+            <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card/40 px-4 py-2 sm:hidden">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  autoFocus
+                  placeholder="Search people, companies, titles…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="h-9 pl-9"
+                />
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setQuery("");
+                  setMobileSearchOpen(false);
+                }}
+                className="h-8 w-8 shrink-0 p-0"
+                aria-label="Close search"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+
+          {/* AI strip — live entry points for the AI tools. Hidden on mobile unless toggled. */}
+          <div
+            className={`${mobileAiOpen ? "flex" : "hidden"} shrink-0 items-center gap-2 overflow-x-auto border-b border-border bg-amber-500/5 px-4 py-2 sm:flex sm:px-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}
+          >
             <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-400" />
             <AiChip
               label={`${groupSuggestionCount} group suggestion${groupSuggestionCount === 1 ? "" : "s"}`}
@@ -986,6 +1047,15 @@ function ContactsPage() {
               highlight={enrichPending > 0}
               pulsing={enrichScanning}
             />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setMobileAiOpen(false)}
+              className="ml-auto h-7 w-7 shrink-0 p-0 sm:hidden"
+              aria-label="Close AI suggestions"
+            >
+              <X className="h-4 w-4" />
+            </Button>
           </div>
 
           {/* Mobile groups: horizontal pill scroller */}
@@ -1159,7 +1229,7 @@ function ContactsPage() {
                                         handleRowClick(c.id);
                                       }
                                     }}
-                                    className={`flex w-full cursor-pointer items-center gap-2.5 border-l-2 px-4 py-2 text-left transition-colors hover:bg-accent/40 ${
+                                    className={`flex w-full cursor-pointer items-center gap-3 border-l-2 px-4 py-3 text-left transition-colors hover:bg-accent/40 sm:gap-2.5 sm:py-2 ${
                                       isActive
                                         ? "border-l-primary bg-primary/[0.07]"
                                         : isChecked
@@ -1175,7 +1245,7 @@ function ContactsPage() {
                                       aria-label={`Select ${c.name || c.email || "contact"}`}
                                     />
                                     <div
-                                      className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-[11px] font-semibold ${
+                                      className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-semibold sm:h-7 sm:w-7 sm:text-[11px] ${
                                         tint ? "" : "bg-primary/15 text-primary"
                                       }`}
                                       style={
@@ -1189,8 +1259,8 @@ function ContactsPage() {
                                     >
                                       {initialOf(c)}
                                     </div>
-                                    <div className="flex min-w-0 flex-1 items-baseline gap-2">
-                                      <span className="truncate text-sm font-medium text-foreground">
+                                    <div className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
+                                      <span className="truncate text-[15px] font-medium text-foreground sm:text-sm">
                                         {c.name || c.email}
                                       </span>
                                       <span className="min-w-0 truncate text-xs text-muted-foreground">
@@ -1257,7 +1327,7 @@ function ContactsPage() {
                               handleRowClick(c.id);
                             }
                           }}
-                          className={`flex w-full cursor-pointer items-center gap-2.5 border-l-2 px-4 py-2.5 text-left transition-colors hover:bg-accent/40 ${
+                          className={`flex w-full cursor-pointer items-center gap-3 border-l-2 px-4 py-3 text-left transition-colors hover:bg-accent/40 sm:gap-2.5 sm:py-2.5 ${
                             isActive
                               ? "border-l-primary bg-primary/[0.07]"
                               : isChecked
@@ -1286,8 +1356,8 @@ function ContactsPage() {
                               {personInitial}
                             </div>
                           )}
-                          <div className="flex min-w-0 flex-1 items-baseline gap-2">
-                            <span className="truncate text-sm font-medium text-foreground">
+                          <div className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
+                            <span className="truncate text-[15px] font-medium text-foreground sm:text-sm">
                               {c.name || c.email}
                             </span>
                             <span className="min-w-0 truncate text-xs text-muted-foreground">

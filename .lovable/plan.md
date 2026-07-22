@@ -1,39 +1,29 @@
-## What's happening
+## Mobile cleanup for Contacts page
 
-The `X` + `getzerrow.com` bar and bottom share/refresh/compass toolbar in your screenshot are iOS Safari's own browser chrome — not Zerrow UI. Your Home Screen icon is opening the site in a regular Safari tab because the project has no web app manifest and no `apple-mobile-web-app-capable` meta tag. That means iOS shows browser chrome on every page. Why it seems to "go away" on Inbox: Safari auto-collapses the toolbar when the page scrolls the window; Inbox happens to hit that; Contacts (sticky header + inner scroll container starting at top) doesn't, so the chrome stays fully expanded.
+Scope: `src/routes/_authenticated/contacts.index.tsx` only. Desktop layout unchanged (`sm:` and up keeps current behavior).
 
-The correct fix is to make Zerrow install as a full-screen home-screen app so there is no Safari chrome at all — on Contacts or anywhere else.
+### 1. Bigger contact rows on mobile
+- Contact rows (line ~1260) and grouped contact rows (line ~1162): bump mobile padding/gap and avatar/text size (`py-2` → `py-3`, `gap-2.5` → `gap-3`, name text `text-sm` → `text-[15px]`) with `sm:` overrides restoring current desktop density.
+- Company bucket header rows keep current sizing.
 
-## Plan (manifest-only PWA — no service worker, no offline)
+### 2. Collapsible search on mobile
+- Replace the always-visible search input in the header bar (lines 902–910) with:
+  - Mobile (`sm:hidden`): an icon-only Search button that toggles a `searchOpen` state.
+  - Desktop (`hidden sm:block`): the current inline input, unchanged.
+- When `searchOpen` is true on mobile, render a full-width expanded row below the header containing the search input (auto-focused, with a small close/X). Clearing/closing collapses it and resets `query`.
 
-1. **Add `public/manifest.webmanifest`** with:
-   - `name: "Zerrow"`, `short_name: "Zerrow"`
-   - `start_url: "/inbox"`, `scope: "/"`, `id: "/"`
-   - `display: "standalone"`, `orientation: "portrait"`
-   - `background_color: "#0a0e1a"`, `theme_color: "#0a0e1a"` (matches app background)
-   - Icon entries pointing at existing `public/` icons (reuse current favicon/apple-touch icons; no new art).
+### 3. Collapsible AI strip on mobile
+- Header gets a second icon-only button on mobile: the amber `Sparkles` icon (`sm:hidden`), toggling an `aiOpen` state.
+- The AI chip strip (lines 965–989) becomes `hidden sm:flex` by default; on mobile it only renders when `aiOpen` is true, as an expanded row below the header (same amber background, horizontal scroll of chips, includes a close affordance).
+- Desktop keeps the strip always visible exactly as today.
 
-2. **Extend `src/routes/__root.tsx` head()** with:
-   - `<link rel="manifest" href="/manifest.webmanifest">`
-   - `<meta name="theme-color" content="#0a0e1a">`
-   - `<meta name="apple-mobile-web-app-capable" content="yes">`
-   - `<meta name="mobile-web-app-capable" content="yes">`
-   - `<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">`
-   - `<meta name="apple-mobile-web-app-title" content="Zerrow">`
-   - Update viewport to `width=device-width, initial-scale=1, viewport-fit=cover` so the app draws under the notch cleanly in standalone mode.
+### 4. Behavior notes
+- Only one of the two expanded rows is visible at a time on mobile (opening one closes the other) to keep the list area maximized.
+- Both toggles are local `useState` in the component; no route/search-param changes.
+- No changes to data fetching, filters, group pills, or bulk-action bar.
 
-3. **No service worker, no `vite-plugin-pwa`, no offline caching** — those aren't needed for hiding the Safari chrome and add risk to previews.
-
-## What you'll need to do on your phone
-
-iOS caches Home Screen manifest fields at install time. To pick up the change:
-- Delete the current Zerrow icon from your Home Screen
-- Reopen `getzerrow.com` in Safari → Share → **Add to Home Screen**
-- Launch from the new icon — it will open full-screen with no URL bar, no bottom toolbar, on Contacts and every other page
-
-Users who already added an icon will keep seeing browser chrome until they re-add it once; new visitors get the standalone experience on first install.
-
-## Non-goals
-
-- Not adding offline mode, service workers, push notifications, or install prompts.
-- Not changing the Contacts scroll layout — the standalone launch removes the chrome entirely, so the Inbox/Contacts scroll difference stops mattering.
+### Technical details
+- New state: `const [mobileSearchOpen, setMobileSearchOpen] = useState(false)` and `const [mobileAiOpen, setMobileAiOpen] = useState(false)`.
+- Header search wrapper becomes `hidden sm:block relative …`; add a mobile-only `<Button size="sm" className="h-8 w-8 p-0 sm:hidden">` with `Search` icon inside the right-side action cluster (before My card / Scan / Add). Add a matching `Sparkles` mobile-only button next to it.
+- Expanded rows rendered right after the header `</div>` (before the AI strip block), each `sm:hidden`, with `border-b border-border` and internal padding matching current strips. Search row uses the same `Input` styling; AI row reuses the existing `AiChip` list.
+- Contact row class updates use responsive utilities so no desktop regressions: e.g. `px-4 py-3 gap-3 sm:py-2 sm:gap-2.5` and avatar `h-10 w-10 sm:h-8 sm:w-8` if applicable (I'll match whatever the current row uses).
