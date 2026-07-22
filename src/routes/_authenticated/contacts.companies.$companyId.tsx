@@ -871,12 +871,17 @@ function CompanyPhotoSection({
   name,
   primaryDomain,
   logoUrl,
+  provider = null,
+  sourceDomain = null,
 }: {
   companyId: string;
   name: string;
   primaryDomain: string | null;
   logoUrl: string | null;
+  provider?: number | null;
+  sourceDomain?: string | null;
 }) {
+
   const qc = useQueryClient();
   const uploadFn = useServerFn(uploadCompanyPhoto);
   const removeFn = useServerFn(removeCompanyPhoto);
