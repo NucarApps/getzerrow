@@ -52,6 +52,8 @@ export type FolderActionRow = {
   webhook_url?: string | null;
   /** send_email only — required; reply/draft derive the recipient. */
   to_addr?: string | null;
+  /** digest only — which digest the email joins (default daily). */
+  digest_bucket?: string | null;
 };
 
 /** Outbound actions (task 8): always executed by the runner cron so
@@ -172,6 +174,23 @@ export async function dispatchFolderActions(input: DispatchInput): Promise<{
         if (!guard.ok) throw new Error(guard.reason);
         outcome.payload = { webhook_url: action.webhook_url };
         await enqueue(action.delay_minutes);
+        outcomes.push(outcome);
+        continue;
+      }
+
+      // Digest (task 9): collect a reference row; the hourly sender
+      // turns pending rows into one summary email at the user's local
+      // digest hour. Cheap insert — runs inline on the classify path.
+      if (!isSynthetic && action.action_type === "digest") {
+        if (!input.userId) throw new Error("digest action requires user context");
+        const bucket = action.digest_bucket === "weekly" ? "weekly" : "daily";
+        const { error } = await adminTable("digest_items").insert({
+          user_id: input.userId,
+          email_id: input.emailRowId,
+          bucket,
+        });
+        if (error) throw new Error(error.message);
+        outcome.payload = { bucket };
         outcomes.push(outcome);
         continue;
       }
