@@ -62,6 +62,41 @@ import { ScanGmailSection } from "./editor/folder-scan-gmail-section";
 import type { Folder, Filter, GLabel } from "./editor/types";
 export type { RuleNode, Folder, Filter, GLabel } from "./editor/types";
 
+/** One cell in the folder studio's stats strip. */
+function StatCell({
+  label,
+  value,
+  accent = false,
+}: {
+  label: string;
+  value: string | number;
+  accent?: boolean;
+}) {
+  return (
+    <div className="bg-background px-3 py-2">
+      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+        {label}
+      </div>
+      <div className={`mt-0.5 font-mono text-lg ${accent ? "text-primary" : "text-foreground"}`}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+/** "2d ago"-style compact age for the stats strip. */
+function agoShort(iso: string | null): string {
+  if (!iso) return "never";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "never";
+  const days = Math.floor((Date.now() - d.getTime()) / 86_400_000);
+  if (days <= 0) return "today";
+  if (days === 1) return "1d ago";
+  if (days < 31) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  return `${months}mo ago`;
+}
+
 export function FolderEditor({
   folder,
   labels,
@@ -117,6 +152,32 @@ export function FolderEditor({
     },
   });
   const exampleCount = exampleCountQ.data ?? 0;
+
+  // Studio stats strip: total emails in the folder and how many were
+  // auto-sorted (rule/AI/label) in the last 7 days. Head counts only.
+  const emailCountQ = useQuery({
+    queryKey: ["folder-email-count", folder.id],
+    queryFn: async () => {
+      const { count } = await supabase
+        .from("emails")
+        .select("id", { count: "exact", head: true })
+        .eq("folder_id", folder.id);
+      return count ?? 0;
+    },
+  });
+  const sortedWeekQ = useQuery({
+    queryKey: ["folder-sorted-week", folder.id],
+    queryFn: async () => {
+      const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
+      const { count } = await supabase
+        .from("emails")
+        .select("id", { count: "exact", head: true })
+        .eq("folder_id", folder.id)
+        .gte("received_at", since)
+        .in("classified_by", ["ai", "filter", "domain_rule", "gmail_label"]);
+      return count ?? 0;
+    },
+  });
 
   const domainsQ = useQuery({
     queryKey: ["folder-domains", folder.id, exampleCount],
@@ -390,25 +451,50 @@ export function FolderEditor({
 
   return (
     <div>
+      {/* Studio header: color swatch, serif name, priority, re-learn, save. */}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-        <input
-          type="color"
-          value={local.color}
-          onChange={(e) => setLocal({ ...local, color: e.target.value })}
-          className="h-9 w-12 shrink-0 cursor-pointer rounded border border-border bg-transparent"
-        />
+        <label className="relative h-5 w-5 shrink-0 cursor-pointer" title="Change color">
+          <span
+            className="absolute inset-0 rounded-full border border-border"
+            style={{ background: local.color }}
+            aria-hidden
+          />
+          <input
+            type="color"
+            value={local.color}
+            onChange={(e) => setLocal({ ...local, color: e.target.value })}
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            aria-label="Folder color"
+          />
+        </label>
         <Input
-          className="min-w-0 flex-1"
+          className="h-auto min-w-0 flex-1 border-none bg-transparent px-0 font-display text-2xl shadow-none focus-visible:ring-0"
           value={local.name}
           onChange={(e) => setLocal({ ...local, name: e.target.value })}
+          aria-label="Folder name"
         />
         <Input
           type="number"
-          className="w-20 shrink-0"
+          className="h-8 w-16 shrink-0"
           value={local.priority}
           onChange={(e) => setLocal({ ...local, priority: parseInt(e.target.value) || 0 })}
           title="Priority (higher wins)"
         />
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 shrink-0"
+          disabled={learning}
+          onClick={learn}
+          title="Pull matching Gmail messages and re-learn this folder's profile"
+        >
+          {learning ? "Learning…" : "Re-learn"}
+        </Button>
+        {dirty && (
+          <Button size="sm" className="h-8 shrink-0" onClick={save}>
+            Save changes
+          </Button>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="shrink-0" aria-label="More actions">
@@ -421,6 +507,14 @@ export function FolderEditor({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+      </div>
+
+      {/* Stats strip */}
+      <div className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-border bg-border sm:grid-cols-4">
+        <StatCell label="Emails" value={emailCountQ.data ?? "—"} />
+        <StatCell label="Learned examples" value={exampleCount} />
+        <StatCell label="Sorted this week" value={sortedWeekQ.data ?? "—"} accent />
+        <StatCell label="Last learned" value={agoShort(folder.last_learned_at)} />
       </div>
 
       <Tabs value={tab} onValueChange={setTab} className="mt-4">
