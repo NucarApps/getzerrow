@@ -312,7 +312,10 @@ function CompanyDetailPage() {
               name={form.name}
               size={64}
               photoUrl={(q.data.company as { logo_url?: string | null }).logo_url ?? null}
+              provider={logoProvider}
+              sourceDomain={logoSourceDomain}
             />
+
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Building2 className="h-4 w-4" /> Company
