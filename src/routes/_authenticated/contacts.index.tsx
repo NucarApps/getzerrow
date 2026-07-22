@@ -1250,7 +1250,7 @@ function ContactsPage() {
                                       aria-label={`Select ${c.name || c.email || "contact"}`}
                                     />
                                     <div
-                                      className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-semibold sm:h-7 sm:w-7 sm:text-[11px] ${
+                                      className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-xs font-semibold sm:h-7 sm:w-7 sm:text-[11px] ${
                                         tint ? "" : "bg-primary/15 text-primary"
                                       }`}
                                       style={
