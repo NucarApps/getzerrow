@@ -963,7 +963,15 @@ function CompanyPhotoSection({
 
   return (
     <div className="flex items-center gap-4">
-      <CompanyLogo domain={primaryDomain} name={name} size={56} photoUrl={logoUrl} />
+      <CompanyLogo
+        domain={primaryDomain}
+        name={name}
+        size={56}
+        photoUrl={logoUrl}
+        provider={provider}
+        sourceDomain={sourceDomain}
+      />
+
       <div className="flex flex-wrap gap-2">
         <Button
           size="sm"
