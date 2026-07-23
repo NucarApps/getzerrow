@@ -148,6 +148,39 @@ export function withMyContacts(memberResourceNames: string[]): string[] {
     : [...memberResourceNames, MY_CONTACTS_RESOURCE];
 }
 
+/** Paginate Google's contactGroups list to find an existing group with the
+ *  given display name and insert a local link row for it. Used to recover
+ *  from 409 ALREADY_EXISTS on create. Returns the adopted resourceName. */
+async function adoptExistingGoogleGroup(
+  ids: Ids,
+  localGroupId: string,
+  name: string,
+): Promise<string | null> {
+  const { listContactGroupsPage } = await import("./people-client.server");
+  let pageToken: string | undefined = undefined;
+  for (let i = 0; i < 20; i++) {
+    const page = await listContactGroupsPage(ids.gmailAccountId, { pageToken });
+    const match = (page.contactGroups ?? []).find((g) => (g.name ?? "") === name);
+    if (match?.resourceName) {
+      await supabaseAdmin.from("google_group_links").upsert(
+        {
+          user_id: ids.userId,
+          gmail_account_id: ids.gmailAccountId,
+          contact_group_id: localGroupId,
+          resource_name: match.resourceName,
+          etag: match.etag ?? null,
+          last_synced_at: new Date().toISOString(),
+        },
+        { onConflict: "gmail_account_id,contact_group_id" },
+      );
+      return match.resourceName;
+    }
+    if (!page.nextPageToken) break;
+    pageToken = page.nextPageToken;
+  }
+  return null;
+}
+
 async function pushGroups(ids: Ids, progress?: ProgressReporter): Promise<number> {
   // All local groups + linked resource (LEFT JOIN via two queries).
   const { data: groups } = await supabaseAdmin
@@ -207,6 +240,28 @@ async function pushGroups(ids: Ids, progress?: ProgressReporter): Promise<number
         count++;
       }
     } catch (e) {
+      // 409 ALREADY_EXISTS: a group with this name already exists in Google
+      // but isn't linked locally. Adopt it by looking up its resourceName and
+      // inserting a google_group_links row so subsequent syncs update in place
+      // instead of retrying create forever.
+      if (
+        e instanceof PeopleApiError &&
+        e.status === 409 &&
+        !link &&
+        /already exists|ALREADY_EXISTS/i.test(e.message + (e.googleReason ?? ""))
+      ) {
+        const adopted = await adoptExistingGoogleGroup(ids, g.id, label);
+        if (adopted) {
+          count++;
+          logInfo("google_contacts.push.group_adopted", {
+            ...ids,
+            group_id: g.id,
+            resource_name: adopted,
+          });
+          await progress?.increment(1);
+          continue;
+        }
+      }
       logError("google_contacts.push.group_failed", { ...ids, group_id: g.id }, e);
     }
     await progress?.increment(1);
@@ -590,7 +645,19 @@ async function pushContacts(
         );
       }
     } catch (e) {
-      logError("google_contacts.push.contact_failed", { ...ids, contact_id: c.id }, e);
+      // 404 NOT_FOUND: the Google-side contact was deleted but we still hold
+      // the stale resource_name link. Drop the link so the next push cycle
+      // recreates the contact fresh instead of retrying updatePerson forever.
+      if (e instanceof PeopleApiError && e.status === 404) {
+        await supabaseAdmin
+          .from("google_contact_links")
+          .delete()
+          .eq("contact_id", c.id)
+          .eq("gmail_account_id", ids.gmailAccountId);
+        logInfo("google_contacts.push.stale_link_cleared", { ...ids, contact_id: c.id });
+      } else {
+        logError("google_contacts.push.contact_failed", { ...ids, contact_id: c.id }, e);
+      }
     }
     await progress?.increment(1);
   };
