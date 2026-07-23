@@ -9,6 +9,8 @@
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getEmailsDecrypted } from "@/lib/sync/encrypted-reader";
+import { updateEmailEncrypted } from "@/lib/sync/encrypted-writer";
+import { modifyMessage } from "./gmail.server";
 import { bulkCatchupClaim } from "./sync.server";
 import { CATCHUP_MAX_ROUNDS, CATCHUP_TOTAL_BUDGET_MS } from "./sync/config";
 import { logError } from "./log.server";
@@ -69,6 +71,73 @@ export async function getOwnedSchedule(userId: string, id: string) {
   if (error || !data) throw new Error("Schedule not found");
   if (data.user_id !== userId) throw new Error("Not authorized");
   return data;
+}
+
+/**
+ * Evict an email from its folder back to the inbox and keep Gmail in sync.
+ * Shared by the single-email Re-analyze paths (inbox_override / excluded),
+ * the manual "Move to Inbox" action, the bulk reclassify path, and the
+ * always-inbox reprocess sweep — all of which used to inline the identical
+ * three steps: (1) recompute raw_labels (drop the folder label, add INBOX),
+ * (2) updateEmailEncrypted, (3) flip the emails row to folder_id=null /
+ * is_archived=false, then (4) best-effort modifyMessage in Gmail.
+ *
+ * Per-caller variation is expressed via options: `classifiedBy`,
+ * `classificationReason`, and the optional `aiConfidence` / `aiSummary`
+ * (omit to leave the column untouched — matching each original call site) and
+ * the log key used if the Gmail label write fails.
+ */
+export async function restoreEmailToInbox(opts: {
+  emailId: string;
+  gmailAccountId: string;
+  gmailMessageId: string | null;
+  currentLabels: string[];
+  /** The moved-from folder's Gmail label id, removed from raw_labels + Gmail. */
+  fromLabel: string | null;
+  classifiedBy: string;
+  classificationReason: string;
+  /** Pass to set emails.ai_confidence; omit to leave it unchanged. */
+  aiConfidence?: number | null;
+  /** Pass to set the encrypted ai_summary; omit to leave it unchanged. */
+  aiSummary?: string;
+  labelFailureLog: { event: string; payload?: Record<string, unknown> };
+}): Promise<void> {
+  const nextLabels = Array.from(
+    new Set(
+      opts.currentLabels.filter((l) => !opts.fromLabel || l !== opts.fromLabel).concat(["INBOX"]),
+    ),
+  );
+
+  await updateEmailEncrypted({
+    email_id: opts.emailId,
+    classification_reason: opts.classificationReason,
+    ...(opts.aiSummary !== undefined ? { ai_summary: opts.aiSummary } : {}),
+  });
+
+  await supabaseAdmin
+    .from("emails")
+    .update({
+      folder_id: null,
+      is_archived: false,
+      classified_by: opts.classifiedBy,
+      ...(opts.aiConfidence !== undefined ? { ai_confidence: opts.aiConfidence } : {}),
+      matched_filter_ids: [],
+      raw_labels: nextLabels,
+    })
+    .eq("id", opts.emailId);
+
+  if (opts.gmailMessageId) {
+    try {
+      await modifyMessage(
+        opts.gmailAccountId,
+        opts.gmailMessageId,
+        ["INBOX"],
+        opts.fromLabel ? [opts.fromLabel] : [],
+      );
+    } catch (e) {
+      logError(opts.labelFailureLog.event, opts.labelFailureLog.payload ?? {}, e);
+    }
+  }
 }
 
 export function extractDomain(addr: string | null): string | null {

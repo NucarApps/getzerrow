@@ -8,6 +8,7 @@ import {
   getOwnedSchedule,
   extractDomain,
   drainCatchupRounds,
+  restoreEmailToInbox,
   ianaTz,
 } from "../gmail-helpers.server";
 import { performMove } from "../move-email.server";
@@ -742,51 +743,27 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
           // it shows up in the inbox view, which filters on the INBOX label +
           // is_archived = false. Transient ai_error is skipped so a failed AI
           // call never yanks a correctly-filed email.
-          let fromLabel: string | null = null;
           const { data: f } = await supabaseAdmin
             .from("folders")
             .select("gmail_label_id")
             .eq("id", email.folder_id)
             .maybeSingle();
-          fromLabel = f?.gmail_label_id ?? null;
+          const fromLabel = f?.gmail_label_id ?? null;
 
-          const currentLabels = ((email.raw_labels as string[] | null) ?? []) as string[];
-          const nextLabels = Array.from(
-            new Set(currentLabels.filter((l) => !fromLabel || l !== fromLabel).concat(["INBOX"])),
-          );
-
-          await updateEmailEncrypted({
-            email_id: email.id,
-            classification_reason: result.classification_reason ?? "",
+          await restoreEmailToInbox({
+            emailId: email.id,
+            gmailAccountId: email.gmail_account_id,
+            gmailMessageId: email.gmail_message_id,
+            currentLabels: ((email.raw_labels as string[] | null) ?? []) as string[],
+            fromLabel,
+            classifiedBy: result.classified_by,
+            classificationReason: result.classification_reason ?? "",
+            aiConfidence: result.ai_confidence,
+            labelFailureLog: {
+              event: "gmail.reclassify.inbox_restore_label_failed",
+              payload: { email_id: email.id, user_id: context.userId },
+            },
           });
-          await supabaseAdmin
-            .from("emails")
-            .update({
-              folder_id: null,
-              is_archived: false,
-              classified_by: result.classified_by,
-              ai_confidence: result.ai_confidence,
-              matched_filter_ids: [],
-              raw_labels: nextLabels,
-            })
-            .eq("id", email.id);
-
-          if (email.gmail_message_id) {
-            try {
-              await modifyMessage(
-                email.gmail_account_id,
-                email.gmail_message_id,
-                ["INBOX"],
-                fromLabel ? [fromLabel] : [],
-              );
-            } catch (e) {
-              logError(
-                "gmail.reclassify.inbox_restore_label_failed",
-                { email_id: email.id, user_id: context.userId },
-                e,
-              );
-            }
-          }
           routed++;
         } else {
           unchanged++;

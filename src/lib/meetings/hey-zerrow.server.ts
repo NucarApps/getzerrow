@@ -2,7 +2,7 @@
 // strictly in the live transcript buffer for the current bot. Server-only.
 import { generateText } from "ai";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
+import { getModel } from "@/lib/ai-gateway";
 import { logError, logInfo } from "@/lib/log.server";
 import { sendBotChatMessage } from "@/lib/recall.server";
 
@@ -61,11 +61,8 @@ export async function askZerrowInMeeting(input: {
   let answer: string;
   let error: string | null = null;
   try {
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) throw new Error("LOVABLE_API_KEY missing");
-    const gateway = createLovableAiGatewayProvider(apiKey);
     const result = await generateText({
-      model: gateway(MODEL),
+      model: getModel(MODEL),
       messages: [
         {
           role: "system",

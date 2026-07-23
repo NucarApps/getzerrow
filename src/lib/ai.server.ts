@@ -1,7 +1,8 @@
 // AI classification & summarization. Server-only.
 import { generateText, Output } from "ai";
 import { z } from "zod";
-import { createLovableAiGatewayProvider } from "./ai-gateway";
+import { getModel } from "./ai-gateway";
+import { raceTimeout } from "./ai-budget";
 import {
   UNTRUSTED_BOUNDARY_INSTRUCTION,
   sanitizeEmailForPrompt,
@@ -9,6 +10,7 @@ import {
   wrapUntrustedEmail,
   capConfidenceForFlags,
   sanitizeReasonNote,
+  parseLenientJson,
   type SanitizeFlag,
 } from "./ai-untrusted";
 import {
@@ -16,28 +18,6 @@ import {
   AI_CLASSIFY_ATTEMPT_TIMEOUT_MS,
   AI_CLASSIFY_TOTAL_BUDGET_MS,
 } from "./sync/config";
-
-/** Race a promise against a hard per-attempt timeout so one stalled
- * upstream model call can't eat the whole classification budget. */
-async function raceTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race<T>([
-      p,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-function getModel(modelId: string = "google/gemini-2.5-flash") {
-  const key = process.env.LOVABLE_API_KEY;
-  if (!key) throw new Error("LOVABLE_API_KEY missing");
-  return createLovableAiGatewayProvider(key)(modelId);
-}
 
 export type ClassifyFolder = {
   id: string;
@@ -181,19 +161,13 @@ Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this 
         Math.min(AI_CLASSIFY_ATTEMPT_TIMEOUT_MS, Math.max(budgetLeft(), 1)),
         `classify text-json (${modelId})`,
       );
-      const cleaned = text
-        .trim()
-        .replace(/^```(?:json)?\s*/i, "")
-        .replace(/```\s*$/i, "");
-      const start = cleaned.indexOf("{");
-      const end = cleaned.lastIndexOf("}");
-      if (start < 0 || end <= start) {
+      const parsed = parseLenientJson(text, schema);
+      if (parsed === null) {
         lastError = `empty/non-JSON response (len=${text.length})`;
         console.error(`classify text-json failed (${modelId})`, lastError);
         return null;
       }
-      const parsed = JSON.parse(cleaned.slice(start, end + 1));
-      return schema.parse(parsed);
+      return parsed;
     } catch (e) {
       lastError = describeError(e);
       console.error(`classify text-json failed (${modelId})`, lastError);
@@ -349,17 +323,12 @@ Respond with ONLY a JSON object (no markdown, no prose, no code fences) of this 
         Math.min(AI_CLASSIFY_ATTEMPT_TIMEOUT_MS, Math.max(budgetLeft(), 1)),
         `surface text-json (${modelId})`,
       );
-      const cleaned = text
-        .trim()
-        .replace(/^```(?:json)?\s*/i, "")
-        .replace(/```\s*$/i, "");
-      const start = cleaned.indexOf("{");
-      const end = cleaned.lastIndexOf("}");
-      if (start < 0 || end <= start) {
+      const parsed = parseLenientJson(text, schema);
+      if (parsed === null) {
         lastError = `empty/non-JSON response (len=${text.length})`;
         return null;
       }
-      return schema.parse(JSON.parse(cleaned.slice(start, end + 1)));
+      return parsed;
     } catch (e) {
       lastError = (e as Error)?.message?.slice(0, 300) ?? "unknown";
       console.error(`surface text-json failed (${modelId})`, lastError);
@@ -777,25 +746,11 @@ ${list}`;
 
   // Race the AI call against a hard timeout so the background worker never
   // hangs on a stuck upstream response.
-  const withTimeout = async <T>(p: Promise<T>, ms: number, label: string): Promise<T> => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      return await Promise.race<T>([
-        p,
-        new Promise<T>((_, reject) => {
-          timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-        }),
-      ]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  };
-
   const PRIMARY_MODEL = "google/gemini-3-flash-preview";
 
   // Primary: structured output with a fast model.
   try {
-    const { output } = await withTimeout(
+    const { output } = await raceTimeout(
       generateText({
         model: getModel(PRIMARY_MODEL),
         output: Output.object({
@@ -833,7 +788,7 @@ Be concise. Skip empty/duplicate content. If there are no emails, say so briefly
   }
 
   // Fallback: plain Markdown, then convert to text/html.
-  const { text } = await withTimeout(
+  const { text } = await raceTimeout(
     generateText({
       model: getModel(PRIMARY_MODEL),
       prompt: `${basePrompt}

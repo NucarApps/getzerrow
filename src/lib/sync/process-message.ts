@@ -26,6 +26,7 @@ import { getMessage, modifyMessage, parseMessage, sendMessage } from "../gmail.s
 import type { AccountContext } from "./account-context";
 import { loadAccountContext } from "./account-context";
 import { jitter } from "./backoff";
+import { EXCLUDED_LABELS } from "./config";
 import {
   classifyByRules,
   classifyByAi,
@@ -469,7 +470,6 @@ export async function processGmailMessage(
   }
 
   const labels = parsed.raw_labels ?? [];
-  const EXCLUDED_LABELS = ["SENT", "DRAFT", "TRASH", "SPAM", "CHAT"];
   if (EXCLUDED_LABELS.some((l) => labels.includes(l))) return { skipped: true };
   const inInbox = labels.includes("INBOX");
 

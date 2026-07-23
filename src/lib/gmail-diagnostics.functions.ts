@@ -20,6 +20,7 @@ import { getRequestHost } from "@tanstack/react-start/server";
 import { getMessageLabels } from "./gmail.server";
 import { runMessageJobs, retryMessageJob, enqueueMessageJob } from "./sync.server";
 import { getEmailAccount } from "./gmail-helpers.server";
+import { reconcileLabelsToPatch } from "@/lib/sync/label-merge";
 import { getEmailListFieldsDecrypted } from "@/lib/sync/encrypted-reader";
 
 export const listFolderHistory = createServerFn({ method: "POST" })
@@ -282,25 +283,13 @@ export const resyncMessage = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const email = await getEmailAccount(context.userId, data.id);
     const labels = await getMessageLabels(email.gmail_account_id, email.gmail_message_id);
-    if (labels === null) {
+    const rec = reconcileLabelsToPatch(labels);
+    if (rec.delete) {
       await supabaseAdmin.from("emails").delete().eq("id", data.id);
       return { deleted: true };
     }
-    if (labels.includes("TRASH")) {
-      await supabaseAdmin.from("emails").delete().eq("id", data.id);
-      return { deleted: true };
-    }
-    const inInbox = labels.includes("INBOX");
-    const unread = labels.includes("UNREAD");
-    await supabaseAdmin
-      .from("emails")
-      .update({
-        raw_labels: labels,
-        is_archived: !inInbox,
-        is_read: !unread,
-      })
-      .eq("id", data.id);
-    return { in_inbox: inInbox, unread, labels };
+    await supabaseAdmin.from("emails").update(rec.patch).eq("id", data.id);
+    return { in_inbox: rec.inInbox, unread: rec.unread, labels };
   });
 
 /**

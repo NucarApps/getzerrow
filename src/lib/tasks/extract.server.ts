@@ -4,7 +4,8 @@
 import { generateText } from "ai";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
+import { getModel } from "@/lib/ai-gateway";
+import { parseLenientJson } from "@/lib/ai-untrusted";
 import { logError, logInfo } from "@/lib/log.server";
 
 const MODEL = "google/gemini-3.5-flash";
@@ -25,27 +26,15 @@ async function callExtractor(
   system: string,
   user: string,
 ): Promise<z.infer<typeof ExtractedTaskSchema>> {
-  const apiKey = process.env.LOVABLE_API_KEY;
-  if (!apiKey) throw new Error("LOVABLE_API_KEY missing");
-  const gateway = createLovableAiGatewayProvider(apiKey);
   const { text } = await generateText({
-    model: gateway(MODEL),
+    model: getModel(MODEL),
     messages: [
       { role: "system", content: system },
       { role: "user", content: user.slice(0, 12000) },
     ],
   });
-  // Model asked to return raw JSON; be tolerant to fenced blocks.
-  const cleaned = text
-    .trim()
-    .replace(/^```json\n?/i, "")
-    .replace(/^```\n?/, "")
-    .replace(/```$/, "");
-  try {
-    return ExtractedTaskSchema.parse(JSON.parse(cleaned));
-  } catch {
-    return { tasks: [] };
-  }
+  // Model asked to return raw JSON; be tolerant to fenced blocks / prose.
+  return parseLenientJson(text, ExtractedTaskSchema) ?? { tasks: [] };
 }
 
 async function claimRun(

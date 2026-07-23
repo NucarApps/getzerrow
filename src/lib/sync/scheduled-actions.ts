@@ -27,6 +27,7 @@ import {
 import { renderTemplate } from "./action-templates";
 import { getEmailsDecrypted } from "./encrypted-reader";
 import { AI_CLASSIFY_ATTEMPT_TIMEOUT_MS } from "./config";
+import { raceTimeout } from "../ai-budget";
 
 const admin = () => supabaseAdmin as unknown as SupabaseClient;
 
@@ -250,21 +251,6 @@ type OutboundEmail = {
   body_text: string | null;
   received_at: string | null;
 };
-
-/** Race a promise against a hard timeout (AI fallback must stay bounded). */
-async function raceTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race<T>([
-      p,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
 
 /** Execute reply / draft / send_email (task 8). Templates are decrypted
  * via the service-role RPC and rendered against whitelisted tokens; a

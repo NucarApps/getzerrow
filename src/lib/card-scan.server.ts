@@ -6,14 +6,9 @@
 import { z } from "zod";
 import { generateText, Output } from "ai";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { createLovableAiGatewayProvider } from "./ai-gateway";
+import { getModel } from "./ai-gateway";
+import { parseLenientJson } from "./ai-untrusted";
 import { setContactEncryptedFields } from "./sync/encrypted-writer";
-
-function getModel(modelId = "google/gemini-2.5-flash") {
-  const key = process.env.LOVABLE_API_KEY;
-  if (!key) throw new Error("LOVABLE_API_KEY missing");
-  return createLovableAiGatewayProvider(key)(modelId);
-}
 
 const SCAN_SCHEMA = z.object({
   name: z.string().nullable(),
@@ -104,19 +99,13 @@ export async function extractCardDraft(imageDataUrl: string): Promise<CardScanDr
           },
         ],
       });
-      const cleaned = text
-        .trim()
-        .replace(/^```(?:json)?\s*/i, "")
-        .replace(/```\s*$/i, "");
-      const start = cleaned.indexOf("{");
-      const end = cleaned.lastIndexOf("}");
-      if (start < 0 || end <= start) {
+      const parsed = parseLenientJson(text, SCAN_SCHEMA);
+      if (parsed === null) {
         lastError = `empty/non-JSON response (len=${text.length})`;
         console.error(`mobile card scan text-json failed (${modelId})`, lastError);
         return null;
       }
-      const parsed = JSON.parse(cleaned.slice(start, end + 1));
-      return SCAN_SCHEMA.parse(parsed);
+      return parsed;
     } catch (e) {
       lastError = describeError(e);
       console.error(`mobile card scan text-json failed (${modelId})`, lastError);

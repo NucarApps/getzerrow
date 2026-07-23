@@ -39,3 +39,25 @@ export function computeLabelPatch(
   if (added.includes("UNREAD")) patch.is_read = false;
   return patch;
 }
+
+export type LabelReconcile =
+  { delete: true } | { delete: false; patch: LabelPatch; inInbox: boolean; unread: boolean };
+
+/**
+ * Reconcile a row against a FULL label snapshot freshly fetched from Gmail
+ * (as opposed to a history delta — see computeLabelPatch for that). A null
+ * snapshot (message no longer exists) or a TRASH label means the row should
+ * be deleted; otherwise returns the patch to apply plus the derived inbox /
+ * unread state so callers can update their counters.
+ */
+export function reconcileLabelsToPatch(labels: string[] | null): LabelReconcile {
+  if (labels === null || labels.includes("TRASH")) return { delete: true };
+  const inInbox = labels.includes("INBOX");
+  const unread = labels.includes("UNREAD");
+  return {
+    delete: false,
+    patch: { raw_labels: labels, is_archived: !inInbox, is_read: !unread },
+    inInbox,
+    unread,
+  };
+}

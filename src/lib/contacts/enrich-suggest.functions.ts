@@ -3,7 +3,8 @@ import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
+import { getModel } from "@/lib/ai-gateway";
+import { extractDomain, isPersonalDomain } from "@/lib/company-domains";
 import { getEmailsDecrypted, searchEmailsParticipantsDecrypted } from "../sync/encrypted-reader";
 import { setContactEncryptedFields } from "../sync/encrypted-writer";
 import { normalizePhone } from "./phone";
@@ -12,23 +13,6 @@ import { firstLastTokens, nameMatchConfidence, type NameMatchConfidence } from "
 const logInfo = (event: string, payload: Record<string, unknown>) => {
   console.info(JSON.stringify({ event, ...payload }));
 };
-
-const PERSONAL_DOMAINS = new Set([
-  "gmail.com",
-  "googlemail.com",
-  "yahoo.com",
-  "outlook.com",
-  "hotmail.com",
-  "icloud.com",
-  "me.com",
-  "aol.com",
-  "protonmail.com",
-  "proton.me",
-  "live.com",
-  "msn.com",
-  "pm.me",
-  "mac.com",
-]);
 
 type SuggestionField = "email" | "phone" | "company" | "title" | "name";
 type Confidence = "high" | "medium" | "low";
@@ -156,8 +140,7 @@ export async function scanContactEnrichmentImpl(
       (allContactEmails ?? []).map((r) => (r.email ?? "").toLowerCase()).filter(Boolean),
     );
 
-    const gateway = createLovableAiGatewayProvider(apiKey);
-    const model = gateway("google/gemini-2.5-flash");
+    const model = getModel();
     let aiSuccess = 0;
     let aiEmpty = 0;
 
@@ -333,8 +316,8 @@ ${corpus}`;
       if (!c.email || c.company) continue;
       if (suggestedCompanyContacts.has(c.id)) continue;
       if (dismissedDomainCompany.has(c.id)) continue;
-      const domain = c.email.split("@")[1]?.toLowerCase();
-      if (!domain || PERSONAL_DOMAINS.has(domain)) continue;
+      const domain = extractDomain(c.email);
+      if (!domain || isPersonalDomain(domain)) continue;
       const company = deriveCompanyFromDomain(domain);
       if (!company) continue;
       const key = `${c.id}|company|${company.toLowerCase()}`;

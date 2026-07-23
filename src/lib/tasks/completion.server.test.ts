@@ -22,7 +22,11 @@ const getEmailListFieldsDecrypted = vi.fn(async (..._args: unknown[]) => ({
 vi.mock("@/lib/sync/encrypted-reader", () => ({
   getEmailListFieldsDecrypted: (...args: unknown[]) => getEmailListFieldsDecrypted(...args),
 }));
-vi.mock("@/lib/ai-gateway", () => ({ createLovableAiGatewayProvider: vi.fn(() => () => ({})) }));
+vi.mock("@/lib/ai-gateway", () => ({
+  createLovableAiGatewayProvider: vi.fn(() => () => ({})),
+  getModel: vi.fn(() => ({})),
+  getGateway: vi.fn(() => () => ({})),
+}));
 vi.mock("@/lib/log.server", () => ({ logError: vi.fn(), logInfo: vi.fn() }));
 
 import { scanSentForTaskCompletion } from "./completion.server";

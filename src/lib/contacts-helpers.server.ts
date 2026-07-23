@@ -3,8 +3,12 @@
 // handler / inputValidator — belongs here so the `?tss-serverfn-split`
 // transform never has to reach across sibling module scope for it.
 import { z } from "zod";
-import { createLovableAiGatewayProvider } from "./ai-gateway";
+import { getModel } from "./ai-gateway";
 import { listMessages, getMessage, parseMessage } from "./gmail.server";
+
+// Re-exported so contacts/*.functions.ts can keep importing it from here (the
+// serverfn-split transform prefers cross-file symbols to resolve in this module).
+export { getModel };
 
 /** Fetch recent Gmail messages matching a query, for a user's connected accounts.
  * Returns parsed messages mapped into the same shape as our local emails_decrypted rows.
@@ -34,12 +38,6 @@ export async function fetchFromGmail(
     }
   }
   return [];
-}
-
-export function getModel(modelId = "google/gemini-2.5-flash") {
-  const key = process.env.LOVABLE_API_KEY;
-  if (!key) throw new Error("LOVABLE_API_KEY missing");
-  return createLovableAiGatewayProvider(key)(modelId);
 }
 
 export const EXTRACT_SCHEMA = z.object({

@@ -15,6 +15,8 @@
 // Pure string logic — no AI SDK, no Supabase — so tests can cover it
 // without mocking the gateway.
 
+import type { ZodType } from "zod";
+
 export const UNTRUSTED_EMAIL_OPEN = "<untrusted_email>";
 export const UNTRUSTED_EMAIL_CLOSE = "</untrusted_email>";
 
@@ -140,4 +142,25 @@ export function capConfidenceForFlags(confidence: number, flags: SanitizeFlag[])
 export function sanitizeReasonNote(flags: SanitizeFlag[]): string {
   if (flags.length === 0) return "";
   return ` (input sanitized: ${flags.join(", ")}; confidence capped at ${AI_CONFIDENCE_CAP_ON_SANITIZE})`;
+}
+
+/** Tolerantly parse a model's JSON reply: strip a leading/trailing ```json
+ * code fence, slice to the outermost `{...}`, JSON.parse, then validate with
+ * `schema`. Returns null on any failure (empty, no JSON object, malformed
+ * JSON, or schema mismatch) so best-effort callers can fall back or skip.
+ * Consolidates the fence-strip + brace-slice + parse dance that used to be
+ * copy-pasted across the AI classify/extract/scan callers. */
+export function parseLenientJson<T>(text: string, schema: ZodType<T>): T | null {
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/```\s*$/i, "");
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    return schema.parse(JSON.parse(cleaned.slice(start, end + 1)));
+  } catch {
+    return null;
+  }
 }

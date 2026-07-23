@@ -4,7 +4,8 @@ import { generateText } from "ai";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getEmailListFieldsDecrypted } from "@/lib/sync/encrypted-reader";
-import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
+import { getModel } from "@/lib/ai-gateway";
+import { parseLenientJson } from "@/lib/ai-untrusted";
 import { logError, logInfo } from "@/lib/log.server";
 
 const MODEL = "google/gemini-3.5-flash";
@@ -109,26 +110,26 @@ async function scanUser(userId: string): Promise<number> {
       ),
     ].join("\n");
 
-    let parsed: z.infer<typeof MatchSchema>;
+    let parsed: z.infer<typeof MatchSchema> | null;
     try {
-      const apiKey = process.env.LOVABLE_API_KEY;
-      if (!apiKey) throw new Error("LOVABLE_API_KEY missing");
-      const gateway = createLovableAiGatewayProvider(apiKey);
       const { text } = await generateText({
-        model: gateway(MODEL),
+        model: getModel(MODEL),
         messages: [
           { role: "system", content: system },
           { role: "user", content: user.slice(0, 8000) },
         ],
       });
-      const cleaned = text
-        .trim()
-        .replace(/^```json\n?/i, "")
-        .replace(/^```\n?/, "")
-        .replace(/```$/, "");
-      parsed = MatchSchema.parse(JSON.parse(cleaned));
+      parsed = parseLenientJson(text, MatchSchema);
     } catch (e) {
       logError("tasks_completion_llm_failed", { userId, emailId: email.id }, e);
+      continue;
+    }
+    if (!parsed) {
+      logError(
+        "tasks_completion_llm_failed",
+        { userId, emailId: email.id },
+        new Error("unparseable AI response"),
+      );
       continue;
     }
 

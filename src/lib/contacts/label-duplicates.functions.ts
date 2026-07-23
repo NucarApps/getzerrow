@@ -13,7 +13,7 @@ import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
+import { getModel } from "@/lib/ai-gateway";
 import {
   clusterLabels,
   sortCanonicalFirst,
@@ -147,8 +147,7 @@ export const findDuplicateLabels = createServerFn({ method: "POST" })
           aiError = "Missing LOVABLE_API_KEY";
         } else {
           const { generateText, Output, NoObjectGeneratedError } = await import("ai");
-          const gateway = createLovableAiGatewayProvider(apiKey);
-          const model = gateway("google/gemini-2.5-flash");
+          const model = getModel();
           const AiSchema = z.object({
             clusters: z.array(
               z.object({
