@@ -645,7 +645,19 @@ async function pushContacts(
         );
       }
     } catch (e) {
-      logError("google_contacts.push.contact_failed", { ...ids, contact_id: c.id }, e);
+      // 404 NOT_FOUND: the Google-side contact was deleted but we still hold
+      // the stale resource_name link. Drop the link so the next push cycle
+      // recreates the contact fresh instead of retrying updatePerson forever.
+      if (e instanceof PeopleApiError && e.status === 404) {
+        await supabaseAdmin
+          .from("google_contact_links")
+          .delete()
+          .eq("contact_id", c.id)
+          .eq("gmail_account_id", ids.gmailAccountId);
+        logInfo("google_contacts.push.stale_link_cleared", { ...ids, contact_id: c.id });
+      } else {
+        logError("google_contacts.push.contact_failed", { ...ids, contact_id: c.id }, e);
+      }
     }
     await progress?.increment(1);
   };
