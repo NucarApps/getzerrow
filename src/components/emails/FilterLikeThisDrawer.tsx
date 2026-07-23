@@ -21,7 +21,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
-import { AtSign, Globe, Type, Loader2, Inbox } from "lucide-react";
+import { AtSign, Globe, Type, Inbox } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 
 type Folder = { id: string; name: string; color: string };
@@ -286,7 +287,7 @@ export function FilterLikeThisDrawer({
             <div className="mt-1.5 min-h-[18px] text-xs text-muted-foreground">
               {countLoading ? (
                 <span className="inline-flex items-center gap-1.5">
-                  <Loader2 className="h-3 w-3 animate-spin" /> Counting matches…
+                  <Spinner className="h-3 w-3" /> Counting matches…
                 </span>
               ) : count !== null ? (
                 <>
@@ -433,7 +434,7 @@ export function FilterLikeThisDrawer({
           <Button onClick={handleSave} disabled={!canSave}>
             {saving ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving…
+                <Spinner className="mr-2 h-4 w-4" /> Saving…
               </>
             ) : isInboxMode ? (
               "Add to inbox list"

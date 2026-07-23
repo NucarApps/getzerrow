@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { Loader2, Sparkles, Merge } from "lucide-react";
+import { Sparkles, Merge } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { findDuplicateCompanies, mergeCluster } from "@/lib/companies/companies.functions";
 import { AiUnavailableNote } from "@/components/contacts/AiUnavailableNote";
@@ -83,7 +84,7 @@ export function CompanyDuplicatesDrawer({ open, onOpenChange }: Props) {
             </Label>
           </div>
           <Button size="sm" variant="outline" onClick={() => q.refetch()} disabled={q.isFetching}>
-            {q.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Rescan"}
+            {q.isFetching ? <Spinner className="h-4 w-4" /> : "Rescan"}
           </Button>
         </div>
 
@@ -91,7 +92,7 @@ export function CompanyDuplicatesDrawer({ open, onOpenChange }: Props) {
 
         {q.isLoading && (
           <div className="mt-8 flex justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <Spinner className="h-6 w-6 text-muted-foreground" />
           </div>
         )}
 

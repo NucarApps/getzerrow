@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { ShieldOff, Plus, X, Loader2 } from "lucide-react";
+import { ShieldOff, Plus, X } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -86,7 +87,7 @@ export function MeetingRecordBlocklistCard() {
           />
           <Button onClick={handleAdd} disabled={addMutation.isPending}>
             {addMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Spinner className="h-4 w-4" />
             ) : (
               <>
                 <Plus className="h-4 w-4" />

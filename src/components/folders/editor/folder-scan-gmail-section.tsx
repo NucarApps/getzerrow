@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Spinner } from "@/components/ui/spinner";
 import { useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { scanGmailForFolder } from "@/lib/gmail.functions";
@@ -11,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
+
 import { toast } from "sonner";
 import type { Folder } from "./types";
 
@@ -91,7 +92,7 @@ export function ScanGmailSection({
             </SelectContent>
           </Select>
           <Button size="sm" onClick={run} disabled={busy || !hasIncludeRules}>
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Scan now"}
+            {busy ? <Spinner className="h-3.5 w-3.5" /> : "Scan now"}
           </Button>
         </div>
       </div>

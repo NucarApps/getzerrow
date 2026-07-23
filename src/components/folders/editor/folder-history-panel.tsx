@@ -10,16 +10,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Bot,
-  Hand,
-  Filter as FilterIcon,
-  Tag,
-  Inbox,
-  Loader2,
-  ChevronDown,
-  MoveRight,
-} from "lucide-react";
+import { Bot, Hand, Filter as FilterIcon, Tag, Inbox, ChevronDown, MoveRight } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import type { Folder, Filter, HistoryEmail } from "./types";
 
@@ -160,7 +152,7 @@ export function HistoryPanel({
   if (historyQ.isLoading) {
     return (
       <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading history…
+        <Spinner className="h-4 w-4" /> Loading history…
       </div>
     );
   }
@@ -272,7 +264,7 @@ export function HistoryPanel({
                   <div className="rounded-md border border-border bg-background p-3">
                     {loadingSuggest && (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Loader2 className="h-4 w-4 animate-spin" /> Asking AI for rule updates…
+                        <Spinner className="h-4 w-4" /> Asking AI for rule updates…
                       </div>
                     )}
                     {suggestion && (
@@ -341,7 +333,7 @@ export function HistoryPanel({
           >
             {historyQ.isFetching ? (
               <>
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Loading…
+                <Spinner className="mr-1.5 h-3.5 w-3.5" /> Loading…
               </>
             ) : (
               "Load more"

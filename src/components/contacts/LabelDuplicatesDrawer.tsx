@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { Loader2, Sparkles, Merge, Wand2 } from "lucide-react";
+import { Sparkles, Merge, Wand2 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import {
   findDuplicateLabels,
@@ -122,7 +123,7 @@ export function LabelDuplicatesDrawer({ open, onOpenChange }: Props) {
               title="Auto-merge every exact-name duplicate into its default canonical"
             >
               {bulkMut.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Spinner className="h-4 w-4" />
               ) : (
                 <>
                   <Wand2 className="mr-1 h-3.5 w-3.5" /> Auto-merge exact
@@ -130,7 +131,7 @@ export function LabelDuplicatesDrawer({ open, onOpenChange }: Props) {
               )}
             </Button>
             <Button size="sm" variant="outline" onClick={() => q.refetch()} disabled={q.isFetching}>
-              {q.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Rescan"}
+              {q.isFetching ? <Spinner className="h-4 w-4" /> : "Rescan"}
             </Button>
           </div>
         </div>
@@ -139,7 +140,7 @@ export function LabelDuplicatesDrawer({ open, onOpenChange }: Props) {
 
         {q.isLoading && (
           <div className="mt-8 flex justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <Spinner className="h-6 w-6 text-muted-foreground" />
           </div>
         )}
 

@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { Activity, Bot, Filter as FilterIcon, Hand, Loader2, RefreshCw } from "lucide-react";
+import { Activity, Bot, Filter as FilterIcon, Hand, RefreshCw } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -81,7 +82,7 @@ export function FolderHealthCard({ folderId }: Props) {
 
       {healthQ.isLoading ? (
         <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
+          <Spinner className="h-3.5 w-3.5" /> Loading…
         </div>
       ) : !h ? (
         <p className="mt-3 text-xs text-muted-foreground">Couldn't load health right now.</p>

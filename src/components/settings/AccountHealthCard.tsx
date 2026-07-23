@@ -7,11 +7,11 @@ import {
   CheckCircle2,
   Clock,
   Inbox,
-  Loader2,
   RotateCcw,
   Stethoscope,
   RefreshCw,
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -58,7 +58,7 @@ export function AccountHealthPanel({ accountId }: { accountId: string | null }) 
   if (q.isLoading) {
     return (
       <div className="flex items-center gap-2 rounded-md border border-border p-4 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading account health…
+        <Spinner className="h-4 w-4" /> Loading account health…
       </div>
     );
   }

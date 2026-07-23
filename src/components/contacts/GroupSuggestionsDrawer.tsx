@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Loader2, Sparkles, Trash2, Users } from "lucide-react";
+import { Sparkles, Trash2, Users } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -114,7 +115,7 @@ export function GroupSuggestionsDrawer({ open, onOpenChange }: Props) {
           <Button size="sm" onClick={() => rescan.mutate()} disabled={rescan.isPending}>
             {rescan.isPending ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analyzing…
+                <Spinner className="mr-2 h-4 w-4" /> Analyzing…
               </>
             ) : (
               <>

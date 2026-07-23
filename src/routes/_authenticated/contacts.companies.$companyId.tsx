@@ -7,7 +7,6 @@ import {
   Building2,
   Camera,
   Check,
-  Loader2,
   Plus,
   Trash2,
   X,
@@ -19,6 +18,7 @@ import {
   Search,
   RefreshCw,
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -107,7 +107,6 @@ function CompanyDetailPage() {
     queryKey: ["company-logo-choices"],
     queryFn: () => listLogoChoices(),
   });
-
 
   const [form, setForm] = useState({
     name: "",
@@ -292,7 +291,6 @@ function CompanyDetailPage() {
     : undefined;
   const logoProvider = logoChoice?.provider ?? null;
   const logoSourceDomain = logoChoice?.source_domain ?? null;
-
 
   return (
     <div className="h-full overflow-y-auto">
@@ -881,7 +879,6 @@ function CompanyPhotoSection({
   provider?: number | null;
   sourceDomain?: string | null;
 }) {
-
   const qc = useQueryClient();
   const uploadFn = useServerFn(uploadCompanyPhoto);
   const removeFn = useServerFn(removeCompanyPhoto);
@@ -979,11 +976,7 @@ function CompanyPhotoSection({
           disabled={busy}
           onClick={() => fileRef.current?.click()}
         >
-          {busy ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Camera className="mr-2 h-4 w-4" />
-          )}
+          {busy ? <Spinner className="mr-2 h-4 w-4" /> : <Camera className="mr-2 h-4 w-4" />}
           {logoUrl ? "Replace photo" : "Upload photo"}
         </Button>
         {logoUrl && (
@@ -1236,7 +1229,7 @@ function CompanyPeopleFinder({ companyId, onAdded }: { companyId: string; onAdde
           disabled={q.isFetching}
         >
           {q.isFetching ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            <Spinner className="mr-2 h-4 w-4" />
           ) : (
             <Search className="mr-2 h-4 w-4" />
           )}
@@ -1370,7 +1363,7 @@ function CompanyPeopleFinder({ companyId, onAdded }: { companyId: string; onAdde
             onClick={() => addMut.mutate([...selected])}
           >
             {addMut.isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Spinner className="mr-2 h-4 w-4" />
             ) : (
               <UserPlus className="mr-2 h-4 w-4" />
             )}

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Check, Loader2, RotateCcw, Sparkles, X } from "lucide-react";
+import { Check, RotateCcw, Sparkles, X } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -149,7 +150,7 @@ export function EnrichmentSuggestionsDrawer({ open, onOpenChange }: Props) {
             size="sm"
           >
             {scanMutation.isPending || scanActive ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Spinner className="h-4 w-4 mr-2" />
             ) : (
               <Sparkles className="h-4 w-4 mr-2" />
             )}

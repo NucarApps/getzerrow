@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { Check, ChevronsUpDown, Building2, Plus, Loader2 } from "lucide-react";
+import { Check, ChevronsUpDown, Building2, Plus } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -155,7 +156,7 @@ export function CompanyCombobox({ value, onChange, placeholder, className }: Pro
                   onSelect={handleCreate}
                 >
                   {createMut.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <Spinner className="mr-2 h-4 w-4" />
                   ) : (
                     <Plus className="mr-2 h-4 w-4" />
                   )}

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ChevronDown, ArrowUpRight, Loader2 } from "lucide-react";
+import { ChevronDown, ArrowUpRight } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { CompanyLogo } from "./CompanyLogo";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -111,7 +112,6 @@ export function CompanyBucketHeader({
           </span>
           {count}
         </span>
-
       </button>
       {onOpen && (
         <button
@@ -125,7 +125,7 @@ export function CompanyBucketHeader({
           className="grid h-10 w-10 shrink-0 place-items-center rounded text-muted-foreground hover:bg-background/40 hover:text-primary disabled:opacity-50 sm:h-6 sm:w-6"
         >
           {opening ? (
-            <Loader2 className="h-5 w-5 animate-spin sm:h-3.5 sm:w-3.5" />
+            <Spinner className="h-5 w-5 sm:h-3.5 sm:w-3.5" />
           ) : (
             <ArrowUpRight className="h-5 w-5 sm:h-3.5 sm:w-3.5" />
           )}
@@ -136,9 +136,10 @@ export function CompanyBucketHeader({
         aria-label={collapsed ? "Expand" : "Collapse"}
         className="grid h-10 w-10 shrink-0 place-items-center text-muted-foreground sm:h-6 sm:w-6"
       >
-        <ChevronDown className={`h-6 w-6 transition-transform sm:h-4 sm:w-4 ${collapsed ? "-rotate-90" : ""}`} />
+        <ChevronDown
+          className={`h-6 w-6 transition-transform sm:h-4 sm:w-4 ${collapsed ? "-rotate-90" : ""}`}
+        />
       </button>
     </div>
   );
 }
-

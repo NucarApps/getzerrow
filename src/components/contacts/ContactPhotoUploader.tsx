@@ -1,5 +1,6 @@
 import { useRef, useState, type ChangeEvent } from "react";
-import { Camera, Trash2, Loader2, Building2, RefreshCw } from "lucide-react";
+import { Camera, Trash2, Building2, RefreshCw } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -241,7 +242,7 @@ export function ContactPhotoUploader({
         aria-label="Change photo"
         className="absolute inset-0 grid place-items-center rounded-full bg-black/40 text-white opacity-0 transition-opacity hover:opacity-100 focus:opacity-100 disabled:cursor-not-allowed"
       >
-        {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
+        {busy ? <Spinner className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
       </button>
       {avatarUrl && !avatarIsCompanyLogoSnapshot && !busy ? (
         <Button

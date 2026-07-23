@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
+import { Spinner } from "@/components/ui/spinner";
 import { useServerFn } from "@tanstack/react-start";
 import { getBackfillStatus } from "@/lib/gmail.functions";
-import { Loader2 } from "lucide-react";
+
 import { useEffect, useMemo, useState } from "react";
 
 type BackfillJob = {
@@ -83,7 +84,7 @@ export function BackfillBanner() {
     <div className="border-b border-border bg-primary/10 px-4 py-2 text-sm">
       <div className="mx-auto flex max-w-5xl items-center gap-3">
         {active ? (
-          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
+          <Spinner className="h-4 w-4 shrink-0 text-primary" />
         ) : (
           <span className="h-2 w-2 shrink-0 rounded-full bg-primary" />
         )}

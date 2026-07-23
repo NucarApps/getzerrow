@@ -11,7 +11,8 @@ import {
 } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Trash2, Loader2, Clock, Play, Pencil } from "lucide-react";
+import { Plus, Trash2, Clock, Play, Pencil } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import type { Schedule } from "./types";
 import { ScheduleForm } from "./folder-schedule-form";
@@ -109,7 +110,7 @@ export function SummariesPanel({ folderId }: { folderId: string }) {
 
       {q.isLoading ? (
         <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="h-3 w-3 animate-spin" /> Loading…
+          <Spinner className="h-3 w-3" /> Loading…
         </div>
       ) : (
         <div className="mt-3 space-y-2">
@@ -162,7 +163,7 @@ export function SummariesPanel({ folderId }: { folderId: string }) {
                       aria-label="Run now"
                     >
                       {runningId === s.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <Spinner className="h-3.5 w-3.5" />
                       ) : (
                         <Play className="h-3.5 w-3.5" />
                       )}

@@ -6,7 +6,8 @@ import { useMemo, useRef, useState, useEffect } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Sparkles, Send, Check, X, Loader2 } from "lucide-react";
+import { Sparkles, Send, Check, X } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Sheet,
   SheetContent,
@@ -367,7 +368,7 @@ export function AssistantPanel({
                             disabled={applyingIndex !== null}
                           >
                             {applyingIndex === i ? (
-                              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                              <Spinner className="mr-1 h-3.5 w-3.5" />
                             ) : (
                               <Check className="mr-1 h-3.5 w-3.5" />
                             )}
@@ -388,7 +389,7 @@ export function AssistantPanel({
             {busy && (
               <div className="flex justify-start">
                 <div className="rounded-2xl rounded-tl-sm bg-muted px-3 py-2 text-sm text-muted-foreground">
-                  <Loader2 className="inline h-3.5 w-3.5 animate-spin" /> Thinking…
+                  <Spinner className="inline h-3.5 w-3.5" /> Thinking…
                 </div>
               </div>
             )}

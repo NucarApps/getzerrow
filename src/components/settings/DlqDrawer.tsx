@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Loader2, RotateCcw, Trash2 } from "lucide-react";
+import { RotateCcw, Trash2 } from "lucide-react";
+import { Spinner, SpinnerLabel } from "@/components/ui/spinner";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -70,11 +71,7 @@ export function DlqDrawer({ accountId, email, open, onClose }: Props) {
         </SheetHeader>
 
         <div className="mt-6 space-y-3">
-          {q.isLoading && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-            </div>
-          )}
+          {q.isLoading && <SpinnerLabel>Loading…</SpinnerLabel>}
           {q.data && q.data.rows.length === 0 && (
             <p className="text-sm text-muted-foreground">No failed messages.</p>
           )}
