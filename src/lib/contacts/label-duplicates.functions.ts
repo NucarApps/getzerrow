@@ -128,6 +128,7 @@ export const findDuplicateLabels = createServerFn({ method: "POST" })
     });
 
     let aiUsed = false;
+    let aiError: string | null = null;
     if (data.useAi) {
       // AI pass: look for near-match names within the same parent scope
       // that the deterministic pass missed (e.g. "VW" vs "Volkswagen").
@@ -142,7 +143,9 @@ export const findDuplicateLabels = createServerFn({ method: "POST" })
       }
       try {
         const apiKey = process.env.LOVABLE_API_KEY;
-        if (apiKey) {
+        if (!apiKey) {
+          aiError = "Missing LOVABLE_API_KEY";
+        } else {
           const { generateText, Output, NoObjectGeneratedError } = await import("ai");
           const gateway = createLovableAiGatewayProvider(apiKey);
           const model = gateway("google/gemini-2.5-flash");
@@ -162,7 +165,8 @@ export const findDuplicateLabels = createServerFn({ method: "POST" })
             );
           if (scopes.length > 0) {
             const prompt = `You review clusters of contact labels in a personal CRM and decide which ones refer to the SAME entity so the user can merge them.
-Only fold labels that are clearly the same thing (spelling variants, brand initialisms, punctuation differences). Keep legitimately separate entities apart even when they share a brand token.
+Fold labels that are clearly the same thing: spelling variants, brand initialisms ("VW" / "Volkswagen"), punctuation differences, and national/regional distributor or subsidiary names that represent the brand in a market ("American Honda" / "Honda", "Nissan North America" / "Nissan").
+Keep legitimately separate businesses apart even when they share a brand token — dealerships (person/city + brand, e.g. "Boch Nissan South") and finance arms ("Nissan Motor Acceptance Company") stay separate.
 Return one cluster per merge decision; skip labels that should stand alone.
 Label scopes (each array is one parent scope; only fold within a scope):
 ${JSON.stringify(scopes)}
@@ -197,15 +201,21 @@ Return JSON matching the schema; use the ORIGINAL label names in fold[].`;
               }
             } catch (e) {
               if (!NoObjectGeneratedError.isInstance(e)) throw e;
+              aiError = "AI returned an unparseable response";
             }
           }
         }
-      } catch {
-        // best-effort AI review
+      } catch (e) {
+        // AI review is best-effort — clusters from the deterministic pass
+        // still return — but the failure must be visible to the caller.
+        aiError = (e as Error).message || "AI review failed";
+        console.error(
+          JSON.stringify({ event: "label_duplicates.ai_error", userId, message: aiError }),
+        );
       }
     }
 
-    return { clusters, aiUsed };
+    return { clusters, aiUsed, aiError };
   });
 
 async function mergeLabelPair(

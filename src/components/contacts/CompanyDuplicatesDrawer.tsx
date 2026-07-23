@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2, Sparkles, Merge } from "lucide-react";
 import { toast } from "sonner";
 import { findDuplicateCompanies, mergeCluster } from "@/lib/companies/companies.functions";
+import { AiUnavailableNote } from "@/components/contacts/AiUnavailableNote";
 
 type Props = {
   open: boolean;
@@ -86,13 +87,22 @@ export function CompanyDuplicatesDrawer({ open, onOpenChange }: Props) {
           </Button>
         </div>
 
+        {useAi && !q.isFetching && <AiUnavailableNote error={q.data?.aiError} className="mt-2" />}
+
         {q.isLoading && (
           <div className="mt-8 flex justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         )}
 
-        {!q.isLoading && clusters.length === 0 && (
+        {!q.isLoading && q.isError && (
+          <div className="mt-8 rounded-lg border border-destructive/30 bg-destructive/5 p-8 text-center text-sm text-destructive">
+            Couldn&apos;t scan for duplicate companies
+            {q.error instanceof Error ? `: ${q.error.message}` : ""}. Tap Rescan to try again.
+          </div>
+        )}
+
+        {!q.isLoading && !q.isError && clusters.length === 0 && (
           <div className="mt-8 rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
             No duplicate clusters detected. Companies look clean.
           </div>

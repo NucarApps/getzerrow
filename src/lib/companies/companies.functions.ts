@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { normalizeCompanyName } from "./normalize";
+import { normalizeCompanyName as brandKey } from "@/lib/contacts/company-name";
 import { isPersonalDomain, extractDomain, prettyCompanyName } from "@/lib/company-domains";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
 
@@ -823,6 +824,7 @@ const STOP_TOKENS = new Set([
   "www",
   "usa",
   "america",
+  "american",
   "north",
   "south",
   "east",
@@ -910,7 +912,7 @@ export const findDuplicateCompanies = createServerFn({ method: "POST" })
       .limit(2000);
     if (error) throw new Error(error.message);
     const ids = (companies ?? []).map((c) => c.id);
-    if (ids.length < 2) return { clusters: [], aiUsed: false };
+    if (ids.length < 2) return { clusters: [], aiUsed: false, aiError: null as string | null };
     const [{ data: doms }, { data: mems }] = await Promise.all([
       supabase.from("company_domains").select("company_id,domain").in("company_id", ids),
       supabase.from("contacts").select("company_id").in("company_id", ids),
@@ -952,24 +954,27 @@ export const findDuplicateCompanies = createServerFn({ method: "POST" })
       const canonical = sorted[0];
       const canonicalRoots = rootDomainsOf(canonical.domains);
       const canonicalKey = normalizeCompanyName(canonical.name);
+      const canonicalBrand = brandKey(canonical.name);
       return {
         canonicalId: canonical.id,
         canonicalName: canonical.name,
         members: cluster.map((c) => {
           // Default-checked only on deterministic evidence: a shared root
-          // domain (unique per user) or an equal normalized name. Token-only
-          // matches — dealers, zone offices, finance arms that merely share
-          // the brand word — default unchecked so a hasty "merge all" can't
-          // fold them into the factory brand. The AI pass / user can still
-          // flip them.
+          // domain (unique per user), an equal normalized name, or an equal
+          // aggressive brand key ("American Honda" and "Honda" both key to
+          // "honda"). Token-only matches — dealers, zone offices, finance
+          // arms that merely share the brand word — default unchecked so a
+          // hasty "merge all" can't fold them into the factory brand. The AI
+          // pass / user can still flip them.
           const sharesRoot = [...rootDomainsOf(c.domains)].some((r) => canonicalRoots.has(r));
           const sameKey = !!canonicalKey && normalizeCompanyName(c.name) === canonicalKey;
+          const sameBrand = !!canonicalBrand && brandKey(c.name) === canonicalBrand;
           return {
             id: c.id,
             name: c.name,
             member_count: c.member_count,
             domains: c.domains,
-            include: c.id !== canonical.id && (sharesRoot || sameKey),
+            include: c.id !== canonical.id && (sharesRoot || sameKey || sameBrand),
           };
         }),
         rationale: "Grouped by shared brand token / domain root.",
@@ -977,10 +982,13 @@ export const findDuplicateCompanies = createServerFn({ method: "POST" })
     });
 
     let aiUsed = false;
+    let aiError: string | null = null;
     if (data.useAi && clusters.length > 0) {
       try {
         const apiKey = process.env.LOVABLE_API_KEY;
-        if (apiKey) {
+        if (!apiKey) {
+          aiError = "Missing LOVABLE_API_KEY";
+        } else {
           const { generateText, Output, NoObjectGeneratedError } = await import("ai");
           const gateway = createLovableAiGatewayProvider(apiKey);
           const model = gateway("google/gemini-2.5-flash");
@@ -1008,8 +1016,10 @@ For each cluster, decide which entries are TRULY the same corporate entity (fold
 Guidance:
 - Parent umbrella brand + spelling / punctuation variants → FOLD.
   e.g. "Nissan", "Nissan-USA", "Nissan-USA.com" all fold into "Nissan North America".
-- Separate legal entities under the same brand → KEEP.
-  e.g. "Nissan Motor Acceptance Company" (financing arm), individual dealers ("Boch Nissan South", "Nissan Of Keene"), regional offices → keep separate.
+- National/regional distributor or subsidiary entities that REPRESENT the brand in a market → FOLD into the brand.
+  e.g. "American Honda" folds into "Honda"; "Nissan North America" folds into "Nissan". In a personal CRM these are the same relationship, even when they are technically separate legal entities.
+- Genuinely separate businesses under the same brand → KEEP.
+  e.g. "Nissan Motor Acceptance Company" (financing arm), individual dealers ("Boch Nissan South", "Nissan Of Keene") → keep separate.
 - Prefer the entry with more contacts as the canonical, or the most complete legal name.
 
 Clusters:
@@ -1046,14 +1056,20 @@ Return JSON matching the schema. For each cluster, include the canonical name pl
             });
           } catch (e) {
             if (!NoObjectGeneratedError.isInstance(e)) throw e;
+            aiError = "AI returned an unparseable response";
           }
         }
-      } catch {
-        // AI review is best-effort; fall back to rules.
+      } catch (e) {
+        // AI review is best-effort — rule-based clusters still return —
+        // but the failure must be visible to the caller.
+        aiError = (e as Error).message || "AI review failed";
+        console.error(
+          JSON.stringify({ event: "company_duplicates.ai_error", userId, message: aiError }),
+        );
       }
     }
 
-    return { clusters, aiUsed };
+    return { clusters, aiUsed, aiError };
   });
 
 export const mergeCluster = createServerFn({ method: "POST" })

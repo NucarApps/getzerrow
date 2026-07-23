@@ -35,6 +35,9 @@ const LEGAL_SUFFIXES = new Set([
 // Common corporate qualifiers stripped from either end so brand variants
 // collapse to the same key. "Nissan Motor" / "Nissan North America" /
 // "Hyundai USA" / "Ford Motor Company" all normalize to just the brand.
+// Accepted tradeoff: brands that genuinely start with a qualifier lose it
+// ("American Express" → "express"), so a collision needs another company
+// keyed to the bare residual — rare, and merges remain user-confirmed.
 const QUALIFIERS = new Set([
   "motor",
   "motors",
@@ -49,6 +52,7 @@ const QUALIFIERS = new Set([
   "na",
   "americas",
   "america",
+  "american",
   "north",
   "south",
   "east",

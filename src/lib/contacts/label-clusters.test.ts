@@ -57,6 +57,18 @@ describe("clusterLabels", () => {
     expect(clusters[0].reason).toBe("name");
   });
 
+  it("clusters national-distributor variants like American Honda with the brand", () => {
+    const labels = [
+      label("a", "Honda"),
+      label("b", "American Honda"),
+      label("c", "Boch Honda"), // dealer — stays out
+    ];
+    const clusters = clusterLabels(labels);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0].labels.map((l) => l.id).sort()).toEqual(["a", "b"]);
+    expect(clusters[0].reason).toBe("name");
+  });
+
   it("unions name-matched and company-matched labels into one cluster", () => {
     const labels = [
       label("a", "Nissan", { company_id: "co1" }),

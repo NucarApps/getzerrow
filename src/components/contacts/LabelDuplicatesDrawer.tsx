@@ -13,6 +13,7 @@ import {
   mergeLabelCluster,
   consolidateLabelDuplicates,
 } from "@/lib/contacts/label-duplicates.functions";
+import { AiUnavailableNote } from "@/components/contacts/AiUnavailableNote";
 
 type Props = { open: boolean; onOpenChange: (v: boolean) => void };
 
@@ -133,6 +134,8 @@ export function LabelDuplicatesDrawer({ open, onOpenChange }: Props) {
             </Button>
           </div>
         </div>
+
+        {useAi && !q.isFetching && <AiUnavailableNote error={q.data?.aiError} className="mt-2" />}
 
         {q.isLoading && (
           <div className="mt-8 flex justify-center">
