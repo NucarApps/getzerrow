@@ -3,6 +3,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listMessageJobs, retryJob, runJobsNow } from "@/lib/gmail.functions";
 import { Card } from "@/components/ui/card";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RefreshCw, PlayCircle, AlertCircle } from "lucide-react";
@@ -116,36 +124,36 @@ export function ProcessingJobs({ accountId }: { accountId: string | null }) {
         </div>
 
         <div className="overflow-x-auto rounded-md border">
-          <table className="w-full text-xs">
-            <thead className="bg-muted/50 text-left">
-              <tr>
-                <th className="p-2">Status</th>
-                <th className="p-2">From</th>
-                <th className="p-2">Subject</th>
-                <th className="p-2 text-right">Attempt</th>
-                <th className="p-2">Next run</th>
-                <th className="p-2">Last error</th>
-                <th className="p-2"></th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="w-full text-xs">
+            <TableHeader className="bg-muted/50 text-left">
+              <TableRow>
+                <TableHead className="p-2">Status</TableHead>
+                <TableHead className="p-2">From</TableHead>
+                <TableHead className="p-2">Subject</TableHead>
+                <TableHead className="p-2 text-right">Attempt</TableHead>
+                <TableHead className="p-2">Next run</TableHead>
+                <TableHead className="p-2">Last error</TableHead>
+                <TableHead className="p-2"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {q.isLoading && (
-                <tr>
-                  <td colSpan={7} className="p-4 text-center text-muted-foreground">
+                <TableRow>
+                  <TableCell colSpan={7} className="p-4 text-center text-muted-foreground">
                     Loading…
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
               {!q.isLoading && jobs.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="p-4 text-center text-muted-foreground">
+                <TableRow>
+                  <TableCell colSpan={7} className="p-4 text-center text-muted-foreground">
                     {filter === "dlq" ? "No dead-lettered jobs. 🎉" : "Queue is empty."}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
               {jobs.map((j) => (
-                <tr key={j.id} className="border-t hover:bg-muted/30">
-                  <td className="p-2">
+                <TableRow key={j.id} className="border-t hover:bg-muted/30">
+                  <TableCell className="p-2">
                     <Badge
                       variant={
                         j.status === "dlq"
@@ -159,26 +167,26 @@ export function ProcessingJobs({ accountId }: { accountId: string | null }) {
                       {j.status === "dlq" && <AlertCircle className="mr-1 h-3 w-3" />}
                       {j.status}
                     </Badge>
-                  </td>
-                  <td className="p-2 max-w-[180px] truncate">
+                  </TableCell>
+                  <TableCell className="p-2 max-w-[180px] truncate">
                     {j.from_addr ?? (
                       <span className="text-muted-foreground font-mono">
                         {j.gmail_message_id.slice(0, 10)}…
                       </span>
                     )}
-                  </td>
-                  <td className="p-2 max-w-[260px] truncate">{j.subject ?? "—"}</td>
-                  <td className="p-2 text-right">{j.attempt}/5</td>
-                  <td className="p-2 whitespace-nowrap" title={j.next_run_at}>
+                  </TableCell>
+                  <TableCell className="p-2 max-w-[260px] truncate">{j.subject ?? "—"}</TableCell>
+                  <TableCell className="p-2 text-right">{j.attempt}/5</TableCell>
+                  <TableCell className="p-2 whitespace-nowrap" title={j.next_run_at}>
                     {relTime(j.next_run_at)}
-                  </td>
-                  <td
+                  </TableCell>
+                  <TableCell
                     className="p-2 max-w-[280px] truncate text-destructive"
                     title={j.last_error ?? ""}
                   >
                     {j.last_error ?? ""}
-                  </td>
-                  <td className="p-2 text-right">
+                  </TableCell>
+                  <TableCell className="p-2 text-right">
                     <Button
                       size="sm"
                       variant="outline"
@@ -194,11 +202,11 @@ export function ProcessingJobs({ accountId }: { accountId: string | null }) {
                     >
                       Retry
                     </Button>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </div>
     </Card>

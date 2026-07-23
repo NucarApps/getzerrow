@@ -3,6 +3,14 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Card } from "@/components/ui/card";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -155,65 +163,69 @@ function RuleActivitySettings() {
 
         <div className="p-4 md:p-6">
           <div className="overflow-x-auto rounded-md border">
-            <table className="w-full text-xs">
-              <thead className="bg-muted/50 text-left">
-                <tr>
-                  <th className="w-8 p-2"></th>
-                  <th className="p-2">When</th>
-                  <th className="p-2">Status</th>
-                  <th className="p-2">Decided by</th>
-                  <th className="p-2">Routed to</th>
-                  <th className="p-2">Reason</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table className="w-full text-xs">
+              <TableHeader className="bg-muted/50 text-left">
+                <TableRow>
+                  <TableHead className="w-8 p-2"></TableHead>
+                  <TableHead className="p-2">When</TableHead>
+                  <TableHead className="p-2">Status</TableHead>
+                  <TableHead className="p-2">Decided by</TableHead>
+                  <TableHead className="p-2">Routed to</TableHead>
+                  <TableHead className="p-2">Reason</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {q.isLoading && (
-                  <tr>
-                    <td colSpan={6} className="p-4 text-center text-muted-foreground">
+                  <TableRow>
+                    <TableCell colSpan={6} className="p-4 text-center text-muted-foreground">
                       Loading…
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )}
                 {!q.isLoading && rows.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="p-4 text-center text-muted-foreground">
+                  <TableRow>
+                    <TableCell colSpan={6} className="p-4 text-center text-muted-foreground">
                       No rule activity yet — decisions appear here as new mail is classified.
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )}
                 {rows.map((r) => {
                   const isOpen = expanded.has(r.id);
                   return (
                     <Fragment key={r.id}>
-                      <tr
+                      <TableRow
                         className="cursor-pointer border-t hover:bg-muted/30"
                         onClick={() => toggle(r.id)}
                       >
-                        <td className="p-2 text-muted-foreground">
+                        <TableCell className="p-2 text-muted-foreground">
                           {isOpen ? (
                             <ChevronDown className="h-3.5 w-3.5" />
                           ) : (
                             <ChevronRight className="h-3.5 w-3.5" />
                           )}
-                        </td>
-                        <td className="p-2 whitespace-nowrap" title={r.created_at}>
+                        </TableCell>
+                        <TableCell className="p-2 whitespace-nowrap" title={r.created_at}>
                           {relTime(r.created_at)}
-                        </td>
-                        <td className="p-2">
+                        </TableCell>
+                        <TableCell className="p-2">
                           <Badge variant={statusVariant(r.status)} className="text-[10px]">
                             {r.status === "error" && <AlertCircle className="mr-1 h-3 w-3" />}
                             {r.status}
                           </Badge>
-                        </td>
-                        <td className="p-2 whitespace-nowrap">{decidedByLabel(r.classified_by)}</td>
-                        <td className="p-2 max-w-[160px] truncate">{r.folder_name ?? "Inbox"}</td>
-                        <td className="p-2 max-w-[320px] truncate text-muted-foreground">
+                        </TableCell>
+                        <TableCell className="p-2 whitespace-nowrap">
+                          {decidedByLabel(r.classified_by)}
+                        </TableCell>
+                        <TableCell className="p-2 max-w-[160px] truncate">
+                          {r.folder_name ?? "Inbox"}
+                        </TableCell>
+                        <TableCell className="p-2 max-w-[320px] truncate text-muted-foreground">
                           {r.reason ?? "—"}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                       {isOpen && (
-                        <tr className="border-t bg-muted/20">
-                          <td colSpan={6} className="p-3">
+                        <TableRow className="border-t bg-muted/20">
+                          <TableCell colSpan={6} className="p-3">
                             <dl className="grid gap-x-6 gap-y-2 text-xs md:grid-cols-[auto_1fr]">
                               <dt className="font-medium text-muted-foreground">Reason</dt>
                               <dd className="whitespace-pre-wrap">{r.reason ?? "—"}</dd>
@@ -279,14 +291,14 @@ function RuleActivitySettings() {
                                 </Select>
                               </dd>
                             </dl>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       )}
                     </Fragment>
                   );
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </div>
       </Card>

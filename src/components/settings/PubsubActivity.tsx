@@ -11,6 +11,14 @@ import {
   getSyncLatencyStats,
 } from "@/lib/gmail.functions";
 import { Card } from "@/components/ui/card";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -865,56 +873,56 @@ export function PubsubActivity({
             </div>
           </div>
           <div className="overflow-x-auto rounded-md border">
-            <table className="w-full text-xs">
-              <thead className="bg-muted/50 text-left">
-                <tr>
-                  <th className="w-6 p-2"></th>
-                  <th className="p-2">When</th>
-                  <th className="p-2">Type</th>
-                  <th className="p-2">Email</th>
-                  <th className="p-2">History ID</th>
-                  <th className="p-2 text-right">Matched</th>
-                  <th className="p-2 text-right">Synced</th>
-                  <th className="p-2">Error / details</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table className="w-full text-xs">
+              <TableHeader className="bg-muted/50 text-left">
+                <TableRow>
+                  <TableHead className="w-6 p-2"></TableHead>
+                  <TableHead className="p-2">When</TableHead>
+                  <TableHead className="p-2">Type</TableHead>
+                  <TableHead className="p-2">Email</TableHead>
+                  <TableHead className="p-2">History ID</TableHead>
+                  <TableHead className="p-2 text-right">Matched</TableHead>
+                  <TableHead className="p-2 text-right">Synced</TableHead>
+                  <TableHead className="p-2">Error / details</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {q.isLoading && (
-                  <tr>
-                    <td colSpan={8} className="p-4 text-center text-muted-foreground">
+                  <TableRow>
+                    <TableCell colSpan={8} className="p-4 text-center text-muted-foreground">
                       Loading…
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )}
                 {!q.isLoading && events.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="p-4 text-center text-muted-foreground">
+                  <TableRow>
+                    <TableCell colSpan={8} className="p-4 text-center text-muted-foreground">
                       No events yet.
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )}
                 {events.map((e) => {
                   const isOpen = expanded === e.id;
                   return (
                     <Fragment key={e.id}>
-                      <tr
+                      <TableRow
                         className="cursor-pointer border-t hover:bg-muted/30"
                         onClick={() => setExpanded(isOpen ? null : e.id)}
                       >
-                        <td className="p-2">
+                        <TableCell className="p-2">
                           {isOpen ? (
                             <ChevronDown className="h-3 w-3" />
                           ) : (
                             <ChevronRight className="h-3 w-3" />
                           )}
-                        </td>
-                        <td
+                        </TableCell>
+                        <TableCell
                           className="p-2 whitespace-nowrap"
                           title={new Date(e.received_at).toLocaleString()}
                         >
                           {relTime(e.received_at)}
-                        </td>
-                        <td className="p-2">
+                        </TableCell>
+                        <TableCell className="p-2">
                           <Badge
                             variant={
                               e.error
@@ -929,30 +937,36 @@ export function PubsubActivity({
                           >
                             {e.event_type}
                           </Badge>
-                        </td>
-                        <td className="p-2 max-w-[200px] truncate">{e.email_address ?? "—"}</td>
-                        <td className="p-2 font-mono">{e.history_id ?? "—"}</td>
-                        <td className="p-2 text-right tabular-nums">{e.accounts_matched ?? "—"}</td>
-                        <td className="p-2 text-right tabular-nums">{e.synced_count ?? "—"}</td>
-                        <td className="p-2 max-w-[240px] truncate text-destructive">
+                        </TableCell>
+                        <TableCell className="p-2 max-w-[200px] truncate">
+                          {e.email_address ?? "—"}
+                        </TableCell>
+                        <TableCell className="p-2 font-mono">{e.history_id ?? "—"}</TableCell>
+                        <TableCell className="p-2 text-right tabular-nums">
+                          {e.accounts_matched ?? "—"}
+                        </TableCell>
+                        <TableCell className="p-2 text-right tabular-nums">
+                          {e.synced_count ?? "—"}
+                        </TableCell>
+                        <TableCell className="p-2 max-w-[240px] truncate text-destructive">
                           {e.error ?? e.details ?? ""}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                       {isOpen && (
-                        <tr className="border-t bg-muted/20">
-                          <td></td>
-                          <td colSpan={7} className="p-2">
+                        <TableRow className="border-t bg-muted/20">
+                          <TableCell></TableCell>
+                          <TableCell colSpan={7} className="p-2">
                             <pre className="overflow-x-auto whitespace-pre-wrap break-all text-[11px]">
                               {JSON.stringify(e, null, 2)}
                             </pre>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       )}
                     </Fragment>
                   );
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </section>
 

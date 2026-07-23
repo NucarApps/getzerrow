@@ -14,6 +14,15 @@ import {
   XCircle,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { PageTitle } from "@/components/PageTitle";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
 import {
   getAdminMe,
   listAdminUsers,
@@ -141,7 +150,7 @@ function AdminPage() {
             <Shield className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="font-display text-2xl text-foreground">Admin</h1>
+            <PageTitle>Admin</PageTitle>
             <p className="text-xs text-muted-foreground">Signed in as {meQ.data?.email ?? "…"}</p>
           </div>
         </header>
@@ -202,40 +211,40 @@ function AdminPage() {
             Users
           </h2>
           <div className="overflow-x-auto rounded-md border border-border bg-card/40">
-            <table className="w-full min-w-[1000px] text-sm">
-              <thead className="bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 text-left">Email</th>
-                  <th className="px-3 py-2 text-left">Signed up</th>
-                  <th className="px-3 py-2 text-left">Last sign-in</th>
-                  <th className="px-3 py-2 text-left">Gmail</th>
-                  <th className="px-3 py-2 text-left">Last sync</th>
-                  <th className="px-3 py-2 text-right">Emails</th>
-                  <th className="px-3 py-2 text-right">Contacts</th>
-                  <th className="px-3 py-2 text-right">Folders</th>
-                  <th className="px-3 py-2 text-right">Jobs</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
+            <Table className="w-full min-w-[1000px] text-sm">
+              <TableHeader className="bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
+                <TableRow>
+                  <TableHead className="px-3 py-2 text-left">Email</TableHead>
+                  <TableHead className="px-3 py-2 text-left">Signed up</TableHead>
+                  <TableHead className="px-3 py-2 text-left">Last sign-in</TableHead>
+                  <TableHead className="px-3 py-2 text-left">Gmail</TableHead>
+                  <TableHead className="px-3 py-2 text-left">Last sync</TableHead>
+                  <TableHead className="px-3 py-2 text-right">Emails</TableHead>
+                  <TableHead className="px-3 py-2 text-right">Contacts</TableHead>
+                  <TableHead className="px-3 py-2 text-right">Folders</TableHead>
+                  <TableHead className="px-3 py-2 text-right">Jobs</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {usersQ.isLoading && (
-                  <tr>
-                    <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
+                  <TableRow>
+                    <TableCell colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
                       Loading…
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )}
                 {!usersQ.isLoading && (usersQ.data?.users.length ?? 0) === 0 && (
-                  <tr>
-                    <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
+                  <TableRow>
+                    <TableCell colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
                       No users yet.
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )}
                 {(usersQ.data?.users ?? []).map((u) => (
                   <UserRow key={u.user_id} u={u} />
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </section>
       </div>
@@ -444,44 +453,44 @@ function RetryHealthSection({ q }: { q: { data?: FolderRetryMetrics; isLoading: 
             Retries by folder
           </div>
           <div className="max-h-48 overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="text-xs uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="px-2 py-1 text-left">Folder</th>
-                  <th className="px-2 py-1 text-right">Retries</th>
-                  <th className="px-2 py-1 text-right">Failed</th>
-                  <th className="px-2 py-1 text-right">Max attempts</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
+            <Table className="w-full text-sm">
+              <TableHeader className="text-xs uppercase tracking-wider text-muted-foreground">
+                <TableRow>
+                  <TableHead className="px-2 py-1 text-left">Folder</TableHead>
+                  <TableHead className="px-2 py-1 text-right">Retries</TableHead>
+                  <TableHead className="px-2 py-1 text-right">Failed</TableHead>
+                  <TableHead className="px-2 py-1 text-right">Max attempts</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {q.isLoading && (
-                  <tr>
-                    <td colSpan={4} className="px-2 py-6 text-center text-muted-foreground">
+                  <TableRow>
+                    <TableCell colSpan={4} className="px-2 py-6 text-center text-muted-foreground">
                       Loading…
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )}
                 {!q.isLoading && (data?.byFolder.length ?? 0) === 0 && (
-                  <tr>
-                    <td colSpan={4} className="px-2 py-6 text-center text-muted-foreground">
+                  <TableRow>
+                    <TableCell colSpan={4} className="px-2 py-6 text-center text-muted-foreground">
                       No retries in the last {data?.days ?? 7} days — learning is stable.
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )}
                 {(data?.byFolder ?? []).map((f) => (
-                  <tr key={f.folder_id ?? "null"} className="hover:bg-accent/30">
-                    <td className="px-2 py-1 text-foreground">{f.name}</td>
-                    <td className="px-2 py-1 text-right">{f.retries}</td>
-                    <td
+                  <TableRow key={f.folder_id ?? "null"} className="hover:bg-accent/30">
+                    <TableCell className="px-2 py-1 text-foreground">{f.name}</TableCell>
+                    <TableCell className="px-2 py-1 text-right">{f.retries}</TableCell>
+                    <TableCell
                       className={"px-2 py-1 text-right " + (f.failed > 0 ? "text-destructive" : "")}
                     >
                       {f.failed}
-                    </td>
-                    <td className="px-2 py-1 text-right">{f.max_attempts}</td>
-                  </tr>
+                    </TableCell>
+                    <TableCell className="px-2 py-1 text-right">{f.max_attempts}</TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </div>
       </div>
@@ -493,18 +502,20 @@ function UserRow({ u }: { u: AdminUser }) {
   const accounts = u.gmail_accounts;
   const jobs = u.stats.jobs_pending + u.stats.jobs_running;
   return (
-    <tr className="hover:bg-accent/30 align-top">
-      <td className="px-3 py-2 font-medium text-foreground">
+    <TableRow className="hover:bg-accent/30 align-top">
+      <TableCell className="px-3 py-2 font-medium text-foreground">
         {u.email}
         {accounts.length > 1 && (
           <span className="ml-1 rounded bg-primary/15 px-1 text-[10px] text-primary">
             ×{accounts.length}
           </span>
         )}
-      </td>
-      <td className="px-3 py-2 text-muted-foreground">{fmtDate(u.created_at)}</td>
-      <td className="px-3 py-2 text-muted-foreground">{fmtDateTime(u.last_sign_in_at)}</td>
-      <td className="px-3 py-2">
+      </TableCell>
+      <TableCell className="px-3 py-2 text-muted-foreground">{fmtDate(u.created_at)}</TableCell>
+      <TableCell className="px-3 py-2 text-muted-foreground">
+        {fmtDateTime(u.last_sign_in_at)}
+      </TableCell>
+      <TableCell className="px-3 py-2">
         {accounts.length === 0 ? (
           <span className="text-xs text-muted-foreground">—</span>
         ) : (
@@ -519,8 +530,8 @@ function UserRow({ u }: { u: AdminUser }) {
             ))}
           </div>
         )}
-      </td>
-      <td className="px-3 py-2">
+      </TableCell>
+      <TableCell className="px-3 py-2">
         {accounts.length === 0 ? (
           <span className="text-muted-foreground">—</span>
         ) : (
@@ -541,11 +552,17 @@ function UserRow({ u }: { u: AdminUser }) {
             })}
           </div>
         )}
-      </td>
-      <td className="px-3 py-2 text-right tabular-nums">{u.stats.emails.toLocaleString()}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{u.stats.contacts.toLocaleString()}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{u.stats.folders.toLocaleString()}</td>
-      <td className="px-3 py-2 text-right tabular-nums">
+      </TableCell>
+      <TableCell className="px-3 py-2 text-right tabular-nums">
+        {u.stats.emails.toLocaleString()}
+      </TableCell>
+      <TableCell className="px-3 py-2 text-right tabular-nums">
+        {u.stats.contacts.toLocaleString()}
+      </TableCell>
+      <TableCell className="px-3 py-2 text-right tabular-nums">
+        {u.stats.folders.toLocaleString()}
+      </TableCell>
+      <TableCell className="px-3 py-2 text-right tabular-nums">
         <span
           title={`pending ${u.stats.jobs_pending} · running ${u.stats.jobs_running} · dlq ${u.stats.jobs_dlq}`}
         >
@@ -556,8 +573,8 @@ function UserRow({ u }: { u: AdminUser }) {
             </span>
           )}
         </span>
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -667,46 +684,46 @@ function SyncMetricsSection({
           Recent dead-letter jobs
         </div>
         <div className="max-h-64 overflow-y-auto">
-          <table className="w-full text-sm">
-            <thead className="text-xs uppercase tracking-wider text-muted-foreground">
-              <tr>
-                <th className="px-2 py-1 text-left">When</th>
-                <th className="px-2 py-1 text-left">Message ID</th>
-                <th className="px-2 py-1 text-right">Attempts</th>
-                <th className="px-2 py-1 text-left">Last error</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
+          <Table className="w-full text-sm">
+            <TableHeader className="text-xs uppercase tracking-wider text-muted-foreground">
+              <TableRow>
+                <TableHead className="px-2 py-1 text-left">When</TableHead>
+                <TableHead className="px-2 py-1 text-left">Message ID</TableHead>
+                <TableHead className="px-2 py-1 text-right">Attempts</TableHead>
+                <TableHead className="px-2 py-1 text-left">Last error</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {q.isLoading && (
-                <tr>
-                  <td colSpan={4} className="px-2 py-6 text-center text-muted-foreground">
+                <TableRow>
+                  <TableCell colSpan={4} className="px-2 py-6 text-center text-muted-foreground">
                     Loading…
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
               {!q.isLoading && dlqRows.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-2 py-6 text-center text-muted-foreground">
+                <TableRow>
+                  <TableCell colSpan={4} className="px-2 py-6 text-center text-muted-foreground">
                     No jobs in the dead-letter queue.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
               {dlqRows.map((r) => (
-                <tr key={r.id} className="align-top hover:bg-accent/30">
-                  <td className="whitespace-nowrap px-2 py-1 text-muted-foreground">
+                <TableRow key={r.id} className="align-top hover:bg-accent/30">
+                  <TableCell className="whitespace-nowrap px-2 py-1 text-muted-foreground">
                     {fmtDateTime(r.updated_at)}
-                  </td>
-                  <td className="px-2 py-1 font-mono text-xs text-foreground">
+                  </TableCell>
+                  <TableCell className="px-2 py-1 font-mono text-xs text-foreground">
                     {truncate(r.gmail_message_id, 32)}
-                  </td>
-                  <td className="px-2 py-1 text-right tabular-nums">{r.attempt}</td>
-                  <td className="px-2 py-1 font-mono text-xs text-destructive">
+                  </TableCell>
+                  <TableCell className="px-2 py-1 text-right tabular-nums">{r.attempt}</TableCell>
+                  <TableCell className="px-2 py-1 font-mono text-xs text-destructive">
                     {truncate(r.last_error, 96)}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </div>
     </section>
