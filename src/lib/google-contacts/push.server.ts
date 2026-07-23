@@ -148,6 +148,39 @@ export function withMyContacts(memberResourceNames: string[]): string[] {
     : [...memberResourceNames, MY_CONTACTS_RESOURCE];
 }
 
+/** Paginate Google's contactGroups list to find an existing group with the
+ *  given display name and insert a local link row for it. Used to recover
+ *  from 409 ALREADY_EXISTS on create. Returns the adopted resourceName. */
+async function adoptExistingGoogleGroup(
+  ids: Ids,
+  localGroupId: string,
+  name: string,
+): Promise<string | null> {
+  const { listContactGroupsPage } = await import("./people-client.server");
+  let pageToken: string | undefined = undefined;
+  for (let i = 0; i < 20; i++) {
+    const page = await listContactGroupsPage(ids.gmailAccountId, { pageToken });
+    const match = (page.contactGroups ?? []).find((g) => (g.name ?? "") === name);
+    if (match?.resourceName) {
+      await supabaseAdmin.from("google_group_links").upsert(
+        {
+          user_id: ids.userId,
+          gmail_account_id: ids.gmailAccountId,
+          contact_group_id: localGroupId,
+          resource_name: match.resourceName,
+          etag: match.etag ?? null,
+          last_synced_at: new Date().toISOString(),
+        },
+        { onConflict: "gmail_account_id,contact_group_id" },
+      );
+      return match.resourceName;
+    }
+    if (!page.nextPageToken) break;
+    pageToken = page.nextPageToken;
+  }
+  return null;
+}
+
 async function pushGroups(ids: Ids, progress?: ProgressReporter): Promise<number> {
   // All local groups + linked resource (LEFT JOIN via two queries).
   const { data: groups } = await supabaseAdmin
