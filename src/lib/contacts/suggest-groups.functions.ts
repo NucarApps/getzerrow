@@ -378,7 +378,6 @@ Return JSON matching the schema.`;
     const parsedCount = parsed.suggestions.length;
     let droppedMissingIds = 0;
     let droppedTooSmall = 0;
-    const droppedDuplicateName = 0;
 
     const groupByLowerName = new Map((groups ?? []).map((g) => [g.name.toLowerCase(), g] as const));
 
@@ -492,7 +491,6 @@ Return JSON matching the schema.`;
       kept_count: capped.length,
       dropped_missing_ids: droppedMissingIds,
       dropped_too_small: droppedTooSmall,
-      dropped_duplicate_name: droppedDuplicateName,
       parse_note: parseNote,
       contact_pool: contacts.length,
       ungrouped_total: ungroupedTotal,
