@@ -23,6 +23,8 @@ vi.mock("ai", () => ({
 
 vi.mock("../ai-gateway", () => ({
   createLovableAiGatewayProvider: () => (modelId: string) => ({ modelId }),
+  getModel: (modelId: string = "google/gemini-2.5-flash") => ({ modelId }),
+  getGateway: () => (modelId: string) => ({ modelId }),
 }));
 
 import { classifyEmail, classifyEmailsBatch, shouldSurfaceToInbox } from "../ai.server";

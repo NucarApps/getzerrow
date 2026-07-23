@@ -16,12 +16,7 @@ import { sendMessage } from "../gmail.server";
 import { jitter } from "./backoff";
 import { logError } from "../log.server";
 import { claimForwardRetriesDecrypted } from "./encrypted-reader";
-
-const FORWARD_MAX_ATTEMPTS = 5;
-// 1m → 5m → 30m → 2h → 6h. Wider spread than the message-job backoff
-// table because forward failures are usually slower to clear (recipient
-// mailbox down, downstream rate limit, etc.).
-const FORWARD_BACKOFF_SECONDS = [60, 300, 1800, 7200, 21600];
+import { FORWARD_MAX_ATTEMPTS, FORWARD_BACKOFF_SECONDS } from "./config";
 
 export async function retryForwardAttempts(maxRows = 50) {
   const { rows, error } = await claimForwardRetriesDecrypted(maxRows);

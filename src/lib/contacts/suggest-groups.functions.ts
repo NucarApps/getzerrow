@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
+import { getModel } from "@/lib/ai-gateway";
 import { logInfo } from "@/lib/log.server";
 import { getEmailsDecrypted, searchEmailsParticipantsDecrypted } from "@/lib/sync/encrypted-reader";
 import { normalizeCompanyName } from "./company-name";
@@ -322,8 +322,7 @@ export async function runContactGroupSuggestionsImpl(
       size: groupSizes.get(g.id) ?? 0,
     }));
 
-    const gateway = createLovableAiGatewayProvider(apiKey);
-    const model = gateway("google/gemini-2.5-flash");
+    const model = getModel();
 
     const prompt = `You are helping organize a user's contact list into meaningful groups.
 

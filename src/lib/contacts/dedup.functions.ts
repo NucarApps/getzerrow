@@ -3,7 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
+import { getModel } from "@/lib/ai-gateway";
 import { logInfo } from "@/lib/log.server";
 import { normalizePhone } from "./phone";
 import {
@@ -55,11 +55,9 @@ const BatchAiSchema = z.object({
  * 1-based cluster index → verdict. A failed call returns an EMPTY map — the
  * caller skips those clusters and keeps going instead of aborting the scan. */
 async function judgeClustersBatch(
-  apiKey: string,
   clusters: ClusterInput[],
 ): Promise<Map<number, z.infer<typeof AiSchema>>> {
-  const gateway = createLovableAiGatewayProvider(apiKey);
-  const model = gateway("google/gemini-2.5-flash");
+  const model = getModel();
   const blocks = clusters
     .map((c, idx) => `Cluster ${idx + 1}:\n${JSON.stringify(c.contacts)}`)
     .join("\n\n");
@@ -267,7 +265,6 @@ export async function scanContactDuplicatesImpl(userId: string) {
     for (let i = 0; i < needsAi.length; i += JUDGE_BATCH_SIZE) {
       const batch = needsAi.slice(i, i + JUDGE_BATCH_SIZE);
       const verdicts = await judgeClustersBatch(
-        apiKey,
         batch.map(({ cluster, primary, duplicates }) => ({
           ids: [primary, ...duplicates].map((c) => c.id),
           contacts: [primary, ...duplicates].map((c) => ({

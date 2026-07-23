@@ -30,10 +30,8 @@ export type DigestAiFn = (listing: string) => Promise<string>;
 /** Default AI summarizer: one compact, timeboxed gateway call. */
 export async function summarizeDigestWithAi(listing: string): Promise<string> {
   const { generateText } = await import("ai");
-  const { createLovableAiGatewayProvider } = await import("../ai-gateway");
-  const key = process.env.LOVABLE_API_KEY;
-  if (!key) throw new Error("LOVABLE_API_KEY missing");
-  const model = createLovableAiGatewayProvider(key)("google/gemini-2.5-flash");
+  const { getModel } = await import("../ai-gateway");
+  const model = getModel();
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race<string>([

@@ -8,7 +8,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
+import { getModel } from "@/lib/ai-gateway";
 import { extractDomain, isPersonalDomain } from "@/lib/company-domains";
 import { isLikelyHuman } from "@/lib/contacts-helpers.server";
 import { emailLocalPart, nameMatchConfidence, normalizeNameLoose } from "@/lib/contacts/name-match";
@@ -272,7 +272,7 @@ export const findCompanyPeopleByDomain = createServerFn({ method: "POST" })
       );
       if (needsAI.length > 0 && needsAI.length <= 20) {
         try {
-          const model = createLovableAiGatewayProvider(key)("google/gemini-2.5-flash");
+          const model = getModel();
           const schema = z.object({
             picks: z.array(
               z.object({

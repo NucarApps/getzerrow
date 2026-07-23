@@ -21,3 +21,19 @@ export function timeoutSignal(ms: number): AbortSignal {
   setTimeout(() => ctrl.abort(new Error(`aborted after ${ms}ms`)), ms);
   return ctrl.signal;
 }
+
+/** Race a promise against a hard timeout so one stalled upstream call can't
+ * hang the caller. Rejects with `${label} timed out after ${ms}ms`. */
+export async function raceTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race<T>([
+      p,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}

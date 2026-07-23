@@ -4,6 +4,7 @@ import { generateText, Output } from "ai";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { sendContactShareEmail } from "../cards.server";
+import { parseLenientJson } from "../ai-untrusted";
 import { setContactEncryptedFields } from "../sync/encrypted-writer";
 import {
   getContactDecrypted,
@@ -120,19 +121,13 @@ export const scanCard = createServerFn({ method: "POST" })
             },
           ],
         });
-        const cleaned = text
-          .trim()
-          .replace(/^```(?:json)?\s*/i, "")
-          .replace(/```\s*$/i, "");
-        const start = cleaned.indexOf("{");
-        const end = cleaned.lastIndexOf("}");
-        if (start < 0 || end <= start) {
+        const parsed = parseLenientJson(text, SCAN_SCHEMA);
+        if (parsed === null) {
           lastError = `empty/non-JSON response (len=${text.length})`;
           console.error(`scanCard text-json failed (${modelId})`, lastError);
           return null;
         }
-        const parsed = JSON.parse(cleaned.slice(start, end + 1));
-        return SCAN_SCHEMA.parse(parsed);
+        return parsed;
       } catch (e) {
         lastError = describeError(e);
         console.error(`scanCard text-json failed (${modelId})`, lastError);

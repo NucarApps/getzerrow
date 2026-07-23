@@ -31,7 +31,7 @@ import { loadAccountContext, type AccountContext } from "./account-context";
 import { classifyByRules } from "./classify";
 import { applyFolderActions, type ActionFolder } from "./process-message";
 import { bumpEmailsSinceLearn } from "./folder-learn";
-import { CATCHUP_BULK_LIMIT, CATCHUP_FETCH_CONCURRENCY } from "./config";
+import { CATCHUP_BULK_LIMIT, CATCHUP_FETCH_CONCURRENCY, EXCLUDED_LABELS } from "./config";
 import {
   upsertEmailEncrypted,
   updateEmailEncrypted,
@@ -113,7 +113,6 @@ export function buildCatchupRow(
   ctx: AccountContext,
 ): CatchupBuilt | null {
   const labels = parsed.raw_labels ?? [];
-  const EXCLUDED_LABELS = ["SENT", "DRAFT", "TRASH", "SPAM", "CHAT"];
   if (EXCLUDED_LABELS.some((l) => labels.includes(l))) return null;
   const inInbox = labels.includes("INBOX");
 

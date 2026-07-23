@@ -4,7 +4,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { normalizeCompanyName } from "./company-name";
-import { deriveCompanyKey, type CompanyKeyContext } from "./company-key";
+import { deriveCompanyKey } from "./company-key";
+import { loadCompanyKeyContext } from "./company-key.server";
 
 type ContactShape = {
   id: string;
@@ -93,46 +94,7 @@ export async function reconcileAutoCompanySubgroupsImpl(
   // 0. Load lookup maps: domain aliases, every company name, merged-name
   //    aliases, and domain→company links, so all key derivations resolve
   //    fragmented/merged company variants to one canonical bucket.
-  const [
-    { data: aliasRows },
-    { data: allCompanyRows },
-    { data: nameAliasRows },
-    { data: companyDomainRows },
-  ] = await Promise.all([
-    supabase.from("company_aliases").select("primary_domain, alias_domain").eq("user_id", userId),
-    supabase.from("companies").select("id,name").eq("user_id", userId),
-    supabase.from("company_name_aliases").select("name_key,company_id").eq("user_id", userId),
-    supabase.from("company_domains").select("domain,company_id").eq("user_id", userId),
-  ]);
-  const aliasMap = new Map<string, string>();
-  for (const r of aliasRows ?? []) {
-    if (r.alias_domain && r.primary_domain) aliasMap.set(r.alias_domain, r.primary_domain);
-  }
-  const companyMap = new Map<string, string>();
-  for (const c of allCompanyRows ?? []) {
-    if (c.id && c.name) companyMap.set(c.id, c.name);
-  }
-  const nameAliases = new Map<string, string>();
-  for (const r of (nameAliasRows ?? []) as Array<{
-    name_key: string;
-    company_id: string | null;
-  }>) {
-    const canonical = r.company_id ? companyMap.get(r.company_id) : null;
-    if (r.name_key && canonical) nameAliases.set(r.name_key, canonical);
-  }
-  const companyIdByDomain = new Map<string, string>();
-  for (const r of (companyDomainRows ?? []) as Array<{
-    domain: string;
-    company_id: string;
-  }>) {
-    if (r.domain && r.company_id) companyIdByDomain.set(r.domain, r.company_id);
-  }
-  const keyCtx: CompanyKeyContext = {
-    domainAliases: aliasMap,
-    companiesById: companyMap,
-    nameAliases,
-    companyIdByDomain,
-  };
+  const keyCtx = await loadCompanyKeyContext(supabase, userId);
 
   // 1. Load direct members of the parent, split by auto/manual.
   const { data: members, error: mErr } = await supabase
@@ -493,51 +455,14 @@ async function pruneStaleAutoSubgroupMemberships(
   userId: string,
   contactIds: string[],
 ): Promise<void> {
-  const [
-    { data: aliasRows },
-    { data: allCompanyRows },
-    { data: nameAliasRows },
-    { data: companyDomainRows },
-    { data: contactRows },
-  ] = await Promise.all([
-    supabase.from("company_aliases").select("primary_domain, alias_domain").eq("user_id", userId),
-    supabase.from("companies").select("id,name").eq("user_id", userId),
-    supabase.from("company_name_aliases").select("name_key,company_id").eq("user_id", userId),
-    supabase.from("company_domains").select("domain,company_id").eq("user_id", userId),
+  const [keyCtx, { data: contactRows }] = await Promise.all([
+    loadCompanyKeyContext(supabase, userId),
     supabase
       .from("contacts")
       .select("id, company, email, website, company_id")
       .in("id", contactIds)
       .eq("user_id", userId),
   ]);
-
-  const aliasMap = new Map<string, string>();
-  for (const r of aliasRows ?? []) {
-    if (r.alias_domain && r.primary_domain) aliasMap.set(r.alias_domain, r.primary_domain);
-  }
-  const companyMap = new Map<string, string>();
-  for (const c of allCompanyRows ?? []) if (c.id && c.name) companyMap.set(c.id, c.name);
-  const nameAliases = new Map<string, string>();
-  for (const r of (nameAliasRows ?? []) as Array<{
-    name_key: string;
-    company_id: string | null;
-  }>) {
-    const canonical = r.company_id ? companyMap.get(r.company_id) : null;
-    if (r.name_key && canonical) nameAliases.set(r.name_key, canonical);
-  }
-  const companyIdByDomain = new Map<string, string>();
-  for (const r of (companyDomainRows ?? []) as Array<{
-    domain: string;
-    company_id: string;
-  }>) {
-    if (r.domain && r.company_id) companyIdByDomain.set(r.domain, r.company_id);
-  }
-  const keyCtx: CompanyKeyContext = {
-    domainAliases: aliasMap,
-    companiesById: companyMap,
-    nameAliases,
-    companyIdByDomain,
-  };
 
   const currentKey = new Map<string, string | null>();
   for (const c of (contactRows ?? []) as ContactShape[]) {

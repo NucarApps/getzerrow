@@ -170,6 +170,12 @@ export const FORWARD_MAX_ATTEMPTS = 5;
  * clear (recipient mailbox down, downstream rate limit, etc). */
 export const FORWARD_BACKOFF_SECONDS = [60, 300, 1800, 7200, 21600]; // 1m, 5m, 30m, 2h, 6h
 
+// ─── Message classification ──────────────────────────────────────────────
+
+/** Gmail system labels that disqualify a message from being ingested as a
+ * user-facing inbox email (sent/draft/trash/spam/chat). */
+export const EXCLUDED_LABELS = ["SENT", "DRAFT", "TRASH", "SPAM", "CHAT"];
+
 // ─── Reconcile ───────────────────────────────────────────────────────────
 
 /** Default per-tick reconcile window. Operator can override per-call

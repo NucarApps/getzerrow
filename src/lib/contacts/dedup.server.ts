@@ -2,6 +2,7 @@
 // duplicate scanner. Never import from a client-reachable path.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { normalizePhone, normalizePhones } from "./phone";
+import { normalizeNameLoose } from "./name-match";
 
 export type DupInput = {
   userId: string;
@@ -20,15 +21,19 @@ export type DupInput = {
  *      existing contact_phones row
  *   2) name+phone match — if #1 finds multiple, prefer where lower(name)
  *      equals input.name
- *   3) name+company match — only when input has no phones, match on exact
- *      lower(name) + lower(company). Skip if 2+ candidates (ambiguous).
+ *   3) name+company match — only when input has no phones, match on
+ *      normalized name + company. Skip if 2+ candidates (ambiguous).
+ *
+ * Identity keys are built from the same `name-match` primitives the pure
+ * clustering logic (`dedup-clusters.ts`) uses, so the two dedup paths agree
+ * on what counts as the same person (accents, punctuation, whitespace).
  *
  * Returns the contact id to merge into, or null when nothing safe matches.
  */
 export async function findEmaillessDuplicate(input: DupInput): Promise<string | null> {
   const normPhones = normalizePhones(input.phones);
-  const name = (input.name ?? "").trim().toLowerCase();
-  const company = (input.company ?? "").trim().toLowerCase();
+  const name = normalizeNameLoose(input.name);
+  const company = normalizeNameLoose(input.company);
 
   if (normPhones.length > 0) {
     const { data: phoneRows } = await supabaseAdmin
@@ -50,7 +55,7 @@ export async function findEmaillessDuplicate(input: DupInput): Promise<string | 
       const emailless = (candidates ?? []).filter((c) => !c.email);
       if (emailless.length === 1) return emailless[0].id;
       if (emailless.length > 1 && name) {
-        const nameHit = emailless.find((c) => (c.name ?? "").trim().toLowerCase() === name);
+        const nameHit = emailless.find((c) => normalizeNameLoose(c.name) === name);
         if (nameHit) return nameHit.id;
         // Fall back to the first match — better than making yet another dupe.
         return emailless[0].id;
@@ -58,14 +63,19 @@ export async function findEmaillessDuplicate(input: DupInput): Promise<string | 
       if (emailless.length >= 1) return emailless[0].id;
     }
   } else if (name && company) {
+    // Coarse DB filter (email null, company present), then confirm identity in
+    // JS with the shared normalizer so accent/punctuation/whitespace variants
+    // match the same way clustering does.
     const { data: candidates } = await supabaseAdmin
       .from("contacts")
       .select("id, name, company, email")
       .eq("user_id", input.userId)
       .is("email", null)
-      .ilike("name", name)
-      .ilike("company", company);
-    if ((candidates ?? []).length === 1) return candidates![0].id;
+      .not("company", "is", null);
+    const matches = (candidates ?? []).filter(
+      (c) => normalizeNameLoose(c.name) === name && normalizeNameLoose(c.company) === company,
+    );
+    if (matches.length === 1) return matches[0].id;
   }
   return null;
 }

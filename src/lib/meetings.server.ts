@@ -66,8 +66,8 @@ export async function generateMeetingTitle(sourceText: string): Promise<string |
   if (!apiKey || !text) return null;
   try {
     const { generateText } = await import("ai");
-    const { createLovableAiGatewayProvider } = await import("./ai-gateway");
-    const model = createLovableAiGatewayProvider(apiKey)(SUMMARY_MODEL);
+    const { getModel } = await import("./ai-gateway");
+    const model = getModel(SUMMARY_MODEL);
     const { text: raw } = await generateText({
       model,
       messages: [
@@ -128,8 +128,8 @@ export async function generateMeetingBreakdown(transcriptText: string): Promise<
   if (!apiKey || !text) return null;
   try {
     const { generateText } = await import("ai");
-    const { createLovableAiGatewayProvider } = await import("./ai-gateway");
-    const model = createLovableAiGatewayProvider(apiKey)(SUMMARY_MODEL);
+    const { getModel } = await import("./ai-gateway");
+    const model = getModel(SUMMARY_MODEL);
     const { text: raw } = await generateText({
       model,
       messages: [

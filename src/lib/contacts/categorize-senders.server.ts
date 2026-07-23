@@ -8,7 +8,8 @@ import { z } from "zod";
 import { generateText } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
+import { getModel } from "@/lib/ai-gateway";
+import { raceTimeout } from "@/lib/ai-budget";
 import { AI_CLASSIFY_ATTEMPT_TIMEOUT_MS } from "@/lib/sync/config";
 import { logError, logInfo } from "@/lib/log.server";
 
@@ -39,29 +40,11 @@ function adminTable(name: string) {
   return (supabaseAdmin as unknown as SupabaseClient).from(name);
 }
 
-/** Race the model call against the classify attempt timeout (invariant:
- * every AI call is timeboxed; never call the model unbounded). */
-async function raceTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race<T>([
-      p,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
 /** Default AI labeler: one compact batched prompt via the Lovable gateway.
  * Sender names are user-address-book data, not email bodies — still kept
  * short and JSON-fenced to bound the prompt. */
 export async function labelSendersWithAi(senders: SenderSample[]): Promise<Record<string, string>> {
-  const key = process.env.LOVABLE_API_KEY;
-  if (!key) throw new Error("LOVABLE_API_KEY missing");
-  const model = createLovableAiGatewayProvider(key)("google/gemini-2.5-flash");
+  const model = getModel();
   const list = senders
     .map((s) => `${s.email}${s.name ? ` (${s.name.slice(0, 60)})` : ""}`)
     .join("\n");

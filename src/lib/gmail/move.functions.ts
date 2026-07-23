@@ -8,6 +8,7 @@ import {
   getOwnedSchedule,
   extractDomain,
   drainCatchupRounds,
+  restoreEmailToInbox,
   ianaTz,
 } from "../gmail-helpers.server";
 import { performMove } from "../move-email.server";
@@ -301,38 +302,21 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
         .maybeSingle();
       const fromLabel = f?.gmail_label_id ?? null;
 
-      const currentLabels = ((email.raw_labels as string[] | null) ?? []) as string[];
-      const nextLabels = Array.from(
-        new Set(currentLabels.filter((l) => !fromLabel || l !== fromLabel).concat(["INBOX"])),
-      );
-
-      await updateEmailEncrypted({
-        email_id: email.id,
-        classification_reason: result.classification_reason ?? "",
-        ai_summary: summary || "",
+      await restoreEmailToInbox({
+        emailId: email.id,
+        gmailAccountId: emailAccountId,
+        gmailMessageId: emailMessageId,
+        currentLabels: ((email.raw_labels as string[] | null) ?? []) as string[],
+        fromLabel,
+        classifiedBy: "inbox_override",
+        classificationReason: result.classification_reason ?? "",
+        aiConfidence: 1,
+        aiSummary: summary || "",
+        labelFailureLog: {
+          event: "gmail.reanalyze.inbox_restore_label_failed",
+          payload: { email_id: emailId },
+        },
       });
-      await supabaseAdmin
-        .from("emails")
-        .update({
-          folder_id: null,
-          is_archived: false,
-          classified_by: "inbox_override",
-          ai_confidence: 1,
-          matched_filter_ids: [],
-          raw_labels: nextLabels,
-        })
-        .eq("id", email.id);
-
-      try {
-        await modifyMessage(
-          emailAccountId,
-          emailMessageId,
-          ["INBOX"],
-          fromLabel ? [fromLabel] : [],
-        );
-      } catch (e) {
-        logError("gmail.reanalyze.inbox_restore_label_failed", { email_id: emailId }, e);
-      }
 
       return {
         ok: true,
@@ -365,42 +349,25 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
       const fromLabel = f?.gmail_label_id ?? null;
       const fromName = f?.name ?? null;
 
-      const currentLabels = ((email.raw_labels as string[] | null) ?? []) as string[];
-      const nextLabels = Array.from(
-        new Set(currentLabels.filter((l) => !fromLabel || l !== fromLabel).concat(["INBOX"])),
-      );
-
       const reason = fromName
         ? `Removed from "${fromName}" — sender excluded by folder rule`
         : "Removed from folder — sender excluded by folder rule";
 
-      await updateEmailEncrypted({
-        email_id: email.id,
-        classification_reason: reason,
-        ai_summary: summary || "",
+      await restoreEmailToInbox({
+        emailId: email.id,
+        gmailAccountId: emailAccountId,
+        gmailMessageId: emailMessageId,
+        currentLabels: ((email.raw_labels as string[] | null) ?? []) as string[],
+        fromLabel,
+        classifiedBy: "excluded",
+        classificationReason: reason,
+        aiConfidence: 1,
+        aiSummary: summary || "",
+        labelFailureLog: {
+          event: "gmail.reanalyze.inbox_restore_label_failed",
+          payload: { email_id: emailId },
+        },
       });
-      await supabaseAdmin
-        .from("emails")
-        .update({
-          folder_id: null,
-          is_archived: false,
-          classified_by: "excluded",
-          ai_confidence: 1,
-          matched_filter_ids: [],
-          raw_labels: nextLabels,
-        })
-        .eq("id", email.id);
-
-      try {
-        await modifyMessage(
-          emailAccountId,
-          emailMessageId,
-          ["INBOX"],
-          fromLabel ? [fromLabel] : [],
-        );
-      } catch (e) {
-        logError("gmail.reanalyze.inbox_restore_label_failed", { email_id: emailId }, e);
-      }
 
       return {
         ok: true,
@@ -555,41 +522,20 @@ export const moveEmailToInbox = createServerFn({ method: "POST" })
       fromLabel = f?.gmail_label_id ?? null;
     }
 
-    // Recompute raw_labels: add INBOX, drop the moved-from folder label so the
-    // local row matches the Gmail mutation below. Without this, the inbox view
-    // (which filters on raw_labels @> ['INBOX']) keeps hiding the message.
-    const currentLabels = (email.raw_labels ?? []) as string[];
-    const nextLabels = Array.from(
-      new Set(currentLabels.filter((l) => !fromLabel || l !== fromLabel).concat(["INBOX"])),
-    );
-
-    await updateEmailEncrypted({
-      email_id: email.id,
-      classification_reason: "Moved to Inbox manually",
+    // Recompute raw_labels (add INBOX, drop the folder label), flip the row,
+    // and sync Gmail. Without the raw_labels update the inbox view (which
+    // filters on raw_labels @> ['INBOX']) keeps hiding the message.
+    await restoreEmailToInbox({
+      emailId: email.id,
+      gmailAccountId: email.gmail_account_id,
+      gmailMessageId: email.gmail_message_id,
+      currentLabels: (email.raw_labels ?? []) as string[],
+      fromLabel,
+      classifiedBy: "manual_inbox",
+      classificationReason: "Moved to Inbox manually",
+      aiConfidence: 1,
+      labelFailureLog: { event: "gmail.inbox.label_sync_failed" },
     });
-    await supabaseAdmin
-      .from("emails")
-      .update({
-        folder_id: null,
-        is_archived: false,
-        classified_by: "manual_inbox",
-        ai_confidence: 1,
-        matched_filter_ids: [],
-        raw_labels: nextLabels,
-      })
-      .eq("id", email.id);
-
-    // Remove old folder label, ensure INBOX is present.
-    try {
-      await modifyMessage(
-        email.gmail_account_id,
-        email.gmail_message_id,
-        ["INBOX"],
-        fromLabel ? [fromLabel] : [],
-      );
-    } catch (e) {
-      logError("gmail.inbox.label_sync_failed", {}, e);
-    }
 
     // Stop training AI on this mistake.
     if (email.folder_id) {
@@ -737,42 +683,27 @@ export const addInboxOverride = createServerFn({ method: "POST" })
           while (i < matches.length) {
             const m = matches[i++];
             try {
-              const oldLabel = m.folder_id ? labelById.get(m.folder_id) : null;
-              const currentLabels = ((m as { raw_labels: string[] | null }).raw_labels ??
-                []) as string[];
+              const oldLabel = m.folder_id ? (labelById.get(m.folder_id) ?? null) : null;
               // Reprocess past path: row was filed into a folder (often
               // auto-archived with INBOX stripped). Restore INBOX locally
               // AND in Gmail so the row matches the inbox view filter
               // (raw_labels @> ['INBOX']) just like the runtime
               // inbox_override path in process-message.
-              const nextLabels = Array.from(
-                new Set(currentLabels.filter((l) => !oldLabel || l !== oldLabel).concat(["INBOX"])),
-              );
-              await updateEmailEncrypted({
-                email_id: m.id,
-                classification_reason: reason,
-                ai_summary: "",
+              await restoreEmailToInbox({
+                emailId: m.id,
+                gmailAccountId: m.gmail_account_id,
+                gmailMessageId: m.gmail_message_id,
+                currentLabels: ((m as { raw_labels: string[] | null }).raw_labels ??
+                  []) as string[],
+                fromLabel: oldLabel,
+                classifiedBy: "inbox_override",
+                classificationReason: reason,
+                aiSummary: "",
+                labelFailureLog: {
+                  event: "gmail.reprocess.label_sync_failed",
+                  payload: { email_id: m.id },
+                },
               });
-              await supabaseAdmin
-                .from("emails")
-                .update({
-                  folder_id: null,
-                  is_archived: false,
-                  classified_by: "inbox_override",
-                  matched_filter_ids: [],
-                  raw_labels: nextLabels,
-                })
-                .eq("id", m.id);
-              try {
-                await modifyMessage(
-                  m.gmail_account_id,
-                  m.gmail_message_id,
-                  ["INBOX"],
-                  oldLabel ? [oldLabel] : [],
-                );
-              } catch (e) {
-                logError("gmail.reprocess.label_sync_failed", { email_id: m.id }, e);
-              }
               reprocessed_count++;
             } catch (e) {
               logError("gmail.reprocess.row_failed", { email_id: m.id }, e);

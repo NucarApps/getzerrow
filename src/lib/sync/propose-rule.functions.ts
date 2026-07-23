@@ -20,10 +20,8 @@ const OPS = "contains, not_contains, equals, not_equals, starts_with, ends_with"
 
 async function askModel(prompt: string): Promise<string> {
   const { generateText } = await import("ai");
-  const { createLovableAiGatewayProvider } = await import("../ai-gateway");
-  const key = process.env.LOVABLE_API_KEY;
-  if (!key) throw new Error("LOVABLE_API_KEY missing");
-  const model = createLovableAiGatewayProvider(key)("google/gemini-2.5-flash");
+  const { getModel } = await import("../ai-gateway");
+  const model = getModel();
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race<string>([

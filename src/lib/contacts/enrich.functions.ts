@@ -7,6 +7,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { sendContactShareEmail } from "../cards.server";
 import { setContactEncryptedFields } from "../sync/encrypted-writer";
+import { PERSONAL_DOMAINS } from "@/lib/company-domains";
 import {
   getContactDecrypted,
   getContactListFieldsDecrypted,
@@ -382,7 +383,7 @@ ${sample}`,
           model: getModel("google/gemini-2.5-flash"),
           prompt: `Write a short identity briefing (2-4 sentences, plain prose) about this person. Focus ONLY on who they are:
 1) Their name and likely role or title.
-2) Who they work for — the company or organization. Infer from their email signature, email domain, or explicit mentions. Ignore generic providers (gmail.com, yahoo.com, outlook.com, icloud.com, hotmail.com) as company signal.
+2) Who they work for — the company or organization. Infer from their email signature, email domain, or explicit mentions. Ignore generic providers (${[...PERSONAL_DOMAINS].join(", ")}) as company signal.
 3) What they do — their function, discipline, or industry, in one line.
 
 Do NOT summarize your relationship, past conversations, projects discussed, or communication patterns. Do not use phrases like "you discussed", "your relationship", "has been in touch about". Do not invent facts. If identity signal is thin, say so briefly (e.g. "Limited signal — appears to use a personal Gmail address; role and employer unclear.").

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { constantTimeEqual } from "@/lib/constant-time.server";
 
 // Shared auth for cron/webhook endpoints under /api/public/*.
 // Requires `Authorization: Bearer <cron secret>` or `x-cron-secret: <cron secret>`.
@@ -7,12 +8,6 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 // and therefore provides no access control — it must NOT be accepted here.
 // Any pg_cron job must be configured to send the CRON_SECRET as a Bearer
 // token in the Authorization header.
-function constantTimeEq(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
 
 export function isAuthorizedCron(request: Request): boolean {
   const auth = request.headers.get("authorization");
@@ -23,7 +18,7 @@ export function isAuthorizedCron(request: Request): boolean {
 
   const cronSecret = process.env.CRON_SECRET;
   if (!cronSecret) return false;
-  return constantTimeEq(provided, cronSecret);
+  return constantTimeEqual(provided, cronSecret);
 }
 
 type CronSecretRpcClient = {
@@ -58,7 +53,7 @@ export async function isAuthorizedCronRequest(request: Request): Promise<boolean
   if (!provided) return false;
 
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && constantTimeEq(provided, cronSecret)) return true;
+  if (cronSecret && constantTimeEqual(provided, cronSecret)) return true;
 
   return matchesDatabaseCronSecret(provided);
 }

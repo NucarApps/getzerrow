@@ -4,7 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { normalizeCompanyName } from "./normalize";
 import { normalizeCompanyName as brandKey } from "@/lib/contacts/company-name";
 import { isPersonalDomain, extractDomain, prettyCompanyName } from "@/lib/company-domains";
-import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
+import { getModel } from "@/lib/ai-gateway";
 
 type Ctx = { supabase: import("@supabase/supabase-js").SupabaseClient; userId: string };
 
@@ -990,8 +990,7 @@ export const findDuplicateCompanies = createServerFn({ method: "POST" })
           aiError = "Missing LOVABLE_API_KEY";
         } else {
           const { generateText, Output, NoObjectGeneratedError } = await import("ai");
-          const gateway = createLovableAiGatewayProvider(apiKey);
-          const model = gateway("google/gemini-2.5-flash");
+          const model = getModel();
           const AiSchema = z.object({
             clusters: z.array(
               z.object({
