@@ -17,6 +17,7 @@ dist-ssr
 *.local
 
 # Env / secrets (never commit real values — see .env.example / .dev.vars.example)
+.env
 .env.*
 !.env.example
 

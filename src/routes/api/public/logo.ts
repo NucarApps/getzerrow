@@ -27,6 +27,16 @@ async function tryFetch(url: string): Promise<Response | null> {
     // Manually follow up to 3 redirects, re-validating the host on each hop
     // so an attacker cannot 302 us into a private-network address after
     // passing the initial DNS check.
+    //
+    // Residual risk (documented, not fully closable on Cloudflare Workers):
+    // `hostResolvesToPublicIp` resolves via DoH, then `fetch()` resolves the
+    // host again itself — a DNS-rebinding attacker whose record flips to a
+    // private IP between those two lookups could still be connected to by
+    // fetch(). Workers' fetch() exposes no way to pin the connection to the
+    // IP we validated (pinning to an IP would also break TLS SNI/cert
+    // validation), so the check-then-fetch window cannot be eliminated here.
+    // The per-hop re-validation below narrows it, and the static blocklist +
+    // https-only + image-content-type checks bound the impact.
     for (let hop = 0; hop < 4; hop++) {
       const parsed = new URL(current);
       if (parsed.protocol !== "https:") return null;

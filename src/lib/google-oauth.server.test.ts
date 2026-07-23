@@ -29,6 +29,7 @@ import {
 const SERVICE_KEY = "test-service-role-key";
 const ENV_KEYS = [
   "SUPABASE_SERVICE_ROLE_KEY",
+  "OAUTH_STATE_SIGNING_KEY",
   "GOOGLE_OAUTH_CLIENT_ID",
   "GOOGLE_OAUTH_CLIENT_SECRET",
   "EMAIL_ENC_KEY",
@@ -39,6 +40,9 @@ let savedEnv: Record<string, string | undefined>;
 beforeEach(() => {
   savedEnv = {};
   for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
+  // Default: no dedicated state key, so tests exercise the service-role
+  // fallback path unless they opt in.
+  delete process.env.OAUTH_STATE_SIGNING_KEY;
   process.env.SUPABASE_SERVICE_ROLE_KEY = SERVICE_KEY;
   process.env.GOOGLE_OAUTH_CLIENT_ID = "test-client-id";
   process.env.GOOGLE_OAUTH_CLIENT_SECRET = "test-client-secret";
@@ -106,6 +110,24 @@ describe("signState / verifyState", () => {
     // this exercises the expiry branch specifically.
     const state = await signState("user-123", -10);
     await expect(verifyState(state)).rejects.toThrow("State expired");
+  });
+
+  it("uses OAUTH_STATE_SIGNING_KEY when set, independent of the service-role key", async () => {
+    process.env.OAUTH_STATE_SIGNING_KEY = "dedicated-state-key";
+    const state = await signState("user-123");
+    // Round-trips under the dedicated key...
+    await expect(verifyState(state)).resolves.toBe("user-123");
+    // ...and rotating the service-role key does NOT invalidate the state,
+    // proving the service-role key is no longer the signing secret.
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "rotated-service-key";
+    await expect(verifyState(state)).resolves.toBe("user-123");
+  });
+
+  it("a state signed under the dedicated key fails once that key rotates", async () => {
+    process.env.OAUTH_STATE_SIGNING_KEY = "state-key-v1";
+    const state = await signState("user-123");
+    process.env.OAUTH_STATE_SIGNING_KEY = "state-key-v2";
+    await expect(verifyState(state)).rejects.toThrow("Invalid state signature");
   });
 
   it("rejects a state signed under a different secret", async () => {

@@ -72,9 +72,21 @@ function timingSafeStringEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/** Sign { user_id, exp } with HMAC using the service role key as secret. Stateless OAuth state. */
+// Secret used to HMAC the stateless OAuth `state` value. Prefer a dedicated
+// OAUTH_STATE_SIGNING_KEY so state integrity is decoupled from the database
+// service-role credential (rotating the DB key shouldn't invalidate in-flight
+// OAuth flows, and the state secret shouldn't share the service-role key's
+// blast radius). Falls back to SUPABASE_SERVICE_ROLE_KEY when the dedicated key
+// is unset, so existing deployments keep working until it's provisioned.
+function stateSigningSecret(): string {
+  const dedicated = process.env.OAUTH_STATE_SIGNING_KEY?.trim();
+  if (dedicated) return dedicated;
+  return requireEnv("SUPABASE_SERVICE_ROLE_KEY");
+}
+
+/** Sign { user_id, exp } with HMAC using the state-signing secret. Stateless OAuth state. */
 export async function signState(userId: string, ttlSeconds = 600): Promise<string> {
-  const secret = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
+  const secret = stateSigningSecret();
   const payload = b64urlFromString(
     JSON.stringify({ u: userId, e: Math.floor(Date.now() / 1000) + ttlSeconds }),
   );
@@ -83,7 +95,7 @@ export async function signState(userId: string, ttlSeconds = 600): Promise<strin
 }
 
 export async function verifyState(state: string): Promise<string> {
-  const secret = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
+  const secret = stateSigningSecret();
   const [payload, sig] = state.split(".");
   if (!payload || !sig) throw new Error("Malformed state");
   const expected = b64urlFromBytes(await hmacSha256(secret, payload));

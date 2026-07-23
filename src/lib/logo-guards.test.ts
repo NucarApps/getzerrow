@@ -194,4 +194,18 @@ describe("logo-guards: hostResolvesToPublicIp (DNS-rebinding defense)", () => {
       expect(await hostResolvesToPublicIp(h, r)).toBe(true);
     }
   });
+
+  it("re-checks on every call: a record that flips public→private is caught the moment it flips", async () => {
+    // logo.ts re-runs this guard on every redirect hop, so a rebinding record
+    // that answers public on the first lookup and private on the next must be
+    // rejected on that later lookup. A stateful resolver models the flip.
+    let call = 0;
+    const flipping: DohResolver = async (_host, type) => {
+      if (type === "AAAA") return [];
+      call += 1;
+      return call === 1 ? ["93.184.216.34"] : ["169.254.169.254"];
+    };
+    expect(await hostResolvesToPublicIp("rebind.example", flipping)).toBe(true);
+    expect(await hostResolvesToPublicIp("rebind.example", flipping)).toBe(false);
+  });
 });

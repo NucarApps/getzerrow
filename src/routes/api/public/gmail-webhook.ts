@@ -12,6 +12,7 @@ import { topUpWatch } from "@/lib/gmail.server";
 import { verifyGoogleJwt } from "@/lib/google-jwt.server";
 import { redactedEndpoint, fingerprintSecret } from "@/lib/pubsub-redact";
 import { isAuthorizedCronRequest } from "@/lib/cron-auth.server";
+import { constantTimeEqual } from "@/lib/constant-time.server";
 import { logError, newRunId } from "@/lib/log.server";
 import { WEBHOOK_INLINE_DRAIN_BUDGET_MS, JOB_WORKER_CONCURRENCY } from "@/lib/sync/config";
 
@@ -130,7 +131,7 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
             const legacyDisabled = process.env.GMAIL_WEBHOOK_LEGACY_DISABLED === "1";
             const expected = process.env.GMAIL_WEBHOOK_TOKEN;
             const provided = url.searchParams.get("token");
-            if (legacyDisabled || !expected || provided !== expected) {
+            if (legacyDisabled || !expected || !constantTimeEqual(provided, expected)) {
               let details: string;
               if (legacyDisabled) {
                 details =

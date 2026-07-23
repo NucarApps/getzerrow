@@ -1,7 +1,10 @@
 // Basic-auth verification for the CardDAV routes. Username is the user's
-// Zerrow email, password is a token generated in Settings and stored
-// hashed. Never accepts the real login password. All checks constant-time
-// via SHA-256 hash comparison and a SECURITY DEFINER helper.
+// Zerrow email, password is a token generated in Settings and stored as an
+// unsalted SHA-256 hash. Never accepts the real login password. Verification
+// compares the SHA-256 of the presented token against the stored hash inside a
+// SECURITY DEFINER helper (a plain equality lookup — not a constant-time
+// compare, which is acceptable here only because the token is a high-entropy
+// random secret, so a timing side-channel yields no practical advantage).
 
 import { createHash } from "node:crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";

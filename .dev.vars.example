@@ -14,6 +14,11 @@ EMAIL_ENC_KEY="<random-32+ byte secret>"
 GOOGLE_OAUTH_CLIENT_ID="<google-oauth-client-id>"
 GOOGLE_OAUTH_CLIENT_SECRET="<google-oauth-client-secret>"
 
+# Dedicated HMAC secret for the stateless OAuth `state` value. Optional: when
+# unset the code falls back to SUPABASE_SERVICE_ROLE_KEY. Set this so state
+# integrity is decoupled from the DB service-role credential.
+OAUTH_STATE_SIGNING_KEY="<random-32+ byte secret>"
+
 # Gmail push notifications via Google Cloud Pub/Sub
 GMAIL_PUBSUB_TOPIC="projects/<gcp-project>/topics/<topic>"
 GMAIL_PUBSUB_SERVICE_ACCOUNT="<service-account-email-or-json>"
@@ -28,3 +33,11 @@ LOVABLE_API_KEY="<lovable-api-key>"
 # logo.dev (company logo lookup)
 LOGO_DEV_TOKEN="<logo-dev-token>"
 LOGO_DEV_SECRET="<logo-dev-secret>"
+
+# Recall.ai meeting bots (recordings + realtime transcript webhook)
+RECALL_API_KEY="<recall-api-key>"
+RECALL_WEBHOOK_SECRET="whsec_<svix-webhook-signing-secret>"
+RECALL_REALTIME_TOKEN="<random secret guarding the realtime endpoint>"
+
+# HMAC secret for short-lived meeting-recording stream URLs
+MEETING_STREAM_SECRET="<random-32+ byte secret>"

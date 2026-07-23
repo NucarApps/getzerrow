@@ -9,6 +9,7 @@ import {
   ensureTranscriptBuffer,
   type TranscriptSeg,
 } from "@/lib/meetings/hey-zerrow.server";
+import { constantTimeEqual } from "@/lib/constant-time.server";
 import { logError, logInfo, newRunId } from "@/lib/log.server";
 
 const WAKE_RE = /(?:^|[\s,.:;!?])(?:@zerrow|hey\s+zerrow)[\s,:;-]+(.+)/i;
@@ -43,8 +44,11 @@ export const Route = createFileRoute("/api/public/recall-realtime")({
         const runId = newRunId();
         const expected = process.env.RECALL_REALTIME_TOKEN?.trim();
         const url = new URL(request.url);
-        const token = url.searchParams.get("t")?.trim();
-        if (!expected || !token || token !== expected) {
+        // Prefer the token in a header (kept out of access/proxy logs); fall
+        // back to the legacy `?t=` query param Recall was originally configured
+        // with. Compare in constant time to avoid leaking the secret via timing.
+        const token = (request.headers.get("x-recall-token") ?? url.searchParams.get("t"))?.trim();
+        if (!expected || !token || !constantTimeEqual(token, expected)) {
           return new Response("Unauthorized", { status: 401 });
         }
 
