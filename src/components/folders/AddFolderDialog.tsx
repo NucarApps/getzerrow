@@ -15,7 +15,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import { toast } from "sonner";
 import type { GLabel } from "./FolderEditor";
 
@@ -187,16 +192,16 @@ export function AddFolderDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl gap-0 overflow-hidden p-0">
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent className="max-w-4xl gap-0 overflow-hidden p-0">
         <div className="flex max-h-[85vh] flex-col md:flex-row">
           {/* Form */}
           <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-6">
-            <DialogHeader className="space-y-0">
+            <ResponsiveDialogHeader className="space-y-0">
               <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-primary">
                 New folder
               </span>
-              <DialogTitle asChild>
+              <ResponsiveDialogTitle asChild>
                 <Input
                   autoFocus
                   placeholder="Folder name"
@@ -205,8 +210,8 @@ export function AddFolderDialog({
                   onKeyDown={(e) => e.key === "Enter" && submit()}
                   className="mt-0.5 h-auto border-none bg-transparent px-0 font-display text-2xl shadow-none focus-visible:ring-0"
                 />
-              </DialogTitle>
-            </DialogHeader>
+              </ResponsiveDialogTitle>
+            </ResponsiveDialogHeader>
 
             <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Folder color">
               {palette.map((hex) => (
@@ -353,7 +358,7 @@ export function AddFolderDialog({
             </div>
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }

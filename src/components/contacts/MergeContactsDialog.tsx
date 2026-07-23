@@ -5,12 +5,12 @@ import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogFooter,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -179,11 +179,11 @@ export function MergeContactsDialog({ open, onOpenChange, contactIds, onMerged }
   }, [q.data]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Merge {contactIds.length} contacts</DialogTitle>
-        </DialogHeader>
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent className="max-w-3xl">
+        <ResponsiveDialogHeader>
+          <ResponsiveDialogTitle>Merge {contactIds.length} contacts</ResponsiveDialogTitle>
+        </ResponsiveDialogHeader>
 
         {q.isLoading || !q.data ? (
           <p className="py-8 text-center text-sm text-muted-foreground">Loading…</p>
@@ -430,15 +430,15 @@ export function MergeContactsDialog({ open, onOpenChange, contactIds, onMerged }
           </ScrollArea>
         )}
 
-        <DialogFooter>
+        <ResponsiveDialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={mut.isPending}>
             Cancel
           </Button>
           <Button onClick={() => mut.mutate()} disabled={mut.isPending || !primaryId}>
             {mut.isPending ? "Merging…" : "Merge"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ResponsiveDialogFooter>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }

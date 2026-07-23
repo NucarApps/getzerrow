@@ -38,13 +38,13 @@ import {
   Link2,
   ArrowRight,
   History,
-  Loader2,
   ChevronDown,
   Filter as FilterIcon,
   Tag,
   Inbox,
   MoreVertical,
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -56,12 +56,12 @@ import { validateRuleNode } from "@/lib/sync/filter-engine";
 import { simulateRule } from "@/lib/sync/simulate-rule.functions";
 import type { SimulationResult } from "@/lib/sync/simulate-rule";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import { FolderChatPanel } from "./FolderChatPanel";
 import { FolderHealthCard } from "./FolderHealthCard";
 import { HistoryPanel } from "./editor/folder-history-panel";
@@ -799,7 +799,7 @@ export function FolderEditor({
               >
                 {generatingRule ? (
                   <>
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Generating…
+                    <Spinner className="mr-1.5 h-3.5 w-3.5" /> Generating…
                   </>
                 ) : (
                   <>
@@ -835,7 +835,7 @@ export function FolderEditor({
               >
                 {draftingFromLabel ? (
                   <>
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Drafting…
+                    <Spinner className="mr-1.5 h-3.5 w-3.5" /> Drafting…
                   </>
                 ) : (
                   <>
@@ -1233,21 +1233,21 @@ export function FolderEditor({
       )}
 
       {/* Rule simulator results (task 10): dry-run only — nothing moved. */}
-      <Dialog
+      <ResponsiveDialog
         open={!!simResult}
         onOpenChange={(v) => {
           if (!v) setSimResult(null);
         }}
       >
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Preview — last 7 days</DialogTitle>
-            <DialogDescription>
+        <ResponsiveDialogContent className="max-w-2xl">
+          <ResponsiveDialogHeader>
+            <ResponsiveDialogTitle>Preview — last 7 days</ResponsiveDialogTitle>
+            <ResponsiveDialogDescription>
               {simResult
                 ? `${simResult.scanned} emails scanned · ${simResult.moves} would move here · ${simResult.excluded} vetoed by exclude rules · ${simResult.no_change} untouched. Dry run — nothing moved.`
                 : ""}
-            </DialogDescription>
-          </DialogHeader>
+            </ResponsiveDialogDescription>
+          </ResponsiveDialogHeader>
           {simResult && (
             <div className="max-h-[55vh] space-y-3 overflow-y-auto">
               {simResult.moves === 0 && simResult.excluded === 0 && (
@@ -1303,8 +1303,8 @@ export function FolderEditor({
               )}
             </div>
           )}
-        </DialogContent>
-      </Dialog>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
     </div>
   );
 }

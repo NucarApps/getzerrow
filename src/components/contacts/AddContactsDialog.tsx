@@ -13,13 +13,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from "@/components/ui/dialog";
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+  ResponsiveDialogFooter,
+  ResponsiveDialogDescription,
+} from "@/components/ui/responsive-dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   createContactManual,
@@ -136,7 +136,7 @@ function PeoplePicker({
         )}
       </div>
 
-      <DialogFooter>
+      <ResponsiveDialogFooter>
         <Button variant="outline" onClick={onCancel} disabled={adding}>
           Cancel
         </Button>
@@ -145,7 +145,7 @@ function PeoplePicker({
             ? "Adding…"
             : `Add ${selected.size || ""} ${selected.size === 1 ? "contact" : "contacts"}`}
         </Button>
-      </DialogFooter>
+      </ResponsiveDialogFooter>
     </>
   );
 }
@@ -335,14 +335,14 @@ export function AddContactsDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle>Add contacts</DialogTitle>
-          <DialogDescription>
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent className="sm:max-w-xl max-h-[90vh] overflow-hidden flex flex-col">
+        <ResponsiveDialogHeader>
+          <ResponsiveDialogTitle>Add contacts</ResponsiveDialogTitle>
+          <ResponsiveDialogDescription>
             Enter someone manually, or pick from your inbox senders or calendar meetings.
-          </DialogDescription>
-        </DialogHeader>
+          </ResponsiveDialogDescription>
+        </ResponsiveDialogHeader>
 
         <Tabs
           value={tab}
@@ -415,14 +415,14 @@ export function AddContactsDialog({
                 />
               </Field>
             </div>
-            <DialogFooter className="pt-2">
+            <ResponsiveDialogFooter className="pt-2">
               <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
                 Cancel
               </Button>
               <Button onClick={submitManual} disabled={saving || !m.email}>
                 {saving ? "Adding…" : "Add contact"}
               </Button>
-            </DialogFooter>
+            </ResponsiveDialogFooter>
           </TabsContent>
 
           <TabsContent value="inbox" className="flex flex-col min-h-0 pt-3 gap-3">
@@ -516,7 +516,7 @@ export function AddContactsDialog({
             />
           </TabsContent>
         </Tabs>
-      </DialogContent>
-    </Dialog>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }

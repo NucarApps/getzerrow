@@ -21,6 +21,7 @@ import {
   Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ColorDotChip } from "@/components/ui/status-pill";
 import { Input } from "@/components/ui/input";
 import { CompanyCombobox } from "@/components/contacts/CompanyCombobox";
 import { Textarea } from "@/components/ui/textarea";
@@ -57,13 +58,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from "@/components/ui/dialog";
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+  ResponsiveDialogFooter,
+  ResponsiveDialogDescription,
+} from "@/components/ui/responsive-dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   AlertDialog,
@@ -548,20 +549,14 @@ export function ContactDetailView({ id, onDeleted, onDirtyChange, flushRef }: Pr
           {(gq.data?.groups ?? [])
             .filter((g) => myGroupIds.has(g.id))
             .map((g) => (
-              <span
+              <ColorDotChip
                 key={g.id}
-                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/60 py-0.5 pl-2 pr-1 text-xs"
+                color={g.color}
+                onRemove={() => toggleGroup(g.id)}
+                removeLabel={`Remove from ${g.name}`}
               >
-                <span className="h-2 w-2 rounded-full" style={{ background: g.color }} />
                 {g.name}
-                <button
-                  onClick={() => toggleGroup(g.id)}
-                  className="grid h-4 w-4 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
-                  aria-label={`Remove from ${g.name}`}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
+              </ColorDotChip>
             ))}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -779,14 +774,14 @@ export function ContactDetailView({ id, onDeleted, onDirtyChange, flushRef }: Pr
               </AlertDialog>
             </div>
           </div>
-          <Dialog open={cardImageOpen} onOpenChange={setCardImageOpen}>
-            <DialogContent className="max-w-3xl">
-              <DialogHeader>
-                <DialogTitle>Business card</DialogTitle>
-                <DialogDescription className="sr-only">
+          <ResponsiveDialog open={cardImageOpen} onOpenChange={setCardImageOpen}>
+            <ResponsiveDialogContent className="max-w-3xl">
+              <ResponsiveDialogHeader>
+                <ResponsiveDialogTitle>Business card</ResponsiveDialogTitle>
+                <ResponsiveDialogDescription className="sr-only">
                   Full-size view of the scanned business card.
-                </DialogDescription>
-              </DialogHeader>
+                </ResponsiveDialogDescription>
+              </ResponsiveDialogHeader>
               {cardImgSrc ? (
                 <img
                   src={cardImgSrc}
@@ -794,8 +789,8 @@ export function ContactDetailView({ id, onDeleted, onDirtyChange, flushRef }: Pr
                   className="w-full rounded-md bg-background object-contain"
                 />
               ) : null}
-            </DialogContent>
-          </Dialog>
+            </ResponsiveDialogContent>
+          </ResponsiveDialog>
         </div>
       ) : null}
 
@@ -949,14 +944,14 @@ function ShareContactDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Share {displayName}</DialogTitle>
-          <DialogDescription>
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent className="sm:max-w-md">
+        <ResponsiveDialogHeader>
+          <ResponsiveDialogTitle>Share {displayName}</ResponsiveDialogTitle>
+          <ResponsiveDialogDescription>
             Send their contact details to someone via email or text.
-          </DialogDescription>
-        </DialogHeader>
+          </ResponsiveDialogDescription>
+        </ResponsiveDialogHeader>
 
         <Tabs defaultValue="email" className="mt-2">
           <TabsList className="grid w-full grid-cols-2">
@@ -992,14 +987,14 @@ function ShareContactDialog({
             <p className="text-xs text-muted-foreground">
               A .vcf attachment will be included so they can save the contact in one tap.
             </p>
-            <DialogFooter>
+            <ResponsiveDialogFooter>
               <Button variant="outline" onClick={() => onOpenChange(false)} disabled={sending}>
                 Cancel
               </Button>
               <Button onClick={sendEmail} disabled={sending || !/.+@.+\..+/.test(toEmail)}>
                 <Send className="mr-2 h-4 w-4" /> {sending ? "Sending…" : "Send email"}
               </Button>
-            </DialogFooter>
+            </ResponsiveDialogFooter>
           </TabsContent>
 
           <TabsContent value="sms" className="space-y-3 pt-3">
@@ -1023,18 +1018,18 @@ function ShareContactDialog({
             <p className="text-xs text-muted-foreground">
               Opens your phone's Messages app with the number and text prefilled.
             </p>
-            <DialogFooter>
+            <ResponsiveDialogFooter>
               <Button variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
               <Button onClick={openMessages}>
                 <MessageSquare className="mr-2 h-4 w-4" /> Open Messages
               </Button>
-            </DialogFooter>
+            </ResponsiveDialogFooter>
           </TabsContent>
         </Tabs>
-      </DialogContent>
-    </Dialog>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }
 

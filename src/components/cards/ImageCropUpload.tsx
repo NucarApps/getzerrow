@@ -1,14 +1,15 @@
 import { useCallback, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
-import { Upload, X, Loader2 } from "lucide-react";
+import { Upload, X } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+  ResponsiveDialogFooter,
+} from "@/components/ui/responsive-dialog";
 import { Slider } from "@/components/ui/slider";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -129,11 +130,13 @@ export function ImageCropUpload({
         </button>
       )}
 
-      <Dialog open={!!src} onOpenChange={(o) => !o && setSrc(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Crop {kind === "avatar" ? "photo" : "cover"}</DialogTitle>
-          </DialogHeader>
+      <ResponsiveDialog open={!!src} onOpenChange={(o) => !o && setSrc(null)}>
+        <ResponsiveDialogContent className="max-w-lg">
+          <ResponsiveDialogHeader>
+            <ResponsiveDialogTitle>
+              Crop {kind === "avatar" ? "photo" : "cover"}
+            </ResponsiveDialogTitle>
+          </ResponsiveDialogHeader>
           <div className="relative h-72 w-full overflow-hidden rounded-md bg-black">
             {src && (
               <Cropper
@@ -159,22 +162,22 @@ export function ImageCropUpload({
               onValueChange={(v) => setZoom(v[0])}
             />
           </div>
-          <DialogFooter>
+          <ResponsiveDialogFooter>
             <Button variant="ghost" onClick={() => setSrc(null)} disabled={uploading}>
               Cancel
             </Button>
             <Button onClick={onConfirm} disabled={uploading}>
               {uploading ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Uploading…
+                  <Spinner className="mr-2 h-4 w-4" /> Uploading…
                 </>
               ) : (
                 "Save"
               )}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </ResponsiveDialogFooter>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
     </div>
   );
 }

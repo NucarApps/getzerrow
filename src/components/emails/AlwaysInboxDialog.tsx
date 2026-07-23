@@ -2,13 +2,13 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import { moveEmailToInbox } from "@/lib/gmail.functions";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+  ResponsiveDialogDescription,
+  ResponsiveDialogFooter,
+} from "@/components/ui/responsive-dialog";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { AtSign, Globe } from "lucide-react";
@@ -50,15 +50,15 @@ export function AlwaysInboxDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Always send to inbox?</DialogTitle>
-          <DialogDescription>
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent className="sm:max-w-md">
+        <ResponsiveDialogHeader>
+          <ResponsiveDialogTitle>Always send to inbox?</ResponsiveDialogTitle>
+          <ResponsiveDialogDescription>
             This message is back in your inbox. Want future mail from this sender to skip folder
             rules and AI too?
-          </DialogDescription>
-        </DialogHeader>
+          </ResponsiveDialogDescription>
+        </ResponsiveDialogHeader>
         <div className="space-y-2">
           {fromAddr && (
             <Button
@@ -83,12 +83,12 @@ export function AlwaysInboxDialog({
             </Button>
           )}
         </div>
-        <DialogFooter>
+        <ResponsiveDialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={!!busy}>
             No thanks
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ResponsiveDialogFooter>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }

@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageTitle } from "@/components/PageTitle";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -170,7 +172,7 @@ function LabelsPage() {
             <Tags className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="font-display text-xl text-foreground sm:text-2xl">Labels</h1>
+            <PageTitle>Labels</PageTitle>
             <p className="text-xs text-muted-foreground">
               {gq.data ? `${groups.length} labels` : "Loading…"}
             </p>
@@ -208,9 +210,10 @@ function LabelsPage() {
             ))}
           </div>
         ) : visibleTree.length === 0 ? (
-          <div className="rounded-md border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-            No labels yet. Create one like “Work” or “Personal”, then nest sub-labels under it.
-          </div>
+          <EmptyState
+            className="rounded-md border border-dashed border-border py-10"
+            title="No labels yet. Create one like “Work” or “Personal”, then nest sub-labels under it."
+          />
         ) : (
           <ul className="divide-y divide-border/60 rounded-md border border-border">
             {visibleTree.map(({ group: g, depth }) => {

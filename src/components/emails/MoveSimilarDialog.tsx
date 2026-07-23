@@ -3,18 +3,19 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import { findSimilarEmails, bulkMoveEmails } from "@/lib/gmail.functions";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+  ResponsiveDialogDescription,
+  ResponsiveDialogFooter,
+} from "@/components/ui/responsive-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
-import { Loader2, AtSign, Globe } from "lucide-react";
+import { AtSign, Globe } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 
 type Folder = { id: string; name: string; color: string };
 type Match = {
@@ -130,15 +131,15 @@ export function MoveSimilarDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Move similar emails to {toFolder.name}?</DialogTitle>
-          <DialogDescription>
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent className="max-w-2xl">
+        <ResponsiveDialogHeader>
+          <ResponsiveDialogTitle>Move similar emails to {toFolder.name}?</ResponsiveDialogTitle>
+          <ResponsiveDialogDescription>
             Other emails in <span className="font-medium text-foreground">{fromFolderName}</span>{" "}
             that match. Uncheck any you want to keep.
-          </DialogDescription>
-        </DialogHeader>
+          </ResponsiveDialogDescription>
+        </ResponsiveDialogHeader>
 
         <div className="flex items-center gap-1.5">
           <button
@@ -161,7 +162,7 @@ export function MoveSimilarDialog({
         <div className="max-h-[50vh] overflow-y-auto rounded-md border border-border">
           {loading ? (
             <div className="flex items-center justify-center gap-2 p-8 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Finding similar…
+              <Spinner className="h-4 w-4" /> Finding similar…
             </div>
           ) : matches.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">
@@ -216,15 +217,15 @@ export function MoveSimilarDialog({
           <p className="text-xs text-muted-foreground">Showing the 50 most recent matches.</p>
         )}
 
-        <DialogFooter>
+        <ResponsiveDialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={moving}>
             Not now
           </Button>
           <Button onClick={confirmMove} disabled={moving || selected.size === 0}>
             {moving ? "Moving…" : `Move ${selected.size} to ${toFolder.name}`}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ResponsiveDialogFooter>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }

@@ -44,13 +44,13 @@ import { matchesSearchScope } from "@/lib/search-scope";
 import { EMAIL_LIST_COLUMNS } from "@/lib/email-list-columns";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogFooter,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+  ResponsiveDialogDescription,
+} from "@/components/ui/responsive-dialog";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -1991,17 +1991,17 @@ function InboxPage() {
         })()}
       />
 
-      <Dialog
+      <ResponsiveDialog
         open={!!suggestion}
         onOpenChange={(v) => {
           if (!v) setSuggestion(null);
         }}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create folder from selection</DialogTitle>
-            <DialogDescription>{suggestion?.why}</DialogDescription>
-          </DialogHeader>
+        <ResponsiveDialogContent>
+          <ResponsiveDialogHeader>
+            <ResponsiveDialogTitle>Create folder from selection</ResponsiveDialogTitle>
+            <ResponsiveDialogDescription>{suggestion?.why}</ResponsiveDialogDescription>
+          </ResponsiveDialogHeader>
           {suggestion && (
             <div className="space-y-3 text-sm">
               <div>
@@ -2037,7 +2037,7 @@ function InboxPage() {
               </div>
             </div>
           )}
-          <DialogFooter>
+          <ResponsiveDialogFooter>
             <Button variant="ghost" onClick={() => setSuggestion(null)}>
               Cancel
             </Button>
@@ -2075,9 +2075,9 @@ function InboxPage() {
             >
               Create folder
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </ResponsiveDialogFooter>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
       <AlertDialog open={confirmReanalyzeFolder} onOpenChange={setConfirmReanalyzeFolder}>
         <AlertDialogContent>
           <AlertDialogHeader>

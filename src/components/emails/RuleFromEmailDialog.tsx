@@ -10,13 +10,13 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { Bot, Sparkles } from "lucide-react";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogFooter,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
@@ -136,18 +136,18 @@ export function RuleFromEmailDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent className="max-w-lg">
+        <ResponsiveDialogHeader>
+          <ResponsiveDialogTitle className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-primary" /> Rule from this email
-          </DialogTitle>
-          <DialogDescription>
+          </ResponsiveDialogTitle>
+          <ResponsiveDialogDescription>
             {proposal?.fallback
               ? "The AI proposal didn't validate, so this is a safe sender rule instead."
               : "AI-proposed rule — review, preview, then create. Nothing is saved until you approve."}
-          </DialogDescription>
-        </DialogHeader>
+          </ResponsiveDialogDescription>
+        </ResponsiveDialogHeader>
 
         {proposalQ.isLoading && (
           <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
@@ -219,15 +219,15 @@ export function RuleFromEmailDialog({
           </div>
         )}
 
-        <DialogFooter>
+        <ResponsiveDialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button onClick={create} disabled={!proposal || !name.trim() || creating}>
             {creating ? "Creating…" : "Create folder & rule"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ResponsiveDialogFooter>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }
