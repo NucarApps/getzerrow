@@ -6,160 +6,19 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
 import { logInfo } from "@/lib/log.server";
 import { normalizePhone } from "./phone";
-import { emailLocalPart, firstLastTokens, normalizeNameLoose } from "./name-match";
+import {
+  buildClusters,
+  pickPrimary,
+  truncateMembers,
+  type Cluster,
+  type ContactRow,
+  type ContactWithPhones,
+  type PhoneRow,
+} from "./dedup-clusters";
 import { reconcileAutoParentsForContacts } from "./auto-company-subgroups.functions";
-
-type ContactRow = {
-  id: string;
-  name: string | null;
-  email: string | null;
-  company: string | null;
-  title: string | null;
-  city: string | null;
-  source: string | null;
-  created_at: string;
-};
-
-type PhoneRow = { contact_id: string; number: string };
-
-type ContactWithPhones = ContactRow & { phones: string[] };
 
 const MAX_CLUSTERS = 80; // safety cap for AI credits per scan
 const MAX_CLUSTER_SIZE = 6; // clusters bigger than this are truncated for the prompt
-
-type ClusterSignal =
-  | "exact_phone"
-  | "name_phone"
-  | "name_company"
-  | "name_only"
-  | "email_localpart"
-  | "name_email_local"
-  | "loose_name";
-
-type Cluster = {
-  key: string;
-  contacts: ContactWithPhones[];
-  signal: ClusterSignal;
-};
-
-function normName(s: string | null | undefined): string {
-  return normalizeNameLoose(s);
-}
-
-function firstLastKey(name: string | null | undefined): string | null {
-  const tokens = firstLastTokens(name);
-  if (!tokens) return null;
-  const [f, l] = tokens;
-  if (!f && !l) return null;
-  return `${f}|${l}`;
-}
-
-function buildClusters(all: ContactWithPhones[]): Cluster[] {
-  const byPhone = new Map<string, ContactWithPhones[]>();
-  const byNameCompany = new Map<string, ContactWithPhones[]>();
-  const byName = new Map<string, ContactWithPhones[]>();
-  const byLooseName = new Map<string, ContactWithPhones[]>();
-  const byEmailLocal = new Map<string, ContactWithPhones[]>();
-  const byNameEmailLocal = new Map<string, ContactWithPhones[]>();
-
-  for (const c of all) {
-    const name = normName(c.name);
-    const company = normName(c.company);
-    const loose = firstLastKey(c.name);
-    const local = emailLocalPart(c.email);
-
-    for (const raw of c.phones) {
-      const n = normalizePhone(raw);
-      if (!n) continue;
-      const list = byPhone.get(n) ?? [];
-      list.push(c);
-      byPhone.set(n, list);
-    }
-    if (name && company) {
-      const k = `${name}|${company}`;
-      const list = byNameCompany.get(k) ?? [];
-      list.push(c);
-      byNameCompany.set(k, list);
-    }
-    if (name) {
-      const list = byName.get(name) ?? [];
-      list.push(c);
-      byName.set(name, list);
-    }
-    if (loose) {
-      const list = byLooseName.get(loose) ?? [];
-      list.push(c);
-      byLooseName.set(loose, list);
-    }
-    if (local && local.length >= 3) {
-      const list = byEmailLocal.get(local) ?? [];
-      list.push(c);
-      byEmailLocal.set(local, list);
-    }
-    if (loose && local && local.length >= 3) {
-      const k = `${loose}|${local}`;
-      const list = byNameEmailLocal.get(k) ?? [];
-      list.push(c);
-      byNameEmailLocal.set(k, list);
-    }
-  }
-
-  const clusters: Cluster[] = [];
-  const seen = new Set<string>();
-
-  function pushCluster(members: ContactWithPhones[], signal: ClusterSignal, key: string) {
-    if (members.length < 2) return;
-    const uniq = new Map<string, ContactWithPhones>();
-    for (const m of members) uniq.set(m.id, m);
-    if (uniq.size < 2) return;
-    const idKey = Array.from(uniq.keys()).sort().join(",");
-    if (seen.has(idKey)) return;
-    seen.add(idKey);
-    clusters.push({ key, contacts: Array.from(uniq.values()), signal });
-  }
-
-  // Strong signals first so overlapping id-sets get the higher-priority label.
-  for (const [k, list] of byPhone) pushCluster(list, "exact_phone", `phone:${k}`);
-  for (const [k, list] of byNameEmailLocal) pushCluster(list, "name_email_local", `nel:${k}`);
-  for (const [k, list] of byEmailLocal) {
-    // Only interesting if the local-part appears on ≥2 different domains.
-    const domains = new Set(
-      list.map((c) => (c.email ?? "").split("@")[1]?.toLowerCase()).filter(Boolean),
-    );
-    if (domains.size >= 2) pushCluster(list, "email_localpart", `elp:${k}`);
-  }
-  for (const [k, list] of byNameCompany) pushCluster(list, "name_company", `nc:${k}`);
-  for (const [k, list] of byName) {
-    const uniqEmails = new Set(list.map((c) => (c.email ?? "").toLowerCase()).filter(Boolean));
-    if (uniqEmails.size > 1 || list.some((c) => !c.email)) {
-      pushCluster(list, "name_only", `name:${k}`);
-    }
-  }
-  for (const [k, list] of byLooseName) {
-    // Loose name (first+last tokens) catches "John A Smith" vs "John Smith".
-    pushCluster(list, "loose_name", `ln:${k}`);
-  }
-  return clusters;
-}
-
-/** Which contact to promote as the "primary" of a merge. */
-function pickPrimary(cluster: ContactWithPhones[]): ContactWithPhones {
-  const sorted = [...cluster].sort((a, b) => {
-    // Prefer rows with an email
-    const ae = a.email ? 1 : 0;
-    const be = b.email ? 1 : 0;
-    if (ae !== be) return be - ae;
-    // Then richness (count of non-null fields)
-    const score = (c: ContactWithPhones) =>
-      [c.name, c.company, c.title, c.city].filter(Boolean).length + c.phones.length;
-    const sa = score(a);
-    const sb = score(b);
-    if (sa !== sb) return sb - sa;
-    // Oldest wins as tiebreaker (stable id)
-    return a.created_at.localeCompare(b.created_at);
-  });
-  return sorted[0];
-}
 
 const AiSchema = z.object({
   same_person: z.boolean(),
@@ -277,11 +136,16 @@ export type DuplicateSuggestion = {
 export async function scanContactDuplicatesImpl(userId: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
+  // Deterministic order matters: cluster membership order feeds truncation
+  // and the MAX_CLUSTERS slice, and both must be stable across rescans for
+  // the dismissed-suggestion guard (keyed by primary) to hold.
   const [{ data: contacts }, { data: phones }] = await Promise.all([
     supabaseAdmin
       .from("contacts")
       .select("id, name, email, company, title, city, source, created_at")
-      .eq("user_id", userId),
+      .eq("user_id", userId)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true }),
     supabaseAdmin.from("contact_phones").select("contact_id, number").eq("user_id", userId),
   ]);
 
@@ -308,16 +172,19 @@ export async function scanContactDuplicatesImpl(userId: string) {
   const apiKey = process.env.LOVABLE_API_KEY;
 
   // Existing suggestions by primary contact: dismissed ones must never be
-  // re-proposed, and pending ones let us prune stale rows at the end.
+  // re-proposed, and pending ones let us prune stale rows at the end. A
+  // primary can have several rows (e.g. one dismissed + one pending), so
+  // track the statuses as sets rather than a last-row-wins map.
   const { data: existingRows } = await supabaseAdmin
     .from("contact_duplicate_suggestions")
     .select("primary_contact_id, status")
     .eq("user_id", userId);
-  const statusByPrimary = new Map(
-    ((existingRows ?? []) as Array<{ primary_contact_id: string; status: string }>).map((r) => [
-      r.primary_contact_id,
-      r.status,
-    ]),
+  const existing = (existingRows ?? []) as Array<{ primary_contact_id: string; status: string }>;
+  const dismissedPrimaries = new Set(
+    existing.filter((r) => r.status === "dismissed").map((r) => r.primary_contact_id),
+  );
+  const pendingPrimaries = new Set(
+    existing.filter((r) => r.status === "pending").map((r) => r.primary_contact_id),
   );
 
   type Judged = {
@@ -334,7 +201,7 @@ export async function scanContactDuplicatesImpl(userId: string) {
   }> = [];
 
   for (const cluster of workingSet) {
-    const members = cluster.contacts.slice(0, MAX_CLUSTER_SIZE);
+    const members = truncateMembers(cluster.contacts, MAX_CLUSTER_SIZE);
     const primary = pickPrimary(members);
     const duplicates = members.filter((c) => c.id !== primary.id);
     if (duplicates.length === 0) continue;
@@ -430,27 +297,42 @@ export async function scanContactDuplicatesImpl(userId: string) {
   const confirmedPrimaryIds = new Set<string>();
   for (const { cluster, primary, duplicates, verdict } of judged) {
     if (!verdict.same_person) continue;
-    if (statusByPrimary.get(primary.id) === "dismissed") {
+    if (dismissedPrimaries.has(primary.id)) {
       skippedDismissed++;
       continue;
     }
-    const { error: insErr } = await supabaseAdmin.from("contact_duplicate_suggestions").upsert(
-      {
+    // Only one pending row per primary fits the partial unique index; a
+    // second cluster claiming the same primary this run is dropped.
+    if (confirmedPrimaryIds.has(primary.id)) continue;
+
+    // The unique index on (user_id, primary_contact_id) is PARTIAL
+    // (WHERE status='pending'), so PostgREST upsert/onConflict can't target
+    // it (42P10) — update the existing pending row or insert a fresh one.
+    const values = {
+      duplicate_contact_ids: duplicates.map((c) => c.id),
+      confidence: verdict.confidence,
+      reason: verdict.reason.slice(0, 400),
+      signals: { blocking: cluster.signal, key: cluster.key },
+    };
+    const { error: writeErr } = pendingPrimaries.has(primary.id)
+      ? await supabaseAdmin
+          .from("contact_duplicate_suggestions")
+          .update(values)
+          .eq("user_id", userId)
+          .eq("primary_contact_id", primary.id)
+          .eq("status", "pending")
+      : await supabaseAdmin.from("contact_duplicate_suggestions").insert({
+          ...values,
+          user_id: userId,
+          primary_contact_id: primary.id,
+          status: "pending",
+        });
+    if (writeErr) {
+      logInfo("contact_dedup.write_failed", {
         user_id: userId,
         primary_contact_id: primary.id,
-        duplicate_contact_ids: duplicates.map((c) => c.id),
-        confidence: verdict.confidence,
-        reason: verdict.reason.slice(0, 400),
-        signals: { blocking: cluster.signal, key: cluster.key },
-        status: "pending",
-      },
-      { onConflict: "user_id,primary_contact_id" },
-    );
-    if (insErr) {
-      logInfo("contact_dedup.upsert_failed", {
-        user_id: userId,
-        primary_contact_id: primary.id,
-        message: insErr.message.slice(0, 200),
+        code: writeErr.code,
+        message: writeErr.message.slice(0, 200),
       });
     } else {
       created++;
