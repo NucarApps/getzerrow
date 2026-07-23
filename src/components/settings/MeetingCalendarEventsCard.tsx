@@ -5,20 +5,11 @@ import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { listUpcomingCalendarEvents, setEventExclusion } from "@/lib/meetings.functions";
+import { formatEventTime } from "@/lib/format";
 
 type Props = { accountId: string | null; accountEmail: string | null };
 
-function formatWhen(iso: string | null): string {
-  if (!iso) return "No start time";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
+const formatWhen = (iso: string | null) => formatEventTime(iso, { fallback: "No start time" });
 
 export function MeetingCalendarEventsCard({ accountId, accountEmail }: Props) {
   const qc = useQueryClient();

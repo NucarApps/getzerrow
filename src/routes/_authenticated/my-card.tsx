@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { ArrowLeft, Save, ExternalLink, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PageTitle } from "@/components/PageTitle";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -116,7 +117,7 @@ function MyCardPage() {
           <ArrowLeft className="h-4 w-4" /> Back to contacts
         </Link>
 
-        <h1 className="mb-2 font-display text-2xl text-foreground">My business card</h1>
+        <PageTitle className="mb-2">My business card</PageTitle>
         <p className="mb-6 text-sm text-muted-foreground">
           This is what people see when you share your link or QR. Choose a handle — your card lives
           at <code className="text-foreground">/c/your-handle</code>.

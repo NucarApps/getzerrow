@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { RouteErrorFallback } from "@/components/RouteErrorFallback";
+import { PageTitle } from "@/components/PageTitle";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getInboxReport, type InboxReport } from "@/lib/reports.functions";
@@ -39,7 +40,7 @@ function ReportsPage() {
             <BarChart3 className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="font-display text-2xl text-foreground">Inbox Report</h1>
+            <PageTitle>Inbox Report</PageTitle>
             <p className="text-xs text-muted-foreground">Last 90 days</p>
           </div>
         </header>

@@ -8,6 +8,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { formatDateTime } from "@/lib/format";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,7 +20,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { RefreshCw, AlertCircle, Loader2 } from "lucide-react";
+import { RefreshCw, AlertCircle } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { listMyGmailAccounts, startConnectGmail } from "@/lib/gmail/accounts.functions";
 import {
   syncGoogleContactsNow,
@@ -50,11 +52,7 @@ export const Route = createFileRoute("/_authenticated/settings/google-contacts")
   component: GoogleContactsSettings,
 });
 
-function formatWhen(iso: string | null | undefined): string {
-  if (!iso) return "Never";
-  const d = new Date(iso);
-  return d.toLocaleString();
-}
+const formatWhen = (iso: string | null | undefined) => formatDateTime(iso, "Never");
 
 function friendlyError(err: string | null | undefined): string | null {
   if (!err) return null;
@@ -352,7 +350,7 @@ function AccountRow({
       {isRunning && (
         <div className="mt-3 rounded-md border bg-muted/40 p-3">
           <div className="flex items-center gap-2 text-xs font-medium">
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+            <Spinner className="h-3.5 w-3.5 text-primary" />
             <span>{stepLabel(step)}</span>
             <span className="ml-auto tabular-nums text-muted-foreground">
               {total > 0 ? `${processed} / ${total}` : `${processed}`}

@@ -14,6 +14,7 @@ import {
   dismissCompletionSuggestion,
 } from "@/lib/tasks.functions";
 import { Button } from "@/components/ui/button";
+import { PageTitle } from "@/components/PageTitle";
 import { Input } from "@/components/ui/input";
 import { CheckCircle2, Circle, Trash2, Sparkles, Video, Mail, Plus, X } from "lucide-react";
 
@@ -113,7 +114,7 @@ function TasksPage() {
             <CheckCircle2 className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="font-display text-2xl text-foreground">Tasks</h1>
+            <PageTitle>Tasks</PageTitle>
             <p className="text-xs text-muted-foreground">
               Added manually or extracted from meetings and email.
             </p>

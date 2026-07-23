@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { RouteErrorFallback } from "@/components/RouteErrorFallback";
+import { PageTitle } from "@/components/PageTitle";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -21,10 +22,12 @@ import {
   listRecentUnrecordedEvents,
   resendMeetingBot,
 } from "@/lib/meetings.functions";
+import { formatDateTime } from "@/lib/format";
 import { encodeWav } from "@/lib/wav-encoder";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -70,10 +73,10 @@ import {
   Monitor,
   ChevronDown,
   Sparkles,
-  Loader2,
   Pencil,
   Settings,
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import {
   UpcomingMeetingsCard,
   type InPersonRecordPrefill,
@@ -128,10 +131,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function formatWhen(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString();
-}
+const formatWhen = (iso: string | null) => formatDateTime(iso);
 
 // Short, friendly reason a recent calendar meeting wasn't recorded.
 const SKIP_REASON_LABEL: Record<string, string> = {
@@ -230,7 +230,7 @@ function MeetingsPage() {
               <Video className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
             </div>
             <div className="min-w-0">
-              <h1 className="font-display text-xl text-foreground sm:text-2xl">Meetings</h1>
+              <PageTitle>Meetings</PageTitle>
               <p className="hidden text-sm text-muted-foreground sm:block">
                 Send a notetaker bot to record, transcribe, and summarize any call.
               </p>
@@ -288,13 +288,11 @@ function MeetingsPage() {
                 </Button>
               </Card>
             ) : pastRows.length === 0 ? (
-              <Card className="p-8 text-center">
-                <Video className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  No meetings yet. Paste a Zoom, Google Meet, or Teams link to record your first
-                  one, or turn on auto-record in Settings to capture calendar meetings
-                  automatically.
-                </p>
+              <Card>
+                <EmptyState
+                  icon={Video}
+                  title="No meetings yet. Paste a Zoom, Google Meet, or Teams link to record your first one, or turn on auto-record in Settings to capture calendar meetings automatically."
+                />
               </Card>
             ) : (
               <div className="space-y-2">
@@ -1424,7 +1422,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                   }
                 >
                   {generatingTitle ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Spinner className="h-4 w-4" />
                   ) : (
                     <Sparkles className="h-4 w-4" />
                   )}
@@ -1653,7 +1651,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                               className="h-7 shrink-0 px-2 text-xs text-muted-foreground"
                             >
                               {regeneratingSummary ? (
-                                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                <Spinner className="mr-1.5 h-3.5 w-3.5" />
                               ) : (
                                 <Sparkles className="mr-1.5 h-3.5 w-3.5" />
                               )}

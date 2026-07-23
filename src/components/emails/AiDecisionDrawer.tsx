@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/sheet";
 import { Bot, Filter as FilterIcon, Tag, Hand, HelpCircle, Clock, Layers } from "lucide-react";
 import { TriggeredBy } from "@/components/emails/triggered-by";
+import { ColorDotChip } from "@/components/ui/status-pill";
 import type { RuleNode } from "@/lib/sync/types";
 
 type DrawerFolder = { id: string; name: string; color: string };
@@ -122,16 +123,13 @@ export function AiDecisionDrawer({
               Outcome
             </div>
             {winner ? (
-              <span
-                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-sm"
+              <ColorDotChip
+                color={winner.color}
+                className="bg-background text-sm"
                 title={winner.name}
               >
-                <span
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ background: winner.color }}
-                />
                 <span className="truncate">{winner.name}</span>
-              </span>
+              </ColorDotChip>
             ) : (
               <span className="text-muted-foreground">Kept in inbox</span>
             )}
@@ -182,14 +180,14 @@ export function AiDecisionDrawer({
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {others.map((f) => (
-                  <span
+                  <ColorDotChip
                     key={f.id}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-xs"
+                    color={f.color}
+                    className="bg-background"
                     title={`${f.name} rules also matched — lost on priority`}
                   >
-                    <span className="h-2 w-2 rounded-full" style={{ background: f.color }} />
                     <span className="max-w-[10rem] truncate">{f.name}</span>
-                  </span>
+                  </ColorDotChip>
                 ))}
               </div>
               <p className="mt-1 text-xs text-muted-foreground">

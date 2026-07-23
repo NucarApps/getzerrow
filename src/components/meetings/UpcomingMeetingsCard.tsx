@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { startConnectGmail } from "@/lib/gmail.functions";
+import { formatEventTime } from "@/lib/format";
 import {
   listAllUpcomingCalendarEvents,
   resendMeetingBot,
@@ -36,18 +37,8 @@ const MODE_LABEL: Record<RecordMode, string> = {
   off: "Don't record",
 };
 
-function formatWhen(iso: string | null): string {
-  if (!iso) return "No start time";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
+const formatWhen = (iso: string | null) =>
+  formatEventTime(iso, { fallback: "No start time", weekday: true });
 
 export function UpcomingMeetingsCard({
   onRecordInPerson,

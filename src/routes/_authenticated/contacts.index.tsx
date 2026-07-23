@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { RouteErrorFallback } from "@/components/RouteErrorFallback";
+import { PageTitle } from "@/components/PageTitle";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -893,7 +894,7 @@ function ContactsPage() {
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex flex-nowrap items-center gap-2 border-b border-border bg-card/40 px-3 py-3 sm:flex-wrap sm:gap-x-4 sm:gap-y-2 sm:px-5">
             <div className="min-w-0">
-              <h1 className="truncate font-display text-lg leading-6 text-foreground sm:text-xl">Contacts</h1>
+              <PageTitle className="truncate leading-tight">Contacts</PageTitle>
               <p className="text-[11px] text-muted-foreground">
                 {q.data ? (
                   <>
@@ -996,7 +997,6 @@ function ContactsPage() {
               </Button>
             </div>
           </div>
-
 
           {/* Mobile expanded search row */}
           {mobileSearchOpen && (
