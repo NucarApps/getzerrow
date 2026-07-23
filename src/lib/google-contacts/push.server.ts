@@ -207,6 +207,28 @@ async function pushGroups(ids: Ids, progress?: ProgressReporter): Promise<number
         count++;
       }
     } catch (e) {
+      // 409 ALREADY_EXISTS: a group with this name already exists in Google
+      // but isn't linked locally. Adopt it by looking up its resourceName and
+      // inserting a google_group_links row so subsequent syncs update in place
+      // instead of retrying create forever.
+      if (
+        e instanceof PeopleApiError &&
+        e.status === 409 &&
+        !link &&
+        /already exists|ALREADY_EXISTS/i.test(e.message + (e.googleReason ?? ""))
+      ) {
+        const adopted = await adoptExistingGoogleGroup(ids, g.id, label);
+        if (adopted) {
+          count++;
+          logInfo("google_contacts.push.group_adopted", {
+            ...ids,
+            group_id: g.id,
+            resource_name: adopted,
+          });
+          await progress?.increment(1);
+          continue;
+        }
+      }
       logError("google_contacts.push.group_failed", { ...ids, group_id: g.id }, e);
     }
     await progress?.increment(1);
