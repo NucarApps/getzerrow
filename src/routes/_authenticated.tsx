@@ -44,6 +44,7 @@ import {
 } from "@/lib/folder-selection";
 import { AccountSelectionProvider, useAccountSelection } from "@/lib/account-selection";
 import { AccountSwitcher } from "@/components/AccountSwitcher";
+import { NavItem } from "@/components/NavItem";
 import { AddFolderDialog } from "@/components/folders/AddFolderDialog";
 import { EditFolderDialog } from "@/components/folders/EditFolderDialog";
 import type { Folder, GLabel } from "@/components/folders/FolderEditor";
@@ -584,106 +585,104 @@ function DesktopRails() {
 
       {/* Folder panel — only relevant on Inbox / mail views. */}
       {pathname === "/inbox" && (
-      <div className="flex w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar/70 p-3 backdrop-blur-sm">
+        <div className="flex w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar/70 p-3 backdrop-blur-sm">
+          <div className="mb-2">
+            <AccountSwitcher
+              accounts={accounts}
+              loading={accountsQ.isLoading}
+              failed={accountsQ.isError}
+            />
+          </div>
 
-        <div className="mb-2">
-          <AccountSwitcher
-            accounts={accounts}
-            loading={accountsQ.isLoading}
-            failed={accountsQ.isError}
+          <div className="px-1.5 pb-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+            Views
+          </div>
+          <ViewRow
+            icon={<Inbox className="h-3.5 w-3.5" />}
+            label="Inbox"
+            active={selected === "all"}
+            count={counts.total}
+            onClick={() => pick("all")}
+          />
+          <ViewRow
+            icon={<Layers className="h-3.5 w-3.5" />}
+            label="All mail"
+            active={selected === "all_mail"}
+            onClick={() => pick("all_mail")}
+          />
+          <ViewRow
+            icon={<CircleDashed className="h-3.5 w-3.5" />}
+            label="No rules"
+            active={selected === "no_rules"}
+            count={counts.byFolder.get("no_rules") ?? 0}
+            onClick={() => pick("no_rules")}
+          />
+
+          <div className="mt-3 flex items-center justify-between px-1.5 pb-1">
+            <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+              Folders
+            </span>
+            <button
+              onClick={() => setAddOpen(true)}
+              disabled={!accountId}
+              className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground disabled:opacity-40"
+              title="Add folder"
+              aria-label="Add folder"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto">
+            {(foldersQ.data ?? []).map((f) => (
+              <FolderRow
+                key={f.id}
+                active={selected === f.id}
+                onSelect={() => pick(f.id as FolderSelection)}
+                color={f.color}
+                label={f.name}
+                count={counts.byFolder.get(f.id) ?? 0}
+                onEdit={() => setEditing(f)}
+              />
+            ))}
+            {accountId && (foldersQ.data ?? []).length === 0 && (
+              <p className="px-3 py-3 text-xs text-muted-foreground">
+                No folders yet. Click + to add one.
+              </p>
+            )}
+            {!accountId && !accountsQ.isLoading && (
+              <p className="px-3 py-3 text-xs text-muted-foreground">
+                Connect Gmail in{" "}
+                <button type="button" className="underline" onClick={() => go("/settings")}>
+                  Settings
+                </button>
+                .
+              </p>
+            )}
+          </div>
+
+          <div className="mt-2 flex items-center gap-2 border-t border-sidebar-border pt-2.5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-400" aria-hidden />
+            {lastSyncUtc ? `Synced · ${lastSyncUtc} UTC` : "Syncing…"}
+          </div>
+
+          <AddFolderDialog
+            open={addOpen}
+            onOpenChange={setAddOpen}
+            accountId={accountId}
+            labels={labelsQ.data ?? []}
+          />
+          <EditFolderDialog
+            folder={editing}
+            labels={labelsQ.data ?? []}
+            open={!!editing}
+            onOpenChange={(v) => {
+              if (!v) setEditing(null);
+            }}
           />
         </div>
-
-        <div className="px-1.5 pb-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-          Views
-        </div>
-        <ViewRow
-          icon={<Inbox className="h-3.5 w-3.5" />}
-          label="Inbox"
-          active={selected === "all"}
-          count={counts.total}
-          onClick={() => pick("all")}
-        />
-        <ViewRow
-          icon={<Layers className="h-3.5 w-3.5" />}
-          label="All mail"
-          active={selected === "all_mail"}
-          onClick={() => pick("all_mail")}
-        />
-        <ViewRow
-          icon={<CircleDashed className="h-3.5 w-3.5" />}
-          label="No rules"
-          active={selected === "no_rules"}
-          count={counts.byFolder.get("no_rules") ?? 0}
-          onClick={() => pick("no_rules")}
-        />
-
-        <div className="mt-3 flex items-center justify-between px-1.5 pb-1">
-          <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-            Folders
-          </span>
-          <button
-            onClick={() => setAddOpen(true)}
-            disabled={!accountId}
-            className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground disabled:opacity-40"
-            title="Add folder"
-            aria-label="Add folder"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-        </div>
-        <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto">
-          {(foldersQ.data ?? []).map((f) => (
-            <FolderRow
-              key={f.id}
-              active={selected === f.id}
-              onSelect={() => pick(f.id as FolderSelection)}
-              color={f.color}
-              label={f.name}
-              count={counts.byFolder.get(f.id) ?? 0}
-              onEdit={() => setEditing(f)}
-            />
-          ))}
-          {accountId && (foldersQ.data ?? []).length === 0 && (
-            <p className="px-3 py-3 text-xs text-muted-foreground">
-              No folders yet. Click + to add one.
-            </p>
-          )}
-          {!accountId && !accountsQ.isLoading && (
-            <p className="px-3 py-3 text-xs text-muted-foreground">
-              Connect Gmail in{" "}
-              <button type="button" className="underline" onClick={() => go("/settings")}>
-                Settings
-              </button>
-              .
-            </p>
-          )}
-        </div>
-
-        <div className="mt-2 flex items-center gap-2 border-t border-sidebar-border pt-2.5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-400" aria-hidden />
-          {lastSyncUtc ? `Synced · ${lastSyncUtc} UTC` : "Syncing…"}
-        </div>
-
-        <AddFolderDialog
-          open={addOpen}
-          onOpenChange={setAddOpen}
-          accountId={accountId}
-          labels={labelsQ.data ?? []}
-        />
-        <EditFolderDialog
-          folder={editing}
-          labels={labelsQ.data ?? []}
-          open={!!editing}
-          onOpenChange={(v) => {
-            if (!v) setEditing(null);
-          }}
-        />
-      </div>
       )}
     </>
   );
-
 }
 
 function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
@@ -721,74 +720,62 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       <nav className="flex flex-col gap-0.5">
-        <button
-          type="button"
-          className="flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60"
-          onClick={() => pick("all")}
-        >
-          <Inbox className="h-4 w-4" /> Inbox
-        </button>
-        <button
-          type="button"
-          className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60 ${pathname === "/reports" ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""}`}
+        <NavItem icon={Inbox} label="Inbox" onClick={() => pick("all")} />
+        <NavItem
+          icon={BarChart3}
+          label="Reports"
+          active={pathname === "/reports"}
           onClick={() => {
             navigate({ to: "/reports" });
             onNavigate?.();
           }}
-        >
-          <BarChart3 className="h-4 w-4" /> Reports
-        </button>
-        <button
-          type="button"
-          className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60 ${pathname.startsWith("/tasks") ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""}`}
+        />
+        <NavItem
+          icon={CheckCircle2}
+          label="Tasks"
+          active={pathname.startsWith("/tasks")}
           onClick={() => {
             navigate({ to: "/tasks" });
             onNavigate?.();
           }}
-        >
-          <CheckCircle2 className="h-4 w-4" /> Tasks
-        </button>
-        <button
-          type="button"
-          className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60 ${pathname.startsWith("/contacts") ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""}`}
+        />
+        <NavItem
+          icon={Users}
+          label="Contacts"
+          active={pathname.startsWith("/contacts")}
           onClick={() => {
             navigate({ to: "/contacts" });
             onNavigate?.();
           }}
-        >
-          <Users className="h-4 w-4" /> Contacts
-        </button>
-        <button
-          type="button"
-          className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60 ${pathname === "/meetings" ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""}`}
+        />
+        <NavItem
+          icon={Video}
+          label="Meetings"
+          active={pathname === "/meetings"}
           onClick={() => {
             navigate({ to: "/meetings" });
             onNavigate?.();
           }}
-        >
-          <Video className="h-4 w-4" /> Meetings
-        </button>
-        <button
-          type="button"
-          className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60 ${pathname === "/settings" ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""}`}
+        />
+        <NavItem
+          icon={Settings}
+          label="Settings"
+          active={pathname === "/settings"}
           onClick={() => {
             navigate({ to: "/settings" });
             onNavigate?.();
           }}
-        >
-          <Settings className="h-4 w-4" /> Settings
-        </button>
+        />
         {isAdmin && (
-          <button
-            type="button"
-            className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent/60 ${pathname === "/admin" ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""}`}
+          <NavItem
+            icon={Shield}
+            label="Admin"
+            active={pathname === "/admin"}
             onClick={() => {
               navigate({ to: "/admin" });
               onNavigate?.();
             }}
-          >
-            <Shield className="h-4 w-4" /> Admin
-          </button>
+          />
         )}
       </nav>
 
