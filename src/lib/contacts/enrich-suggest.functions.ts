@@ -49,6 +49,9 @@ const MAX_CONTACTS_PER_RUN = 200;
 const EMAILS_PER_CONTACT = 6;
 // Trim body text to keep prompts small.
 const MAX_BODY_CHARS = 1200;
+// Joined corpus must fit every fetched message (+200/message for the
+// Subject/From-Name header lines) or the tail messages get silently dropped.
+const MAX_CORPUS_CHARS = EMAILS_PER_CONTACT * (MAX_BODY_CHARS + 200);
 
 const SignatureExtraction = z.object({
   name: z.string().nullable(),
@@ -181,10 +184,10 @@ export async function scanContactEnrichmentImpl(
       const corpus = bodies
         .map((b) => {
           const body = (b.body_text ?? b.snippet ?? "").slice(-MAX_BODY_CHARS);
-          return `Subject: ${b.subject ?? ""}\nFrom-Name: ${b.from_name ?? ""}\n${body}`;
+          return `Subject: ${(b.subject ?? "").slice(0, 150)}\nFrom-Name: ${b.from_name ?? ""}\n${body}`;
         })
         .join("\n---\n")
-        .slice(0, MAX_BODY_CHARS * 3);
+        .slice(0, MAX_CORPUS_CHARS);
 
       const prompt = `You are extracting professional identity for one person from the tail of email messages they sent (where signatures live).
 
@@ -270,10 +273,14 @@ ${corpus}`;
         /\s/.test(name) && // require at least a two-part name to reduce noise
         (!c.name || c.name.trim().toLowerCase() !== name.toLowerCase())
       ) {
-        // Only suggest a name change when the current name is missing or clearly
-        // differs from what the signature shows.
-        if (!c.name || !c.name.trim()) {
-          pushSuggestion("name", name.slice(0, 80), name);
+        const hasName = !!c.name && !!c.name.trim();
+        // Formatting variants of the same name ("Smith, Bob" / "Bob J. Smith")
+        // are not corrections — only suggest when first+last actually differ.
+        const sameTokens = hasName && nameMatchConfidence(c.name, name, 5) === "high";
+        if (!sameTokens) {
+          // Missing name → high confidence; a genuinely differing name →
+          // medium, so corrections surface but rank lower.
+          pushSuggestion("name", name.slice(0, 80), name, hasName ? "medium" : "high");
         }
       }
 
