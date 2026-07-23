@@ -802,7 +802,7 @@ void isPersonalDomain;
 // Duplicate detection & cluster merge
 // ---------------------------------------------------------------------------
 
-type CompanyLite = {
+export type CompanyLite = {
   id: string;
   name: string;
   member_count: number;
@@ -810,7 +810,7 @@ type CompanyLite = {
 };
 
 /** Tokenize a normalized company name into significant words. */
-function tokenize(name: string): string[] {
+export function tokenize(name: string): string[] {
   const key = normalizeCompanyName(name) ?? "";
   return key.split(/[^a-z0-9]+/i).filter((t) => t.length >= 3 && !STOP_TOKENS.has(t));
 }
@@ -840,7 +840,7 @@ const STOP_TOKENS = new Set([
 
 /** Cluster companies whose names share a distinctive brand token or a
  *  root email/site domain. Each cluster contains at least 2 companies. */
-function clusterCompanies(companies: CompanyLite[]): CompanyLite[][] {
+export function clusterCompanies(companies: CompanyLite[]): CompanyLite[][] {
   const parent = new Map<string, string>();
   const find = (x: string): string => {
     const p = parent.get(x);
