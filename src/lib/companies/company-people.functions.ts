@@ -8,6 +8,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { convergeCompanyMemberships } from "./converge";
 import { getModel } from "@/lib/ai-gateway";
 import { extractDomain, isPersonalDomain } from "@/lib/company-domains";
 import { isLikelyHuman } from "@/lib/contacts-helpers.server";
@@ -447,23 +448,11 @@ export const enhanceContactWithNewEmail = createServerFn({ method: "POST" })
     }
 
     // Converge label rules + auto-subgroups just like addCompanyPeople.
-    try {
-      const { syncCompanyRuleMemberships } = await import("@/lib/contacts/group-rules.functions");
-      await syncCompanyRuleMemberships(supabase, userId, {
-        companyIds: [data.companyId],
-        contactIds: [row.id],
-        bumpResync: true,
-      });
-    } catch {
-      // Non-fatal.
-    }
-    try {
-      const { reconcileAutoParentsForContacts } =
-        await import("@/lib/contacts/auto-company-subgroups.functions");
-      await reconcileAutoParentsForContacts(supabase, userId, [row.id]);
-    } catch {
-      // Non-fatal.
-    }
+    await convergeCompanyMemberships(supabase, userId, {
+      companyIds: [data.companyId],
+      contactIds: [row.id],
+      bumpResync: true,
+    });
 
     return { contactId: row.id };
   });
@@ -571,23 +560,11 @@ export const addCompanyPeople = createServerFn({ method: "POST" })
     // Converge: label rules for the company now apply to the new contacts,
     // domains re-derive, auto-subgroups reconcile. Best-effort.
     if (contactIds.length > 0) {
-      try {
-        const { syncCompanyRuleMemberships } = await import("@/lib/contacts/group-rules.functions");
-        await syncCompanyRuleMemberships(supabase, userId, {
-          companyIds: [data.companyId],
-          contactIds,
-          bumpResync: true,
-        });
-      } catch {
-        // Non-fatal.
-      }
-      try {
-        const { reconcileAutoParentsForContacts } =
-          await import("@/lib/contacts/auto-company-subgroups.functions");
-        await reconcileAutoParentsForContacts(supabase, userId, contactIds);
-      } catch {
-        // Non-fatal.
-      }
+      await convergeCompanyMemberships(supabase, userId, {
+        companyIds: [data.companyId],
+        contactIds,
+        bumpResync: true,
+      });
     }
     return { added: contactIds.length };
   });

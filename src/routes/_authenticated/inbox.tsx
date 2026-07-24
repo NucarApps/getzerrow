@@ -837,7 +837,11 @@ function InboxPage() {
         });
         // The server fn already merged list metadata with the decrypted
         // subject/snippet/from_name — one round-trip, no client follow-up.
-        const rows = (res.rows ?? []) as unknown as Email[];
+        // Search rows carry EMAIL_LIST_COLUMNS but genuinely lack the fields
+        // that column set omits (to_addrs, ai_summary, classification_reason,
+        // body) — the detail pane fetches those on select — so this is a
+        // deliberate widening of a real subset, not a missing type.
+        const rows = (res.rows ?? []) as Email[];
         // Search spans the whole mailbox — keep archived/filed matches.
         return rows.filter(matchesSearchScope);
       }
@@ -861,7 +865,9 @@ function InboxPage() {
           limit: PAGE_SIZE + 1,
         },
       });
-      const rows = (r.rows ?? []) as unknown as Email[];
+      // EmailListRow carries every field Email requires (Email's extras are
+      // optional), so this is a checked widening, not a blind cast.
+      const rows: Email[] = r.rows ?? [];
       // Persist non-content metadata for a 0ms structural paint on the next
       // cold reload of this exact view (no decrypted content is written —
       // saveInboxMeta projects to a fixed allowlist).
@@ -1314,6 +1320,9 @@ function InboxPage() {
       // subject/snippet/from_name (still plaintext) — we merge below.
       const res = await fetchEmailBody({ data: { email_id: selectedId } });
       if (!res.body) return null;
+      // Intentionally partial: only the detail-pane fields are fetched here and
+      // merged with the cached list row below, so this is a deliberate partial
+      // Email rather than a full row.
       return {
         id: res.body.id,
         body_text: res.body.body_text,

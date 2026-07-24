@@ -50,6 +50,7 @@ export function BackfillBanner() {
       const t = setTimeout(() => setDismissed(job.id), 15000);
       return () => clearTimeout(t);
     }
+    return;
   }, [job, dismissed]);
 
   const elapsedSec = useMemo(() => {

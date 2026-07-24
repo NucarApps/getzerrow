@@ -20,7 +20,6 @@
 //   by the webhook when it enqueued), processGmailMessage persists it
 //   onto emails.published_at_ms so get_sync_latency_stats() can compute
 //   push → visible latency.
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getMessage, modifyMessage, parseMessage, sendMessage } from "../gmail.server";
 import type { AccountContext } from "./account-context";
@@ -93,7 +92,7 @@ async function fetchActionFolder(folderId: string): Promise<ActionFolder | null>
 /** Gmail label mutations + local flag effects for routing into `folder`.
  * Single source of truth so the insert path and the post-hoc patch path
  * can't diverge. */
-function computeFolderEffects(
+export function computeFolderEffects(
   folder: ActionFolder,
   parsed: { raw_labels: string[] | null },
   inInbox: boolean,
@@ -144,9 +143,7 @@ export async function applyFolderActions(
   inInbox: boolean,
   opts: { persistFlags: boolean; userId?: string },
 ): Promise<ActionOutcome[]> {
-  // folder_actions is not in the generated Supabase types yet — untyped
-  // accessor, same pattern as executed-rules.ts.
-  const { data: actionRows } = await (supabaseAdmin as unknown as SupabaseClient)
+  const { data: actionRows } = await supabaseAdmin
     .from("folder_actions")
     .select(
       "id, action_type, label_id, move_to_folder_id, delay_minutes, webhook_url, to_addr, digest_bucket",

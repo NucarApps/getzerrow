@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { emailEncKey } from "@/lib/email-enc-key";
 import { buildVCard, sendCardEmail, type CardData } from "./cards.server";
 import { setContactEncryptedFields } from "./sync/encrypted-writer";
 
@@ -209,13 +210,13 @@ export const submitCardLead = createServerFn({ method: "POST" })
     if (existing) {
       const { data: decRows } = await supabaseAdmin.rpc("get_contacts_list_fields_decrypted", {
         p_ids: [existing.id],
-        p_key: process.env.EMAIL_ENC_KEY!,
+        p_key: emailEncKey(),
       });
       const existingNotes = decRows?.[0] as { relationship_summary?: string | null } | undefined;
       // get_contacts_list_fields_decrypted doesn't expose notes; fetch full decrypted row instead.
       const { data: fullRows } = await supabaseAdmin.rpc("get_contact_decrypted", {
         p_contact_id: existing.id,
-        p_key: process.env.EMAIL_ENC_KEY!,
+        p_key: emailEncKey(),
       });
       const prevNotes = (fullRows?.[0] as { notes?: string | null } | undefined)?.notes ?? null;
       // The lead message (with submitted name/company/phone inlined) is

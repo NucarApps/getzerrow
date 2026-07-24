@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { convergeCompanyMemberships } from "./converge";
 import { normalizeCompanyName } from "./normalize";
 import { normalizeCompanyName as brandKey } from "@/lib/contacts/company-name";
 import { isPersonalDomain, extractDomain, prettyCompanyName } from "@/lib/company-domains";
@@ -252,23 +253,11 @@ export const convergeBucketCompany = createServerFn({ method: "POST" })
     } catch {
       // Non-fatal.
     }
-    try {
-      const { syncCompanyRuleMemberships } = await import("@/lib/contacts/group-rules.functions");
-      await syncCompanyRuleMemberships(supabase, userId, {
-        companyIds: [data.companyId],
-        contactIds: data.contactIds,
-        bumpResync: true,
-      });
-    } catch {
-      // Non-fatal.
-    }
-    try {
-      const { reconcileAutoParentsForContacts } =
-        await import("@/lib/contacts/auto-company-subgroups.functions");
-      await reconcileAutoParentsForContacts(supabase, userId, data.contactIds);
-    } catch {
-      // Non-fatal.
-    }
+    await convergeCompanyMemberships(supabase, userId, {
+      companyIds: [data.companyId],
+      contactIds: data.contactIds,
+      bumpResync: true,
+    });
     return { ok: true as const };
   });
 

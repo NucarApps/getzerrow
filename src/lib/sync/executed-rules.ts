@@ -13,18 +13,25 @@
 // with EMAIL_ENC_KEY, mirroring emails.classification_reason_enc. Reads
 // decrypt via the service-role-only list_executed_rules RPC, scoped to the
 // authenticated user's id by the calling server function.
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database, Json } from "@/integrations/supabase/types";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { emailEncKey } from "@/lib/email-enc-key";
 import { logError } from "@/lib/log.server";
 import type { AccountContext } from "./account-context";
 import type { ActionOutcome } from "./action-dispatch";
 import type { ClassificationResult, ParsedEmailForClassify } from "./classify";
 import { collectMatchingLeaves } from "./filter-engine";
 
-// The executed_rules RPCs are not in the generated Supabase types yet — go
-// through an untyped accessor (same pattern as ai-scan-status.functions.ts).
-function adminRpc(fn: string, args: Record<string, unknown>) {
-  return (supabaseAdmin as unknown as SupabaseClient).rpc(fn, args);
+// Supabase's generated Function Args type reports every text/uuid parameter as
+// non-null, but these plpgsql functions accept NULL for optional params. Relax
+// the arg types to allow null (matching DB reality) while keeping the function
+// name and value kinds fully checked; the single internal cast satisfies .rpc.
+type NullableArgs<T> = { [K in keyof T]: T[K] | null };
+function adminRpc<F extends keyof Database["public"]["Functions"]>(
+  fn: F,
+  args: NullableArgs<Database["public"]["Functions"][F]["Args"]>,
+) {
+  return supabaseAdmin.rpc(fn, args as Database["public"]["Functions"][F]["Args"]);
 }
 
 export type ExecutionStatus = "applied" | "skipped" | "error" | "pending";
@@ -92,8 +99,7 @@ export async function recordExecution(input: RecordExecutionInput): Promise<void
   const c = input.classification;
   const status = input.status ?? statusForClassification(c);
   try {
-    const key = process.env.EMAIL_ENC_KEY;
-    if (!key) throw new Error("EMAIL_ENC_KEY not configured");
+    const key = emailEncKey();
     const leaves = matchedLeavesFor(input.parsed, input.context, c);
     const { data: ruleId, error } = await adminRpc("record_executed_rule", {
       p_user_id: input.userId,
@@ -116,18 +122,17 @@ export async function recordExecution(input: RecordExecutionInput): Promise<void
     // action configuration only, never email content or AI output.
     if (ruleId && input.actions && input.actions.length > 0) {
       const nowIso = new Date().toISOString();
-      const { error: actionsError } = await (supabaseAdmin as unknown as SupabaseClient)
-        .from("executed_actions")
-        .insert(
-          input.actions.map((a) => ({
-            executed_rule_id: ruleId as string,
-            action_type: a.action_type,
-            status: a.status,
-            error: a.error,
-            payload: a.payload,
-            ran_at: a.status === "pending" ? null : nowIso,
-          })),
-        );
+      const { error: actionsError } = await supabaseAdmin.from("executed_actions").insert(
+        input.actions.map((a) => ({
+          executed_rule_id: ruleId as string,
+          action_type: a.action_type,
+          status: a.status,
+          error: a.error,
+          // Action config is an arbitrary JSON bag; column type is Json.
+          payload: a.payload as Json,
+          ran_at: a.status === "pending" ? null : nowIso,
+        })),
+      );
       if (actionsError) throw new Error(actionsError.message);
     }
   } catch (e) {
@@ -173,8 +178,7 @@ export async function listExecutedRulesDecrypted(params: {
   cursor?: string | null;
   limit?: number;
 }): Promise<ExecutedRuleRow[]> {
-  const key = process.env.EMAIL_ENC_KEY;
-  if (!key) throw new Error("EMAIL_ENC_KEY not configured");
+  const key = emailEncKey();
   const { data, error } = await adminRpc("list_executed_rules", {
     p_user_id: params.userId,
     p_account_id: params.accountId ?? null,

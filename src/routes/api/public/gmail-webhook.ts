@@ -6,6 +6,7 @@
 // `x-zerrow-test: 1` header so they are logged as `webhook_test` instead
 // of `push` / `push_empty` and do NOT pollute real Google push diagnostics.
 import { createFileRoute } from "@tanstack/react-router";
+import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { syncSinceHistory, runMessageJobs } from "@/lib/sync.server";
 import { topUpWatch } from "@/lib/gmail.server";
@@ -22,6 +23,30 @@ import { WEBHOOK_INLINE_DRAIN_BUDGET_MS, JOB_WORKER_CONCURRENCY } from "@/lib/sy
 // Anything left in the queue gets picked up by the dedicated 5s
 // gmail-process-jobs cron.
 const INLINE_DRAIN_BUDGET_MS = WEBHOOK_INLINE_DRAIN_BUDGET_MS;
+
+// Google Pub/Sub push envelope. Both camelCase and snake_case field variants
+// appear in the wild depending on the delivery path, so accept either. Unknown
+// keys are stripped (default) rather than rejected — a malformed envelope falls
+// back to the "no data" path below and is logged, never trusted via a cast.
+const pubsubEnvelopeSchema = z.object({
+  subscription: z.string().optional(),
+  message: z
+    .object({
+      data: z.string().optional(),
+      messageId: z.string().optional(),
+      message_id: z.string().optional(),
+      publishTime: z.string().optional(),
+      publish_time: z.string().optional(),
+    })
+    .optional(),
+});
+
+// The base64-decoded Gmail notification carried inside message.data. Fully
+// untrusted nested JSON — validate rather than cast.
+const gmailNotificationSchema = z.object({
+  emailAddress: z.string().optional(),
+  historyId: z.union([z.number(), z.string()]).optional(),
+});
 
 async function drainWithBudget(budgetMs: number): Promise<{ rounds: number; processed: number }> {
   const deadline = Date.now() + budgetMs;
@@ -189,7 +214,9 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
         let details: string | null = null;
         let hadData = false;
         try {
-          const body = await request.json();
+          // Validate the envelope shape; a mismatch falls through to the
+          // "no data" path rather than trusting untyped `any` field access.
+          const body = pubsubEnvelopeSchema.safeParse(await request.json()).data ?? null;
           messageId = body?.message?.messageId ?? body?.message?.message_id ?? null;
 
           // Dedupe: Pub/Sub redelivers on slow ack. If we've already logged
@@ -235,10 +262,7 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
               details = `Failed to decode message.data: ${(decodeErr as Error).message}`;
               payload = { raw: dataB64 };
             }
-            const decoded = (payload ?? {}) as {
-              emailAddress?: string;
-              historyId?: number | string;
-            };
+            const decoded = gmailNotificationSchema.safeParse(payload ?? {}).data ?? {};
             emailAddress = decoded.emailAddress ?? null;
             historyId = decoded.historyId != null ? String(decoded.historyId) : null;
 

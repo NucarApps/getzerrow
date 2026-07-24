@@ -12,7 +12,6 @@
 //     failure falls back to the plain grouped list — the digest always
 //     sends,
 //   * processed rows get sent_at stamped; nothing is ever re-sent.
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { logError, logInfo } from "@/lib/log.server";
 import { sendMessage } from "../gmail.server";
@@ -20,7 +19,7 @@ import { sanitizeUntrustedText } from "../ai-untrusted";
 import { getEmailsDecrypted } from "./encrypted-reader";
 import { AI_CLASSIFY_ATTEMPT_TIMEOUT_MS } from "./config";
 
-const admin = () => supabaseAdmin as unknown as SupabaseClient;
+const admin = () => supabaseAdmin;
 
 export const MAX_DIGEST_USERS_PER_TICK = 50;
 export const MAX_ITEMS_PER_DIGEST = 100;

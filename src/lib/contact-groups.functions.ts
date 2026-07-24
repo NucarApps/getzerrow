@@ -41,11 +41,7 @@ export const listContactGroups = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
     const [{ data: groups, error: gErr }, { data: members, error: mErr }, { data: ruleRows }] =
       await Promise.all([
-        // Untyped accessor: `kind` (task 7) isn't in the generated types yet.
-        (supabase as unknown as SupabaseClient)
-          .from("contact_groups")
-          .select(GROUP_SELECT)
-          .order("name", { ascending: true }),
+        supabase.from("contact_groups").select(GROUP_SELECT).order("name", { ascending: true }),
         supabase.from("contact_group_members").select("group_id,contact_id"),
         supabase
           .from("contact_group_rules")
@@ -135,10 +131,7 @@ export const createContactGroup = createServerFn({ method: "POST" })
     const { loadNameAliasMap, newGroupCardDavUid } =
       await import("@/lib/contacts/label-resolve.server");
     const aliases = await loadNameAliasMap({ supabase, userId });
-    const q = (supabase as unknown as SupabaseClient)
-      .from("contact_groups")
-      .select(GROUP_SELECT)
-      .eq("user_id", userId);
+    const q = supabase.from("contact_groups").select(GROUP_SELECT).eq("user_id", userId);
     const scoped = data.parent_group_id
       ? q.eq("parent_group_id", data.parent_group_id)
       : q.is("parent_group_id", null);
@@ -155,7 +148,7 @@ export const createContactGroup = createServerFn({ method: "POST" })
     }
     // Generate a stable CardDAV UID up-front so a group created in the
     // web app is immediately visible/syncable to iPhones on next PROPFIND.
-    const { data: row, error } = await (supabase as unknown as SupabaseClient)
+    const { data: row, error } = await supabase
       .from("contact_groups")
       .insert({
         user_id: userId,
@@ -169,7 +162,7 @@ export const createContactGroup = createServerFn({ method: "POST" })
     if (error) {
       // Unique-name race (the (user_id, lower(name)) index is global):
       // return the winner instead of failing the user's create.
-      const { data: winner } = await (supabase as unknown as SupabaseClient)
+      const { data: winner } = await supabase
         .from("contact_groups")
         .select(GROUP_SELECT)
         .eq("user_id", userId)
@@ -221,7 +214,7 @@ export const updateContactGroup = createServerFn({ method: "POST" })
       parent_group_id?: string | null;
     } = { ...rest };
     if (parent_group_id !== undefined) patch.parent_group_id = parent_group_id;
-    const { data: row, error } = await (supabase as unknown as SupabaseClient)
+    const { data: row, error } = await supabase
       .from("contact_groups")
       .update(patch)
       .eq("id", id)

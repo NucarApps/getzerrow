@@ -248,22 +248,24 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
         const known = new Set((existing ?? []).map((r) => r.gmail_message_id));
         const todo = idsArr.filter((id) => !known.has(id));
 
-        // Cache folder label → folder_id mapping for this account.
-        const { data: folders } = await supabaseAdmin
+        // Cache folder label → folder_id mapping for this account. Select the
+        // full folder rows so matchByFilters can honor priority / rule-tree /
+        // thread settings the same way the live sync pipeline does.
+        const { data: foldersRaw } = await supabaseAdmin
           .from("folders")
-          .select("id, gmail_label_id")
+          .select("*")
           .eq("user_id", context.userId)
           .eq("gmail_account_id", accountId);
+        const allFolders = (foldersRaw ?? []) as Folder[];
         const labelToFolder = new Map<string, string>();
-        for (const f of folders ?? []) {
+        for (const f of allFolders) {
           if (f.gmail_label_id) labelToFolder.set(f.gmail_label_id, f.id);
         }
 
         // Load folder_filters for this user so newly-ingested messages
         // honor existing domain / sender / subject rules instead of
         // landing as un-classified gmail_search_ingest rows.
-        const folderIds = (folders ?? []).map((f) => f.id);
-        type Filter = { id: string; folder_id: string; field: string; op: string; value: string };
+        const folderIds = allFolders.map((f) => f.id);
         let filters: Filter[] = [];
         if (folderIds.length > 0) {
           const { data: ff } = await supabaseAdmin
@@ -271,54 +273,6 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
             .select("id, folder_id, field, op, value")
             .in("folder_id", folderIds);
           filters = (ff ?? []) as Filter[];
-        }
-        function matchFilters(parsed: {
-          from_addr: string;
-          from_name: string;
-          to_addrs: string;
-          subject: string;
-          body_text: string;
-          has_attachment: boolean;
-        }): { folder_id: string; field: string; value: string } | null {
-          for (const f of filters) {
-            const v = (f.value || "").toLowerCase();
-            const fieldVal = (() => {
-              switch (f.field) {
-                case "from":
-                  return `${parsed.from_addr} ${parsed.from_name}`.toLowerCase();
-                case "to":
-                  return (parsed.to_addrs || "").toLowerCase();
-                case "subject":
-                  return (parsed.subject || "").toLowerCase();
-                case "body":
-                  return (parsed.body_text || "").toLowerCase();
-                case "domain":
-                  return (parsed.from_addr.split("@")[1] || "").toLowerCase();
-                case "has_attachment":
-                  return parsed.has_attachment ? "true" : "false";
-                default:
-                  return "";
-              }
-            })();
-            const hit = (() => {
-              switch (f.op) {
-                case "contains":
-                  return fieldVal.includes(v);
-                case "equals":
-                  return fieldVal === v;
-                case "regex":
-                  try {
-                    return new RegExp(f.value, "i").test(fieldVal);
-                  } catch {
-                    return false;
-                  }
-                default:
-                  return false;
-              }
-            })();
-            if (hit) return { folder_id: f.folder_id, field: f.field, value: v };
-          }
-          return null;
         }
 
         // Low concurrency + stop early on rate-limit to stay within Gmail's
@@ -345,21 +299,41 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
                 }
               }
               if (!folder_id) {
-                const m = matchFilters({
-                  from_addr: p.from_addr ?? "",
-                  from_name: p.from_name ?? "",
-                  to_addrs: p.to_addrs ?? "",
-                  subject: p.subject ?? "",
-                  body_text: p.body_text ?? "",
-                  has_attachment: !!p.has_attachment,
-                });
-                if (m) {
-                  folder_id = m.folder_id;
-                  classified_by = m.field === "domain" ? "domain_rule" : "filter";
-                  classification_reason =
-                    m.field === "domain"
-                      ? `Domain rule: ${m.value}`
-                      : `Folder rule: ${m.field} ${m.value}`;
+                // Same shared filter engine the live sync pipeline uses, so
+                // search-ingested mail honors domain allowlists (domain_in),
+                // exclude/veto ops, AND/OR rule trees, filter_logic, and
+                // folder priority — not just the contains/equals/regex subset
+                // the old inline matcher supported. Like the sibling
+                // scanGmailForFolder, this builds a partial email (no cc/
+                // list_id/is_reply/sender_group_ids), so filters on those
+                // fields don't apply on the ingest path.
+                const result = matchByFilters(
+                  {
+                    from_addr: p.from_addr ?? "",
+                    from_name: p.from_name ?? "",
+                    to_addrs: p.to_addrs ?? "",
+                    subject: p.subject ?? "",
+                    body_text: p.body_text ?? "",
+                    has_attachment: !!p.has_attachment,
+                  },
+                  allFolders,
+                  filters,
+                );
+                if (result?.kind === "match") {
+                  folder_id = result.folder_id;
+                  if (result.tree_used) {
+                    classified_by = "filter";
+                    classification_reason = "Rule group matched";
+                  } else if (result.filter) {
+                    classified_by = result.filter.field === "domain" ? "domain_rule" : "filter";
+                    classification_reason =
+                      result.filter.field === "domain"
+                        ? `Domain rule: ${result.filter.value}`
+                        : `Folder rule: ${result.filter.field} ${result.filter.value}`;
+                  } else {
+                    classified_by = "filter";
+                    classification_reason = "Folder rule matched";
+                  }
                 }
               }
               const { id: newId, error } = await upsertEmailEncrypted({

@@ -3,6 +3,7 @@
 //
 // Configured via createBot() to POST here with `?t=<RECALL_REALTIME_TOKEN>`.
 import { createFileRoute } from "@tanstack/react-router";
+import { z } from "zod";
 import {
   askZerrowInMeeting,
   appendTranscriptSegments,
@@ -14,19 +15,32 @@ import { logError, logInfo, newRunId } from "@/lib/log.server";
 
 const WAKE_RE = /(?:^|[\s,.:;!?])(?:@zerrow|hey\s+zerrow)[\s,:;-]+(.+)/i;
 
-type RealtimePayload = {
-  event?: string;
-  data?: {
-    bot?: { id?: string };
-    data?: {
-      words?: Array<{ text?: string; start_timestamp?: { relative?: number } | number }>;
-      participant?: { name?: string | null } | null;
-      text?: string;
-      sender?: { name?: string | null; is_host?: boolean } | null;
-      is_from_bot?: boolean;
-    };
-  };
-};
+// Untrusted real-time event from Recall — validate the shape rather than cast.
+// Unknown keys are stripped so Recall can extend the payload without breaking us.
+// Tolerant by design: this is a high-volume transcript firehose, so the schema
+// only pins the fields the handler actually reads and stays nullish elsewhere —
+// one oddly-shaped word must never 400 away a whole batch (and its wake word).
+// Unknown keys (e.g. word `start_timestamp`, which we don't read) are stripped.
+const recallRealtimeSchema = z.object({
+  event: z.string().nullish(),
+  data: z
+    .object({
+      bot: z.object({ id: z.string().nullish() }).nullish(),
+      data: z
+        .object({
+          words: z.array(z.object({ text: z.string().nullish() })).nullish(),
+          participant: z.object({ name: z.string().nullish() }).nullish(),
+          text: z.string().nullish(),
+          sender: z
+            .object({ name: z.string().nullish(), is_host: z.boolean().nullish() })
+            .nullish(),
+          is_from_bot: z.boolean().nullish(),
+        })
+        .nullish(),
+    })
+    .nullish(),
+});
+type RealtimePayload = z.infer<typeof recallRealtimeSchema>;
 
 function extractQuestion(text: string): string | null {
   const m = text.match(WAKE_RE);
@@ -54,7 +68,9 @@ export const Route = createFileRoute("/api/public/recall-realtime")({
 
         let payload: RealtimePayload;
         try {
-          payload = (await request.json()) as RealtimePayload;
+          const parsed = recallRealtimeSchema.safeParse(await request.json());
+          if (!parsed.success) return new Response("Bad request", { status: 400 });
+          payload = parsed.data;
         } catch {
           return new Response("Bad request", { status: 400 });
         }

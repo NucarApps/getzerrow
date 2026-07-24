@@ -57,6 +57,24 @@ vi.mock("./account-context", () => ({
 const applyFolderActions = vi.fn();
 vi.mock("./process-message", () => ({
   applyFolderActions: (...args: unknown[]) => applyFolderActions(...args),
+  // Faithful stub of the real resolver: return the cached folder fields or null.
+  resolveFolderFromContext: (
+    ctx: { folders: Array<{ id: string } & Record<string, unknown>> } | undefined,
+    folderId: string,
+  ) => {
+    const cached = ctx?.folders.find((f) => f.id === folderId);
+    if (!cached) return null;
+    return {
+      id: cached.id,
+      gmail_label_id: cached.gmail_label_id,
+      auto_archive: cached.auto_archive,
+      auto_mark_read: cached.auto_mark_read,
+      auto_star: cached.auto_star,
+      hide_from_inbox: cached.hide_from_inbox,
+      forward_to: cached.forward_to,
+      snooze_hours: cached.snooze_hours,
+    };
+  },
 }));
 
 const bumpEmailsSinceLearn = vi.fn();

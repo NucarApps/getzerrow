@@ -29,7 +29,12 @@ import { getMessage, parseMessage } from "../gmail.server";
 import { logError } from "../log.server";
 import { loadAccountContext, type AccountContext } from "./account-context";
 import { classifyByRules } from "./classify";
-import { applyFolderActions, type ActionFolder } from "./process-message";
+import {
+  applyFolderActions,
+  computeFolderEffects,
+  resolveFolderFromContext,
+  type ActionFolder,
+} from "./process-message";
 import { bumpEmailsSinceLearn } from "./folder-learn";
 import { CATCHUP_BULK_LIMIT, CATCHUP_FETCH_CONCURRENCY, EXCLUDED_LABELS } from "./config";
 import {
@@ -76,21 +81,6 @@ async function parallelFetch(
   });
   await Promise.all(workers);
   return out;
-}
-
-function resolveActionFolder(ctx: AccountContext, folderId: string): ActionFolder | null {
-  const cached = ctx.folders.find((f) => f.id === folderId);
-  if (!cached) return null;
-  return {
-    id: cached.id,
-    gmail_label_id: cached.gmail_label_id,
-    auto_archive: cached.auto_archive,
-    auto_mark_read: cached.auto_mark_read,
-    auto_star: cached.auto_star,
-    hide_from_inbox: cached.hide_from_inbox,
-    forward_to: cached.forward_to,
-    snooze_hours: cached.snooze_hours,
-  };
 }
 
 /** Build the encrypted-write payload for one parsed message. Mirrors the
@@ -158,14 +148,14 @@ export function buildCatchupRow(
   let read = parsed.is_read;
   let snoozedUntil: string | null = null;
   if (rules.folder_id) {
-    const folder = resolveActionFolder(ctx, rules.folder_id);
+    const folder = resolveFolderFromContext(ctx, rules.folder_id);
     if (folder) {
-      const effectiveArchive = folder.auto_archive || folder.hide_from_inbox;
-      if (inInbox && effectiveArchive) archived = true;
+      // Reuse processGmailMessage's effect computation so effectiveArchive
+      // and snooze math stay identical between the two write paths.
+      const effects = computeFolderEffects(folder, parsed, inInbox);
+      if (inInbox && effects.effectiveArchive) archived = true;
       if (folder.auto_mark_read) read = true;
-      if (folder.snooze_hours && folder.snooze_hours > 0) {
-        snoozedUntil = new Date(Date.now() + folder.snooze_hours * 3600_000).toISOString();
-      }
+      snoozedUntil = effects.snoozedUntil;
     }
   }
   return {
@@ -278,7 +268,7 @@ export async function bulkCatchupClaim(
     } else {
       rulesMatchedJobIds.push(job.id);
       if (built.folder_id) {
-        const folder = resolveActionFolder(ctx, built.folder_id);
+        const folder = resolveFolderFromContext(ctx, built.folder_id);
         if (folder) {
           folderSideEffects.push({
             job,

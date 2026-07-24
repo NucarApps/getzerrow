@@ -78,7 +78,7 @@ describe("getAccessToken", () => {
   it("throws before any query when EMAIL_ENC_KEY is unset", async () => {
     delete process.env.EMAIL_ENC_KEY;
     const mod = await importSut();
-    await expect(mod.getAccessToken(ACC)).rejects.toThrow("EMAIL_ENC_KEY is not configured");
+    await expect(mod.getAccessToken(ACC)).rejects.toThrow("EMAIL_ENC_KEY not configured");
     expect(fake.calls.selects).toHaveLength(0);
     expect(fake.calls.rpcs).toHaveLength(0);
   });

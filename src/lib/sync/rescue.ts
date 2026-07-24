@@ -19,7 +19,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { classifyEmail, classifyEmailsBatch } from "../ai.server";
 import { loadAccountContext, type AccountContext } from "./account-context";
 import { classifyByRules, type ParsedEmailForClassify } from "./classify";
-import { applyFolderActions, type ActionFolder } from "./process-message";
+import { applyFolderActions, resolveFolderFromContext } from "./process-message";
 import { bumpEmailsSinceLearn } from "./folder-learn";
 import { updateEmailEncrypted } from "./encrypted-writer";
 import { getEmailsDecrypted } from "./encrypted-reader";
@@ -107,19 +107,7 @@ async function finalize(
   });
   if (outcome.folder_id) {
     void bumpEmailsSinceLearn(outcome.folder_id);
-    const cached = ctx.folders.find((f) => f.id === outcome.folder_id);
-    const folder: ActionFolder | null = cached
-      ? {
-          id: cached.id,
-          gmail_label_id: cached.gmail_label_id,
-          auto_archive: cached.auto_archive,
-          auto_mark_read: cached.auto_mark_read,
-          auto_star: cached.auto_star,
-          hide_from_inbox: cached.hide_from_inbox,
-          forward_to: cached.forward_to,
-          snooze_hours: cached.snooze_hours,
-        }
-      : null;
+    const folder = resolveFolderFromContext(ctx, outcome.folder_id);
     if (folder) {
       const inInbox = (row.raw_labels ?? []).includes("INBOX");
       await applyFolderActions(

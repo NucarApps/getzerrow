@@ -3,6 +3,7 @@
 // Google OAuth tokens it obtained on-device, kick off sync, and read back the
 // user's categorization rules (folders + filters) in one round-trip.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { emailEncKey } from "./email-enc-key";
 import { ensureWatch } from "./gmail.server";
 import { backfillRecent, startBackfillJob } from "./sync.server";
 import { exchangeCode, fetchUserEmail } from "./google-oauth.server";
@@ -41,8 +42,7 @@ export async function connectGmailCore(
   userId: string,
   input: MobileConnectInput,
 ): Promise<{ account_id: string; email_address: string }> {
-  const encKey = process.env.EMAIL_ENC_KEY;
-  if (!encKey) throw new Error("Server is not configured for Gmail connect");
+  const encKey = emailEncKey();
 
   let accessToken = input.access_token;
   let refreshToken = input.refresh_token;
