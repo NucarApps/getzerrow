@@ -6,6 +6,7 @@
 //   https://getzerrow.com/api/public/recall-webhook
 import { createFileRoute } from "@tanstack/react-router";
 import { createHmac, timingSafeEqual } from "crypto";
+import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { syncMeetingFromRecall, mapStatus } from "@/lib/meetings.server";
 import { logError, logInfo, newRunId } from "@/lib/log.server";
@@ -36,14 +37,21 @@ function verifySvix(secret: string, headers: Headers, body: string): boolean {
   return false;
 }
 
-type RecallWebhookPayload = {
-  event?: string;
-  data?: {
-    bot_id?: string;
-    bot?: { id?: string };
-    status?: { code?: string };
-  };
-};
+// Untrusted third-party payload — validate the shape rather than trust a cast.
+// Unknown keys are stripped (default), so Recall can add fields without breaking us.
+const recallWebhookSchema = z.object({
+  event: z.string().optional(),
+  // nullish (not just optional): the old cast tolerated `data: null` and 200'd;
+  // rejecting it would 400 a Svix-signed webhook into retries + dead-lettering.
+  data: z
+    .object({
+      bot_id: z.string().nullish(),
+      bot: z.object({ id: z.string().nullish() }).nullish(),
+      status: z.object({ code: z.string().nullish() }).nullish(),
+    })
+    .nullish(),
+});
+type RecallWebhookPayload = z.infer<typeof recallWebhookSchema>;
 
 export const Route = createFileRoute("/api/public/recall-webhook")({
   server: {
@@ -60,7 +68,12 @@ export const Route = createFileRoute("/api/public/recall-webhook")({
 
         let payload: RecallWebhookPayload;
         try {
-          payload = JSON.parse(body) as RecallWebhookPayload;
+          const parsed = recallWebhookSchema.safeParse(JSON.parse(body));
+          if (!parsed.success) {
+            logError("recall_webhook_bad_payload", { runId });
+            return new Response("Bad request", { status: 400 });
+          }
+          payload = parsed.data;
         } catch {
           return new Response("Bad request", { status: 400 });
         }

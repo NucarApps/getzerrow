@@ -6,8 +6,27 @@
 // reach this module, so it ends up in the client bundle graph. A node
 // builtin import here breaks `vite build` outright ("crypto" is externalized
 // for the browser); Web Crypto builds everywhere and runs on Workers.
+import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { emailEncKey } from "@/lib/email-enc-key";
+
+// Google OAuth token endpoint responses. Validated rather than cast so a
+// malformed/error body fails loudly at the boundary instead of surfacing as a
+// confusing downstream `undefined access_token`.
+const tokenExchangeSchema = z.object({
+  access_token: z.string(),
+  refresh_token: z.string().optional(),
+  expires_in: z.number(),
+  scope: z.string(),
+  token_type: z.string(),
+  id_token: z.string().optional(),
+});
+const tokenRefreshSchema = z.object({
+  access_token: z.string(),
+  expires_in: z.number(),
+  scope: z.string(),
+  token_type: z.string(),
+});
 
 export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 export const CONTACTS_SCOPE = "https://www.googleapis.com/auth/contacts";
@@ -138,14 +157,7 @@ export async function exchangeCode(code: string, redirectUri: string) {
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`Token exchange failed ${res.status}: ${text.slice(0, 500)}`);
-  return JSON.parse(text) as {
-    access_token: string;
-    refresh_token?: string;
-    expires_in: number;
-    scope: string;
-    token_type: string;
-    id_token?: string;
-  };
+  return tokenExchangeSchema.parse(JSON.parse(text));
 }
 
 export async function refreshAccessToken(refreshToken: string) {
@@ -163,12 +175,7 @@ export async function refreshAccessToken(refreshToken: string) {
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`Token refresh failed ${res.status}: ${text.slice(0, 500)}`);
-  return JSON.parse(text) as {
-    access_token: string;
-    expires_in: number;
-    scope: string;
-    token_type: string;
-  };
+  return tokenRefreshSchema.parse(JSON.parse(text));
 }
 
 export async function fetchUserEmail(accessToken: string): Promise<string> {
