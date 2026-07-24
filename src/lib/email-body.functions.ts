@@ -149,6 +149,6 @@ export const searchInbox = createServerFn({ method: "POST" })
       )
       .eq("user_id", userId);
     if (metaErr) return { rows: [], error: metaErr.message };
-    const merged = mergeSearchRows(hits, (metaRows ?? []) as unknown as Array<{ id: string }>);
+    const merged = mergeSearchRows(hits, metaRows ?? []);
     return { rows: merged, error: null };
   });
