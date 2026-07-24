@@ -14,7 +14,7 @@
 // SCHEDULED_ACTION_MAX_ATTEMPTS fails terminally (status 'error').
 // Config-gone cases (action or email deleted, no webhook URL) fail
 // terminally right away instead of burning retries.
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { emailEncKey } from "@/lib/email-enc-key";
 import { logError } from "@/lib/log.server";
@@ -30,7 +30,7 @@ import { getEmailsDecrypted } from "./encrypted-reader";
 import { AI_CLASSIFY_ATTEMPT_TIMEOUT_MS } from "./config";
 import { raceTimeout } from "../ai-budget";
 
-const admin = () => supabaseAdmin as unknown as SupabaseClient;
+const admin = () => supabaseAdmin;
 
 /** Backoff (minutes) applied after failed attempt N (1-based index N-1). */
 export const SCHEDULED_ACTION_BACKOFF_MINUTES = [1, 5, 15, 60, 180];
@@ -224,7 +224,10 @@ async function runOne(job: ClaimedJob): Promise<RunOutcome> {
       );
     }
     if (Object.keys(plan.patch).length > 0) {
-      const { error } = await admin().from("emails").update(plan.patch).eq("id", email.id);
+      // Dynamically-built column patch from the dispatcher; keys are decided at
+      // runtime, so narrow the untyped bag to the emails Update row type.
+      const patch = plan.patch as Database["public"]["Tables"]["emails"]["Update"];
+      const { error } = await admin().from("emails").update(patch).eq("id", email.id);
       if (error) return { ok: false, error: error.message };
     }
     return { ok: true };

@@ -28,16 +28,14 @@
 //   scheduled_actions (status 'pending') instead of running inline. The
 //   runner cron lands with the webhook action (task 5); until then the
 //   queue only accumulates for folders that configure delays.
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { logError } from "@/lib/log.server";
 import { validateWebhookUrl } from "../webhook/url-guard";
 import type { ActionFolder } from "./process-message";
 
-// folder_actions/scheduled_actions are not in the generated Supabase
-// types yet — untyped accessor, same pattern as executed-rules.ts.
-function adminTable(table: string) {
-  return (supabaseAdmin as unknown as SupabaseClient).from(table);
+function adminTable<T extends keyof Database["public"]["Tables"]>(table: T) {
+  return supabaseAdmin.from(table);
 }
 
 /** The folder_actions columns the task-4 handlers need. `id` is null for

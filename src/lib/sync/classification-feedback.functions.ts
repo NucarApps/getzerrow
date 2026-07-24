@@ -15,7 +15,6 @@
 //     the folder learns from the correction.
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { performMove } from "../move-email.server";
@@ -25,7 +24,7 @@ import { loadAccountContext } from "./account-context";
 import { matchByFilters, type EmailForFilter } from "./filter-engine";
 import { logAudit } from "../log.server";
 
-const admin = () => supabaseAdmin as unknown as SupabaseClient;
+const admin = () => supabaseAdmin;
 
 type ExecutedRow = {
   id: string;
@@ -132,15 +131,12 @@ export const flagWrongClassification = createServerFn({ method: "POST" })
     }
 
     // RLS insert as the caller — the owner policy enforces user_id.
-    // (Untyped accessor: the table isn't in the generated types yet.)
-    const { error: insertErr } = await (supabase as unknown as SupabaseClient)
-      .from("classification_feedback")
-      .insert({
-        user_id: userId,
-        executed_rule_id: row.id,
-        correct_folder_id: data.correct_folder_id ?? null,
-        note: data.note?.trim() || null,
-      });
+    const { error: insertErr } = await supabase.from("classification_feedback").insert({
+      user_id: userId,
+      executed_rule_id: row.id,
+      correct_folder_id: data.correct_folder_id ?? null,
+      note: data.note?.trim() || null,
+    });
     if (insertErr) throw new Error(insertErr.message);
 
     let moved = false;

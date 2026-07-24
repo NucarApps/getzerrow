@@ -6,7 +6,7 @@
 // already matches against every group a sender belongs to.
 import { z } from "zod";
 import { generateText } from "ai";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getModel } from "@/lib/ai-gateway";
 import { raceTimeout } from "@/lib/ai-budget";
@@ -36,8 +36,8 @@ export type SenderSample = { contact_id: string; email: string; name: string | n
 
 export type CategorizeAiFn = (senders: SenderSample[]) => Promise<Record<string, string>>;
 
-function adminTable(name: string) {
-  return (supabaseAdmin as unknown as SupabaseClient).from(name);
+function adminTable<T extends keyof Database["public"]["Tables"]>(name: T) {
+  return supabaseAdmin.from(name);
 }
 
 /** Default AI labeler: one compact batched prompt via the Lovable gateway.
@@ -110,6 +110,9 @@ async function ensureGroup(userId: string, category: string): Promise<string | n
     name,
     color: GROUP_COLOR,
     kind: "ai_category",
+    // carddav_uid is NOT NULL with no DB default; a client-stable UID keeps
+    // the group syncable to iOS and matches the migration backfill convention.
+    carddav_uid: `group-${id}`,
   });
   if (error) return null;
   return id;

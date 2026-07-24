@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 export type InvaderStats = {
@@ -29,20 +30,18 @@ const DEFAULT_STATS: InvaderStats = {
   dailyTop5: [],
 };
 
-async function fetchStats(supabase: SupabaseClient): Promise<InvaderStats> {
-  const { data, error } = await (
-    supabase as unknown as {
-      rpc: (fn: string) => Promise<{ data: unknown; error: { message: string } | null }>;
-    }
-  ).rpc("get_invader_stats");
+async function fetchStats(supabase: SupabaseClient<Database>): Promise<InvaderStats> {
+  const { data, error } = await supabase.rpc("get_invader_stats");
   if (error) throw new Error(error.message);
-  return { ...DEFAULT_STATS, ...((data ?? {}) as Partial<InvaderStats>) };
+  // RPC is declared `Returns: Json` in the generated types, so narrow its
+  // shape here — the client itself stays fully typed.
+  return { ...DEFAULT_STATS, ...((data ?? {}) as unknown as Partial<InvaderStats>) };
 }
 
 export const getInvaderStats = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    return fetchStats(context.supabase as unknown as SupabaseClient);
+    return fetchStats(context.supabase);
   });
 
 const submitSchema = z.object({
@@ -97,5 +96,5 @@ export const submitInvaderScore = createServerFn({ method: "POST" })
     const { error } = await supabase.from("game_scores").insert(insertRow);
     if (error) throw new Error(error.message);
 
-    return fetchStats(supabase as unknown as SupabaseClient);
+    return fetchStats(supabase);
   });
