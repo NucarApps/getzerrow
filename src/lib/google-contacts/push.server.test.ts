@@ -30,6 +30,7 @@ const people = {
   modifyGroupMembers: vi.fn(),
   updateContactPhoto: vi.fn(),
   getContactGroupWithMembers: vi.fn(),
+  listContactGroupsPage: vi.fn(),
 };
 const loadLocalContactMock = vi.fn();
 const loadContactPhotoBytesMock = vi.fn();
@@ -63,6 +64,7 @@ vi.mock("./people-client.server", async (importOriginal) => {
     modifyGroupMembers: (...args: unknown[]) => people.modifyGroupMembers(...args),
     updateContactPhoto: (...args: unknown[]) => people.updateContactPhoto(...args),
     getContactGroupWithMembers: (...args: unknown[]) => people.getContactGroupWithMembers(...args),
+    listContactGroupsPage: (...args: unknown[]) => people.listContactGroupsPage(...args),
   };
 });
 vi.mock("./state.server", () => ({
@@ -508,6 +510,88 @@ describe("pushGroups", () => {
     );
     expect(people.createContactGroup).not.toHaveBeenCalled();
     expect(res.groupsPushed).toBe(1);
+  });
+
+  it("adopts the existing Google group when a rename hits 409 ALREADY_EXISTS instead of looping", async () => {
+    // Regression: a linked group whose rename collides with another Google
+    // group that already owns the target name used to fail every cron tick
+    // forever (the 409-adoption path was gated to the create branch only).
+    fake.seed("contact_groups", [{ id: G1, user_id: USER, name: "Renamed", updated_at: NEWER }]);
+    fake.seed("google_group_links", [
+      {
+        contact_group_id: G1,
+        gmail_account_id: ACC,
+        resource_name: "contactGroups/g1",
+        etag: "e1",
+        last_synced_at: OLD,
+      },
+    ]);
+    people.updateContactGroup.mockRejectedValue(
+      new PeopleApiError("Contact group name already exists.", 409, "ALREADY_EXISTS"),
+    );
+    // Google already has a group with the target name under a different id.
+    people.listContactGroupsPage.mockResolvedValue({
+      contactGroups: [{ name: "Renamed", resourceName: "contactGroups/existing", etag: "e-exist" }],
+      nextPageToken: undefined,
+    });
+
+    const res = await pushToGoogle(IDS);
+
+    // The local link is re-pointed to the pre-existing Google group...
+    const upserts = writesTo("upserts", "google_group_links");
+    expect(upserts).toHaveLength(1);
+    expect(upserts[0].payload).toMatchObject({
+      contact_group_id: G1,
+      gmail_account_id: ACC,
+      resource_name: "contactGroups/existing",
+    });
+    expect(upserts[0].options).toEqual({ onConflict: "gmail_account_id,contact_group_id" });
+    // ...the run counts it as pushed and never logs group_failed.
+    expect(res.groupsPushed).toBe(1);
+    expect(logErrorMock).not.toHaveBeenCalledWith(
+      "google_contacts.push.group_failed",
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("reports group_failed (not a phantom adoption) when the adoption upsert hits the resource_name conflict", async () => {
+    // The target Google group is already linked to a DIFFERENT local group, so
+    // re-pointing this link violates UNIQUE(gmail_account_id, resource_name).
+    // The upsert error must surface as group_failed, not a false group_adopted
+    // that keeps the rename looping every cron tick.
+    fake.seed("contact_groups", [{ id: G1, user_id: USER, name: "Renamed", updated_at: NEWER }]);
+    fake.seed("google_group_links", [
+      {
+        contact_group_id: G1,
+        gmail_account_id: ACC,
+        resource_name: "contactGroups/g1",
+        etag: "e1",
+        last_synced_at: OLD,
+      },
+    ]);
+    people.updateContactGroup.mockRejectedValue(
+      new PeopleApiError("Contact group name already exists.", 409, "ALREADY_EXISTS"),
+    );
+    people.listContactGroupsPage.mockResolvedValue({
+      contactGroups: [{ name: "Renamed", resourceName: "contactGroups/existing", etag: "e-exist" }],
+      nextPageToken: undefined,
+    });
+    // The re-point upsert fails the second unique constraint.
+    fake.onUpsert("google_group_links", () => ({ message: "duplicate key value (resource_name)" }));
+
+    const res = await pushToGoogle(IDS);
+
+    expect(res.groupsPushed).toBe(0);
+    expect(logErrorMock).toHaveBeenCalledWith(
+      "google_contacts.push.group_failed",
+      expect.objectContaining({ group_id: G1 }),
+      expect.anything(),
+    );
+    expect(logInfoMock).not.toHaveBeenCalledWith(
+      "google_contacts.push.group_adopted",
+      expect.anything(),
+    );
   });
 });
 

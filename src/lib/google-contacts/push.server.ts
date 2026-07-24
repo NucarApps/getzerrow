@@ -162,7 +162,12 @@ async function adoptExistingGoogleGroup(
     const page = await listContactGroupsPage(ids.gmailAccountId, { pageToken });
     const match = (page.contactGroups ?? []).find((g) => (g.name ?? "") === name);
     if (match?.resourceName) {
-      await supabaseAdmin.from("google_group_links").upsert(
+      // The row also has a UNIQUE (gmail_account_id, resource_name) constraint,
+      // which onConflict here doesn't cover: if this Google group is already
+      // linked to a DIFFERENT local group, the upsert fails. Surface that as a
+      // real failure (return null → group_failed) rather than reporting a
+      // phantom adoption and looping on the same rename every cron tick.
+      const { error: linkErr } = await supabaseAdmin.from("google_group_links").upsert(
         {
           user_id: ids.userId,
           gmail_account_id: ids.gmailAccountId,
@@ -173,6 +178,7 @@ async function adoptExistingGoogleGroup(
         },
         { onConflict: "gmail_account_id,contact_group_id" },
       );
+      if (linkErr) return null;
       return match.resourceName;
     }
     if (!page.nextPageToken) break;
@@ -240,14 +246,15 @@ async function pushGroups(ids: Ids, progress?: ProgressReporter): Promise<number
         count++;
       }
     } catch (e) {
-      // 409 ALREADY_EXISTS: a group with this name already exists in Google
-      // but isn't linked locally. Adopt it by looking up its resourceName and
-      // inserting a google_group_links row so subsequent syncs update in place
-      // instead of retrying create forever.
+      // 409 ALREADY_EXISTS: a group with this name already exists in Google.
+      // This fires on both branches — creating a new group whose name is taken,
+      // AND renaming a linked group onto a name another Google group already
+      // owns. Either way, adopt the existing group by resourceName (upsert
+      // re-points the local link) so subsequent syncs update it in place
+      // instead of retrying the same failing call every cron tick forever.
       if (
         e instanceof PeopleApiError &&
         e.status === 409 &&
-        !link &&
         /already exists|ALREADY_EXISTS/i.test(e.message + (e.googleReason ?? ""))
       ) {
         const adopted = await adoptExistingGoogleGroup(ids, g.id, label);
