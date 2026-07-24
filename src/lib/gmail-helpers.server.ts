@@ -1,6 +1,5 @@
 // Shared server-only helpers used by gmail.functions.ts and its
-// sibling files (gmail-diagnostics.functions.ts, and any future split
-// files under src/lib/gmail/). RLS doesn't apply to supabaseAdmin
+// sibling files under src/lib/gmail/. RLS doesn't apply to supabaseAdmin
 // (service role); each helper enforces user_id ownership.
 //
 // Anything that lives in more than one `.functions.ts` module — or that

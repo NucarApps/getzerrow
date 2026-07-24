@@ -6,6 +6,7 @@
 // Phase 2 = dual-write: the RPCs populate BOTH plaintext and `*_enc`
 // columns. Phase 3 will stop writing plaintext and drop those columns.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { emailEncKey as getKey } from "@/lib/email-enc-key";
 import { logError, logInfo, logMetric } from "@/lib/log.server";
 import {
   backoffDelayMs,
@@ -18,12 +19,6 @@ import {
 function pgErrorCode(err: unknown): string | undefined {
   const code = (err as { code?: unknown } | null)?.code;
   return typeof code === "string" ? code : undefined;
-}
-
-function getKey(): string {
-  const key = process.env.EMAIL_ENC_KEY;
-  if (!key) throw new Error("EMAIL_ENC_KEY not configured");
-  return key;
 }
 
 export type UpsertEmailInput = {

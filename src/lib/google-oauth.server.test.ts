@@ -335,7 +335,7 @@ describe("revokeGoogleOAuthForAccount", () => {
   it("throws before any RPC when EMAIL_ENC_KEY is unset", async () => {
     delete process.env.EMAIL_ENC_KEY;
     await expect(revokeGoogleOAuthForAccount("acc-1")).rejects.toThrow(
-      "EMAIL_ENC_KEY is not configured",
+      "EMAIL_ENC_KEY not configured",
     );
     expect(fake.calls.rpcs).toHaveLength(0);
   });

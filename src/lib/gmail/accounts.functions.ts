@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { emailEncKey } from "@/lib/email-enc-key";
 import {
   getOwnedAccount,
   getEmailAccount,
@@ -168,7 +169,7 @@ export const connectGmailFromSession = createServerFn({ method: "POST" })
         p_access_token: data.access_token,
         p_refresh_token: data.refresh_token,
         p_token_expires_at: expiresAt,
-        p_key: process.env.EMAIL_ENC_KEY!,
+        p_key: emailEncKey(),
       },
     );
     if (error || !accountId) throw new Error(`Failed to save account: ${error?.message}`);

@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { emailEncKey } from "@/lib/email-enc-key";
 import {
   getOwnedAccount,
   getEmailAccount,
@@ -117,7 +118,7 @@ export const listFolderHistory = createServerFn({ method: "POST" })
     if (baseRows.length > 0) {
       const { data: dec } = await supabaseAdmin.rpc("get_emails_list_fields_decrypted", {
         p_ids: baseRows.map((r) => r.id),
-        p_key: process.env.EMAIL_ENC_KEY!,
+        p_key: emailEncKey(),
       });
       const map = new Map<string, string | null>();
       for (const d of (dec as Array<{ id: string; ai_summary: string | null }> | null) ?? []) {

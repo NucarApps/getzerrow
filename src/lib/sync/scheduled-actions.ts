@@ -16,6 +16,7 @@
 // terminally right away instead of burning retries.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { emailEncKey } from "@/lib/email-enc-key";
 import { logError } from "@/lib/log.server";
 import { modifyMessage, sendMessage, createDraft } from "../gmail.server";
 import { buildWebhookPayload, deliverWebhook } from "../webhook/deliver";
@@ -136,7 +137,7 @@ async function runOne(job: ClaimedJob): Promise<RunOutcome> {
   if (fa.action_type === "call_webhook") {
     const { data: cfgRows, error: cfgErr } = await admin().rpc("get_folder_action_webhook", {
       p_action_id: fa.id,
-      p_key: process.env.EMAIL_ENC_KEY,
+      p_key: emailEncKey(),
     });
     if (cfgErr) return { ok: false, error: cfgErr.message };
     const cfg = (
@@ -264,7 +265,7 @@ async function runOutbound(
 ): Promise<RunOutcome> {
   const { data: cfgRows, error: cfgErr } = await admin().rpc("get_folder_action_outbound", {
     p_action_id: actionId,
-    p_key: process.env.EMAIL_ENC_KEY,
+    p_key: emailEncKey(),
   });
   if (cfgErr) return { ok: false, error: cfgErr.message };
   const cfg = (

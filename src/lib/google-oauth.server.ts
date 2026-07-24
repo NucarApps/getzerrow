@@ -7,6 +7,7 @@
 // builtin import here breaks `vite build` outright ("crypto" is externalized
 // for the browser); Web Crypto builds everywhere and runs on Workers.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { emailEncKey } from "@/lib/email-enc-key";
 
 export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 export const CONTACTS_SCOPE = "https://www.googleapis.com/auth/contacts";
@@ -199,9 +200,7 @@ type OAuthRpc = {
 };
 
 function requireEncKey(): string {
-  const k = process.env.EMAIL_ENC_KEY;
-  if (!k) throw new Error("EMAIL_ENC_KEY is not configured");
-  return k;
+  return emailEncKey();
 }
 
 /**

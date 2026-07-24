@@ -4,12 +4,7 @@
 // the EMAIL_ENC_KEY is held in exactly one place and the column-drop
 // migration (Phase 3b) can land without leaking plaintext SELECTs.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-
-function getKey(): string {
-  const key = process.env.EMAIL_ENC_KEY;
-  if (!key) throw new Error("EMAIL_ENC_KEY not configured");
-  return key;
-}
+import { emailEncKey as getKey } from "@/lib/email-enc-key";
 
 export type DecryptedEmail = {
   id: string;

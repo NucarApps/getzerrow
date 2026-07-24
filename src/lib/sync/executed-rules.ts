@@ -15,6 +15,7 @@
 // authenticated user's id by the calling server function.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { emailEncKey } from "@/lib/email-enc-key";
 import { logError } from "@/lib/log.server";
 import type { AccountContext } from "./account-context";
 import type { ActionOutcome } from "./action-dispatch";
@@ -92,8 +93,7 @@ export async function recordExecution(input: RecordExecutionInput): Promise<void
   const c = input.classification;
   const status = input.status ?? statusForClassification(c);
   try {
-    const key = process.env.EMAIL_ENC_KEY;
-    if (!key) throw new Error("EMAIL_ENC_KEY not configured");
+    const key = emailEncKey();
     const leaves = matchedLeavesFor(input.parsed, input.context, c);
     const { data: ruleId, error } = await adminRpc("record_executed_rule", {
       p_user_id: input.userId,
@@ -173,8 +173,7 @@ export async function listExecutedRulesDecrypted(params: {
   cursor?: string | null;
   limit?: number;
 }): Promise<ExecutedRuleRow[]> {
-  const key = process.env.EMAIL_ENC_KEY;
-  if (!key) throw new Error("EMAIL_ENC_KEY not configured");
+  const key = emailEncKey();
   const { data, error } = await adminRpc("list_executed_rules", {
     p_user_id: params.userId,
     p_account_id: params.accountId ?? null,

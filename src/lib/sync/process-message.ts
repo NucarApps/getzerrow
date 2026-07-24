@@ -93,7 +93,7 @@ async function fetchActionFolder(folderId: string): Promise<ActionFolder | null>
 /** Gmail label mutations + local flag effects for routing into `folder`.
  * Single source of truth so the insert path and the post-hoc patch path
  * can't diverge. */
-function computeFolderEffects(
+export function computeFolderEffects(
   folder: ActionFolder,
   parsed: { raw_labels: string[] | null },
   inInbox: boolean,
