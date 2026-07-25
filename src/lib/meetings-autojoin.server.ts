@@ -298,6 +298,124 @@ export function computeCanResendBot(input: {
   return true;
 }
 
+type LinkedMeeting = {
+  id: string;
+  status: string | null;
+  recordingUrl: string | null;
+  recallBotId: string | null;
+  meetingUrl: string | null;
+};
+
+/** Everything the per-event annotation needs, loaded once per listing. */
+type AnnotationContext = {
+  prefs: EventFilterPrefs;
+  meetingByEvent: Map<string, LinkedMeeting>;
+  exclusionModes: Map<string, string>;
+  blocklist: Awaited<ReturnType<typeof loadBlocklist>>;
+  hasBlocklist: boolean;
+};
+
+/**
+ * Load linked meetings, per-event exclusions and the blocklist for a set of
+ * events. The upcoming-events listing and the wider window listing each built
+ * these three maps with identical code.
+ */
+async function loadAnnotationContext(
+  userId: string,
+  eventIds: string[],
+  prefs: EventFilterPrefs,
+): Promise<AnnotationContext> {
+  const [{ data: meetingRows }, { data: excludedRows }] = await Promise.all([
+    supabaseAdmin
+      .from("meetings")
+      .select("id, calendar_event_id, status, recording_url, recall_bot_id, meeting_url")
+      .eq("user_id", userId)
+      .in("calendar_event_id", eventIds),
+    supabaseAdmin
+      .from("meeting_autojoin_exclusions")
+      // `*` (not named columns) so the query still works while the `mode`
+      // column migration is rolling out — a missing mode reads as "off".
+      .select("*")
+      .eq("user_id", userId)
+      .in("calendar_event_id", eventIds),
+  ]);
+
+  const meetingByEvent = new Map<string, LinkedMeeting>();
+  for (const r of meetingRows ?? []) {
+    if (r.calendar_event_id) {
+      meetingByEvent.set(r.calendar_event_id, {
+        id: r.id,
+        status: r.status ?? null,
+        recordingUrl: r.recording_url ?? null,
+        recallBotId: r.recall_bot_id ?? null,
+        meetingUrl: r.meeting_url ?? null,
+      });
+    }
+  }
+  // An exclusion row keeps the bot out; its mode says why (off vs in-person).
+  const exclusionModes = new Map<string, string>(
+    (excludedRows ?? []).map((r) => [r.calendar_event_id, r.mode ?? "off"]),
+  );
+
+  const blocklist = await loadBlocklist(userId);
+  return {
+    prefs,
+    meetingByEvent,
+    exclusionModes,
+    blocklist,
+    hasBlocklist: blocklist.emails.size > 0 || blocklist.domains.size > 0,
+  };
+}
+
+/**
+ * Resolve one event's shared display/recording facts. Both listings derive
+ * exactly these; the window listing layers `willRecord`/`skipReason` on top
+ * using the account's auto-record settings.
+ */
+function annotateEvent(e: UpcomingEvent, ctx: AnnotationContext) {
+  const emails = ctx.hasBlocklist
+    ? [...(e.attendees ?? []).map((a) => a.email), e.organizer?.email].filter(
+        (addr): addr is string => !!addr,
+      )
+    : [];
+  const blockedBy = ctx.hasBlocklist ? findBlockedEntry(emails, ctx.blocklist) : null;
+  const exclusionMode = ctx.exclusionModes.get(e.id as string) ?? null;
+  // A skipped color acts as a default "don't record" when the user hasn't set
+  // an explicit per-event choice.
+  const colorSkipped = exclusionMode === null && isColorSkipped(e, ctx.prefs);
+  const recordMode: MeetingRecordMode =
+    exclusionMode === "in_person"
+      ? "in_person"
+      : exclusionMode === "off" || colorSkipped
+        ? "off"
+        : "bot";
+  const meeting = ctx.meetingByEvent.get(e.id as string) ?? null;
+  const start = e.start?.dateTime ?? e.start?.date ?? null;
+  return {
+    id: e.id as string,
+    title: e.summary ?? null,
+    start,
+    hasMeetingLink: !!extractMeetingUrl(e),
+    scheduled: meeting !== null,
+    excluded: exclusionMode !== null,
+    recordMode,
+    blocked: blockedBy !== null,
+    blockedBy,
+    declined: isDeclinedByUser(e),
+    colorSkipped,
+    meetingId: meeting?.id ?? null,
+    meetingStatus: meeting?.status ?? null,
+    hasRecording: typeof meeting?.recordingUrl === "string" && meeting.recordingUrl.length > 0,
+    canResendBot: computeCanResendBot({
+      recallBotId: meeting?.recallBotId ?? null,
+      meetingUrl: meeting?.meetingUrl ?? null,
+      status: meeting?.status ?? null,
+      recordingUrl: meeting?.recordingUrl ?? null,
+      scheduledStart: start,
+    }),
+  };
+}
+
 const LIST_LOOKAHEAD_MINUTES = 14 * 24 * 60; // 14 days
 
 /**
@@ -317,96 +435,9 @@ export async function listUpcomingCalendarEventsForAccount(
   const eventIds = events.map((e) => e.id).filter((id): id is string => !!id);
   if (eventIds.length === 0) return [];
 
-  const [{ data: meetingRows }, { data: excludedRows }] = await Promise.all([
-    supabaseAdmin
-      .from("meetings")
-      .select("id, calendar_event_id, status, recording_url, recall_bot_id, meeting_url")
-      .eq("user_id", userId)
-      .in("calendar_event_id", eventIds),
-    supabaseAdmin
-      .from("meeting_autojoin_exclusions")
-      // `*` (not named columns) so the query still works while the `mode`
-      // column migration is rolling out — a missing mode reads as "off".
-      .select("*")
-      .eq("user_id", userId)
-      .in("calendar_event_id", eventIds),
-  ]);
+  const ctx = await loadAnnotationContext(userId, eventIds, prefs);
 
-  const meetingByEvent = new Map<
-    string,
-    {
-      id: string;
-      status: string | null;
-      recordingUrl: string | null;
-      recallBotId: string | null;
-      meetingUrl: string | null;
-    }
-  >();
-  for (const r of meetingRows ?? []) {
-    if (r.calendar_event_id) {
-      meetingByEvent.set(r.calendar_event_id, {
-        id: r.id,
-        status: r.status ?? null,
-        recordingUrl: r.recording_url ?? null,
-        recallBotId: r.recall_bot_id ?? null,
-        meetingUrl: r.meeting_url ?? null,
-      });
-    }
-  }
-  // An exclusion row keeps the bot out; its mode says why (off vs in-person).
-  const exclusionModes = new Map<string, string>(
-    (excludedRows ?? []).map((r) => [r.calendar_event_id, r.mode ?? "off"]),
-  );
-
-  const blocklist = await loadBlocklist(userId);
-  const hasBlocklist = blocklist.emails.size > 0 || blocklist.domains.size > 0;
-
-  return events
-    .filter((e) => !!e.id)
-    .map((e) => {
-      const emails = hasBlocklist
-        ? [...(e.attendees ?? []).map((a) => a.email), e.organizer?.email].filter(
-            (addr): addr is string => !!addr,
-          )
-        : [];
-      const blockedBy = hasBlocklist ? findBlockedEntry(emails, blocklist) : null;
-      const exclusionMode = exclusionModes.get(e.id as string) ?? null;
-      // A skipped color acts as a default "don't record" when the user hasn't
-      // set an explicit per-event choice.
-      const colorSkipped = exclusionMode === null && isColorSkipped(e, prefs);
-      const recordMode: MeetingRecordMode =
-        exclusionMode === "in_person"
-          ? "in_person"
-          : exclusionMode === "off" || colorSkipped
-            ? "off"
-            : "bot";
-      const meeting = meetingByEvent.get(e.id as string) ?? null;
-      const start = e.start?.dateTime ?? e.start?.date ?? null;
-      const hasRecording =
-        typeof meeting?.recordingUrl === "string" && meeting.recordingUrl.length > 0;
-      return {
-        id: e.id as string,
-        title: e.summary ?? null,
-        start,
-        hasMeetingLink: !!extractMeetingUrl(e),
-        scheduled: meeting !== null,
-        excluded: exclusionMode !== null,
-        recordMode,
-        blocked: blockedBy !== null,
-        blockedBy,
-        declined: isDeclinedByUser(e),
-        meetingId: meeting?.id ?? null,
-        meetingStatus: meeting?.status ?? null,
-        hasRecording,
-        canResendBot: computeCanResendBot({
-          recallBotId: meeting?.recallBotId ?? null,
-          meetingUrl: meeting?.meetingUrl ?? null,
-          status: meeting?.status ?? null,
-          recordingUrl: meeting?.recordingUrl ?? null,
-          scheduledStart: start,
-        }),
-      };
-    });
+  return events.filter((e) => !!e.id).map((e) => annotateEvent(e, ctx));
 }
 
 /**
@@ -444,19 +475,8 @@ export async function listCalendarEventsWindow(
   const eventIds = events.map((e) => e.id).filter((id): id is string => !!id);
   if (eventIds.length === 0) return [];
 
-  const [{ data: meetingRows }, { data: excludedRows }, { data: acct }] = await Promise.all([
-    supabaseAdmin
-      .from("meetings")
-      .select("id, calendar_event_id, status, recording_url, recall_bot_id, meeting_url")
-      .eq("user_id", userId)
-      .in("calendar_event_id", eventIds),
-    supabaseAdmin
-      .from("meeting_autojoin_exclusions")
-      // `*` (not named columns) so the query still works while the `mode`
-      // column migration is rolling out — a missing mode reads as "off".
-      .select("*")
-      .eq("user_id", userId)
-      .in("calendar_event_id", eventIds),
+  const [ctx, { data: acct }] = await Promise.all([
+    loadAnnotationContext(userId, eventIds, prefs),
     supabaseAdmin
       .from("gmail_accounts")
       .select("auto_record_meetings, record_declined_meetings")
@@ -464,62 +484,14 @@ export async function listCalendarEventsWindow(
       .maybeSingle(),
   ]);
 
-  const meetingByEvent = new Map<
-    string,
-    {
-      id: string;
-      status: string | null;
-      recordingUrl: string | null;
-      recallBotId: string | null;
-      meetingUrl: string | null;
-    }
-  >();
-  for (const r of meetingRows ?? []) {
-    if (r.calendar_event_id) {
-      meetingByEvent.set(r.calendar_event_id, {
-        id: r.id,
-        status: r.status ?? null,
-        recordingUrl: r.recording_url ?? null,
-        recallBotId: r.recall_bot_id ?? null,
-        meetingUrl: r.meeting_url ?? null,
-      });
-    }
-  }
-  const exclusionModes = new Map<string, string>(
-    (excludedRows ?? []).map((r) => [r.calendar_event_id, r.mode ?? "off"]),
-  );
-
   const autoRecord = !!acct?.auto_record_meetings;
   const recordDeclined = !!acct?.record_declined_meetings;
-
-  const blocklist = await loadBlocklist(userId);
-  const hasBlocklist = blocklist.emails.size > 0 || blocklist.domains.size > 0;
 
   return events
     .filter((e) => !!e.id)
     .map((e) => {
-      const emails = hasBlocklist
-        ? [...(e.attendees ?? []).map((a) => a.email), e.organizer?.email].filter(
-            (addr): addr is string => !!addr,
-          )
-        : [];
-      const blockedBy = hasBlocklist ? findBlockedEntry(emails, blocklist) : null;
-      const exclusionMode = exclusionModes.get(e.id as string) ?? null;
-      // A skipped color acts as a default "don't record" when there's no
-      // explicit per-event choice.
-      const colorSkipped = exclusionMode === null && isColorSkipped(e, prefs);
-      const recordMode: MeetingRecordMode =
-        exclusionMode === "in_person"
-          ? "in_person"
-          : exclusionMode === "off" || colorSkipped
-            ? "off"
-            : "bot";
-      const hasMeetingLink = !!extractMeetingUrl(e);
-      const blocked = blockedBy !== null;
-      const declined = isDeclinedByUser(e);
-      const meeting = meetingByEvent.get(e.id as string) ?? null;
-      const hasRecording =
-        typeof meeting?.recordingUrl === "string" && meeting.recordingUrl.length > 0;
+      const a = annotateEvent(e, ctx);
+      const { hasMeetingLink, blocked, declined, recordMode, colorSkipped } = a;
 
       const willRecord =
         hasMeetingLink &&
@@ -539,31 +511,11 @@ export async function listCalendarEventsWindow(
         else if (blocked) skipReason = "blocked";
       }
 
-      const start = e.start?.dateTime ?? e.start?.date ?? null;
       return {
-        id: e.id as string,
-        title: e.summary ?? null,
-        start,
+        ...a,
         end: e.end?.dateTime ?? e.end?.date ?? null,
-        hasMeetingLink,
-        scheduled: meeting !== null,
-        excluded: exclusionMode !== null,
-        recordMode,
-        blocked,
-        blockedBy,
-        declined,
-        meetingId: meeting?.id ?? null,
-        meetingStatus: meeting?.status ?? null,
-        hasRecording,
         willRecord,
         skipReason,
-        canResendBot: computeCanResendBot({
-          recallBotId: meeting?.recallBotId ?? null,
-          meetingUrl: meeting?.meetingUrl ?? null,
-          status: meeting?.status ?? null,
-          recordingUrl: meeting?.recordingUrl ?? null,
-          scheduledStart: start,
-        }),
       };
     });
 }

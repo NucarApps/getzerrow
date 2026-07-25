@@ -1,8 +1,12 @@
-// Server-only business-card scanning for the mobile companion API.
-// Mirrors the web scanner in contacts.functions.ts EXACTLY — same models,
-// same prompts, same fallback chain, same save semantics — so a card
-// scanned on the phone produces identical results to the web's /contacts/scan.
-// If you change the web scanner, change this file to match (and vice versa).
+// Server-only business-card scanning. THE implementation for both entry
+// points: the mobile companion API calls these functions directly, and the
+// web's /contacts/scan server fns (contacts/scan.functions.ts) are thin
+// wrappers over them.
+//
+// These used to be two copies kept in sync by hand — the header here said "if
+// you change the web scanner, change this file to match". Same models, same
+// prompts, same fallback chain, same save semantics, now by construction
+// rather than by discipline.
 import { z } from "zod";
 import { generateText, Output } from "ai";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -42,7 +46,10 @@ export type CardScanDraft = z.infer<typeof SCAN_SCHEMA>;
 /** Extract draft contact fields from a business-card photo (data URL).
  *  Same AI chain as the web's scanCard: structured output first, plain-JSON
  *  fallback, then smaller/larger models. Throws when nothing parseable. */
-export async function extractCardDraft(imageDataUrl: string): Promise<CardScanDraft> {
+export async function extractCardDraft(
+  imageDataUrl: string,
+  logLabel = "mobile card scan",
+): Promise<CardScanDraft> {
   const baseInstruction =
     'Extract contact information from this business card photo. Return each field exactly as printed or null if not visible. Do NOT invent values. If multiple phone numbers are present, list each one in `phones` with a label like "mobile", "work", "home", or "other" (lowercase). Still set `phone` to the most prominent / primary number. If a postal address is shown, split it into address_line1, address_line2, city, region (state/province), postal_code, and country.';
   const jsonShape =
@@ -68,7 +75,7 @@ export async function extractCardDraft(imageDataUrl: string): Promise<CardScanDr
       return output as CardScanDraft;
     } catch (e) {
       lastError = describeError(e);
-      console.error(`mobile card scan structured failed (${modelId})`, lastError);
+      console.error(`${logLabel} structured failed (${modelId})`, lastError);
       return null;
     }
   }
@@ -93,13 +100,13 @@ export async function extractCardDraft(imageDataUrl: string): Promise<CardScanDr
       const parsed = parseLenientJson(text, SCAN_SCHEMA);
       if (parsed === null) {
         lastError = `empty/non-JSON response (len=${text.length})`;
-        console.error(`mobile card scan text-json failed (${modelId})`, lastError);
+        console.error(`${logLabel} text-json failed (${modelId})`, lastError);
         return null;
       }
       return parsed;
     } catch (e) {
       lastError = describeError(e);
-      console.error(`mobile card scan text-json failed (${modelId})`, lastError);
+      console.error(`${logLabel} text-json failed (${modelId})`, lastError);
       return null;
     }
   }

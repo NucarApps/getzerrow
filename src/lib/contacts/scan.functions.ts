@@ -1,12 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { generateText, Output } from "ai";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { parseLenientJson } from "../ai-untrusted";
-import { setContactEncryptedFields } from "../sync/encrypted-writer";
-import { getModel, normalizeName, phoneEntrySchema } from "../contacts-helpers.server";
-import { describeError } from "@/lib/ai-gateway";
+import { phoneEntrySchema } from "../contacts-helpers.server";
+import { extractCardDraft, saveScannedContact } from "@/lib/card-scan.server";
 
 export const scanCard = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -22,107 +19,9 @@ export const scanCard = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    const SCAN_SCHEMA = z.object({
-      name: z.string().nullable(),
-      title: z.string().nullable(),
-      company: z.string().nullable(),
-      email: z.string().nullable(),
-      phone: z.string().nullable(),
-      website: z.string().nullable(),
-      linkedin: z.string().nullable(),
-      twitter: z.string().nullable(),
-      phones: z
-        .array(
-          z.object({
-            label: z.string(),
-            number: z.string(),
-          }),
-        )
-        .nullable()
-        .optional(),
-      address_line1: z.string().nullable().optional(),
-      address_line2: z.string().nullable().optional(),
-      city: z.string().nullable().optional(),
-      region: z.string().nullable().optional(),
-      postal_code: z.string().nullable().optional(),
-      country: z.string().nullable().optional(),
-    });
-    type ScanOut = z.infer<typeof SCAN_SCHEMA>;
-
-    const baseInstruction =
-      'Extract contact information from this business card photo. Return each field exactly as printed or null if not visible. Do NOT invent values. If multiple phone numbers are present, list each one in `phones` with a label like "mobile", "work", "home", or "other" (lowercase). Still set `phone` to the most prominent / primary number. If a postal address is shown, split it into address_line1, address_line2, city, region (state/province), postal_code, and country.';
-    const jsonShape =
-      '{"name":<string|null>,"title":<string|null>,"company":<string|null>,"email":<string|null>,"phone":<string|null>,"website":<string|null>,"linkedin":<string|null>,"twitter":<string|null>,"phones":<[{"label":<string>,"number":<string>}]|null>,"address_line1":<string|null>,"address_line2":<string|null>,"city":<string|null>,"region":<string|null>,"postal_code":<string|null>,"country":<string|null>}';
-
-    let lastError = "unknown error";
-
-    async function tryStructured(modelId: string): Promise<ScanOut | null> {
-      try {
-        const { output } = await generateText({
-          model: getModel(modelId),
-          output: Output.object({ schema: SCAN_SCHEMA }),
-          messages: [
-            {
-              role: "user",
-              content: [
-                { type: "text", text: baseInstruction },
-                { type: "image", image: data.imageDataUrl },
-              ],
-            },
-          ],
-        });
-        return output as ScanOut;
-      } catch (e) {
-        lastError = describeError(e);
-        console.error(`scanCard structured failed (${modelId})`, lastError);
-        return null;
-      }
-    }
-
-    async function tryTextJson(modelId: string): Promise<ScanOut | null> {
-      try {
-        const { text } = await generateText({
-          model: getModel(modelId),
-          messages: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: `${baseInstruction}\n\nRespond with ONLY a JSON object (no markdown, no prose, no code fences) of this exact shape:\n${jsonShape}`,
-                },
-                { type: "image", image: data.imageDataUrl },
-              ],
-            },
-          ],
-        });
-        const parsed = parseLenientJson(text, SCAN_SCHEMA);
-        if (parsed === null) {
-          lastError = `empty/non-JSON response (len=${text.length})`;
-          console.error(`scanCard text-json failed (${modelId})`, lastError);
-          return null;
-        }
-        return parsed;
-      } catch (e) {
-        lastError = describeError(e);
-        console.error(`scanCard text-json failed (${modelId})`, lastError);
-        return null;
-      }
-    }
-
-    const output =
-      (await tryStructured("google/gemini-2.5-flash")) ||
-      (await tryTextJson("google/gemini-2.5-flash")) ||
-      (await tryStructured("google/gemini-2.5-flash-lite")) ||
-      (await tryTextJson("google/gemini-2.5-flash-lite")) ||
-      (await tryTextJson("google/gemini-2.5-pro"));
-
-    if (!output) {
-      throw new Error(
-        `Couldn't read the card: AI vision returned no parseable response (last error: ${lastError})`,
-      );
-    }
-    return { draft: output };
+    // Same extraction the mobile API uses — one implementation, one prompt,
+    // one model cascade. The label only changes the log prefix.
+    return { draft: await extractCardDraft(data.imageDataUrl, "scanCard") };
   });
 
 /** Create a contact from a scanned-card draft. */
@@ -156,56 +55,8 @@ export const createContactFromScan = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { userId } = context;
-    const email = data.email.trim().toLowerCase();
-    const { phones, phone: phoneFromData, address_line1, address_line2, ...rest } = data;
-    // Derive primary phone from phones[] (if provided), else from `phone`.
-    const primary = phones?.find((p) => p.is_primary) ?? phones?.[0];
-    const primaryPhone = primary?.number?.trim() || phoneFromData || null;
-    const plaintextPayload = {
-      ...rest,
-      name: normalizeName(rest.name ?? null),
-    };
-    const { data: row, error } = await supabaseAdmin
-      .from("contacts")
-      .upsert(
-        {
-          user_id: userId,
-          ...plaintextPayload,
-          email,
-          source: "scan",
-          enriched_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,email" },
-      )
-      .select("*")
-      .single();
-    if (error) throw new Error(error.message);
-    // Sensitive fields (phone, address lines) are encrypted-only after Phase 3.
-    await setContactEncryptedFields({
-      contact_id: row.id,
-      phone: primaryPhone ?? undefined,
-      notes: undefined,
-      address_line1: address_line1 ?? undefined,
-      address_line2: address_line2 ?? undefined,
-    });
-
-    if (phones && phones.length > 0) {
-      // Replace any existing phones for this contact.
-      await supabaseAdmin.from("contact_phones").delete().eq("contact_id", row.id);
-      const hasPrimary = phones.some((p) => p.is_primary);
-      const normalized = phones.map((p, idx) => ({
-        user_id: userId,
-        contact_id: row.id,
-        label: p.label.trim().toLowerCase(),
-        number: p.number.trim(),
-        is_primary: hasPrimary ? !!p.is_primary : idx === 0,
-        position: idx,
-      }));
-      const { error: insErr } = await supabaseAdmin.from("contact_phones").insert(normalized);
-      if (insErr) throw new Error(insErr.message);
-    }
-    return { contact: row };
+    // Byte-identical to the mobile save path before this; now literally it.
+    return saveScannedContact(context.userId, data);
   });
 export const getContactCardSignedUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
