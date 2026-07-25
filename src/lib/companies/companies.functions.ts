@@ -4,7 +4,12 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { convergeCompanyMemberships } from "./converge";
 import { normalizeCompanyNameDbSynced } from "./normalize";
 import { companyBrandKey } from "@/lib/contacts/company-name";
-import { isPersonalDomain, extractDomain, prettyCompanyName } from "@/lib/company-domains";
+import {
+  isPersonalDomain,
+  emailDomain,
+  isRoutableDomain,
+  prettyCompanyName,
+} from "@/lib/company-domains";
 import { getModel } from "@/lib/ai-gateway";
 
 type Ctx = { supabase: import("@supabase/supabase-js").SupabaseClient; userId: string };
@@ -329,8 +334,10 @@ export const addCompanyDomain = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const domain = extractDomain(data.domain) ?? data.domain.trim().toLowerCase();
-    if (!domain) throw new Error("Invalid domain");
+    const domain = emailDomain(data.domain) ?? data.domain.trim().toLowerCase();
+    // emailDomain no longer enforces a dot (that moved to isRoutableDomain), so
+    // validate explicitly — this value becomes the company_domains key.
+    if (!domain || !isRoutableDomain(domain)) throw new Error("Invalid domain");
 
     // Two companies can't own the same domain. Instead of the previous
     // silent upsert (which would reassign a domain out from under another

@@ -15,6 +15,7 @@
 //   backtracking shapes are rejected outright. Patterns failing these
 //   bounds simply don't match — they don't throw.
 import type { Filter, Folder, RuleNode } from "./types";
+import { emailDomain } from "../company-domains";
 
 // ─── ReDoS bounds ────────────────────────────────────────────────────────
 
@@ -82,7 +83,7 @@ export function applyFilter(email: EmailForFilter, f: Filter): boolean {
       case "body":
         return (email.body_text || "").toLowerCase();
       case "domain":
-        return (email.from_addr.split("@")[1] || "").toLowerCase();
+        return emailDomain(email.from_addr) ?? "";
       case "has_attachment":
         return email.has_attachment ? "true" : "false";
       default:
@@ -108,7 +109,7 @@ export function applyFilter(email: EmailForFilter, f: Filter): boolean {
       // Allowlist: the (sender) domain must be one of a comma-separated set.
       // Natural predicate returns true when the domain IS in the list; the
       // exclude/veto layer inverts it to block everything outside the list.
-      const domain = (email.from_addr.split("@")[1] || "").toLowerCase();
+      const domain = emailDomain(email.from_addr);
       if (!domain) return false;
       const allow = parseDomainList(f.value);
       return allow.has(domain);

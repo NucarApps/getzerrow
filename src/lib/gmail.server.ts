@@ -375,15 +375,54 @@ export type ParsableGmailMessage = Omit<GmailMessage, "payload"> & {
   payload?: Omit<GmailMessagePart, "parts"> & { parts?: unknown[] };
 };
 
+/**
+ * Split a `From:` header into display name and bare address.
+ *
+ * The previous implementation was a single fully-anchored regex, so ANY header
+ * it didn't match end-to-end fell through to storing the whole header string as
+ * `from_addr`. Real headers that defeated it: an inner-quoted display name
+ * (`Jane "JD" Doe <j@acme.com>`), a trailing comment (`Jane <j@acme.com>
+ * (Sales)`), and multi-address values. Those rows then broke every
+ * domain-keyed rule and override, because the stored value isn't an address.
+ *
+ * Strategy, most-specific first: take the first angle-bracketed address; else
+ * the first whitespace-delimited token containing `@`; else the trimmed header
+ * (so a malformed value is still preserved rather than dropped).
+ */
+export function parseFromHeader(from: string): { name: string; addr: string } {
+  const raw = (from ?? "").trim();
+  if (!raw) return { name: "", addr: "" };
+
+  const angle = raw.match(/<([^>]*)>/);
+  if (angle) {
+    const addr = angle[1].trim();
+    // Everything before the first "<" is the display name; strip surrounding
+    // quotes but keep any inner ones (`Jane "JD" Doe` stays intact).
+    const name = raw
+      .slice(0, raw.indexOf("<"))
+      .trim()
+      .replace(/^"(.*)"$/s, "$1")
+      .trim();
+    return { name, addr };
+  }
+
+  const token = raw.split(/\s+/).find((t) => t.includes("@"));
+  if (token) {
+    // A bare address may still carry list punctuation, e.g. "a@x.com,".
+    const addr = token.replace(/^[<(]+/, "").replace(/[>),;]+$/, "");
+    return { name: raw === token ? "" : raw.replace(token, "").trim(), addr };
+  }
+
+  return { name: "", addr: raw };
+}
+
 export function parseMessage(msg: ParsableGmailMessage) {
   const payload = msg.payload ?? {};
   const headers: GmailHeader[] = payload.headers || [];
   const h = (n: string) =>
     headers.find((x) => x.name.toLowerCase() === n.toLowerCase())?.value || "";
   const from = h("from");
-  const angle = from.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
-  const fromName = (angle?.[1] || "").trim();
-  const fromAddr = (angle?.[2] || from).trim();
+  const { name: fromName, addr: fromAddr } = parseFromHeader(from);
   const bodyText = extractPart(payload, "text/plain");
   const bodyHtml = extractPart(payload, "text/html");
   const hasAttachment = (() => {

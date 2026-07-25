@@ -8,6 +8,7 @@
  */
 import { normalizePhone } from "./phone";
 import { emailLocalPart, firstLastTokens, normalizeNameLoose } from "./name-match";
+import { emailDomain } from "@/lib/company-domains";
 
 export type ContactRow = {
   id: string;
@@ -120,9 +121,7 @@ export function buildClusters(all: ContactWithPhones[]): Cluster[] {
   for (const [k, list] of byNameEmailLocal) pushCluster(list, "name_email_local", `nel:${k}`);
   for (const [k, list] of byEmailLocal) {
     // Only interesting if the local-part appears on ≥2 different domains.
-    const domains = new Set(
-      list.map((c) => (c.email ?? "").split("@")[1]?.toLowerCase()).filter(Boolean),
-    );
+    const domains = new Set(list.map((c) => emailDomain(c.email)).filter(Boolean));
     if (domains.size >= 2) pushCluster(list, "email_localpart", `elp:${k}`);
   }
   for (const [k, list] of byNameCompany) pushCluster(list, "name_company", `nc:${k}`);

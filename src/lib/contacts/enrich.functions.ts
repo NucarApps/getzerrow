@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { generateText, Output } from "ai";
+import { emailDomain } from "@/lib/company-domains";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -359,13 +360,13 @@ ${sample}`,
         const mergedName = patch.name ?? contact.name ?? null;
         const mergedTitle = patch.title ?? contact.title ?? null;
         const mergedCompany = patch.company ?? contact.company ?? null;
-        const emailDomain = addr.split("@")[1] ?? "";
+        const senderDomain = emailDomain(addr) ?? "";
         const knownBits = [
           mergedName ? `Name: ${mergedName}` : null,
           mergedTitle ? `Title: ${mergedTitle}` : null,
           mergedCompany ? `Company: ${mergedCompany}` : null,
           `Email: ${addr}`,
-          emailDomain ? `Email domain: ${emailDomain}` : null,
+          senderDomain ? `Email domain: ${senderDomain}` : null,
         ]
           .filter(Boolean)
           .join("\n");

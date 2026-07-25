@@ -50,16 +50,61 @@ const TWO_PART_TLDS = new Set([
   "com.tr",
 ]);
 
-export function extractDomain(email: string | null | undefined): string | null {
-  if (!email) return null;
-  const at = email.lastIndexOf("@");
+/**
+ * THE canonical way to get a sender's domain from an address.
+ *
+ * Every domain-keyed routing decision must go through this — folder-rule
+ * `domain` conditions, `domain_in` allowlists, and inbox overrides. Producers
+ * and consumers previously used two disagreeing families (`extractDomain`, in
+ * three variants, vs. an inline `split("@")[1]` at ten sites), so an override
+ * written from a malformed sender could never match the domain the classifier
+ * later computed for that same sender, and the rule silently never fired.
+ *
+ * Handles the addresses that actually reach us, including the ones
+ * `parseMessage` used to store unnormalized:
+ *   "jane@acme.com"                          -> "acme.com"
+ *   "Jane Doe <jane@acme.com>"               -> "acme.com"
+ *   'Jane "JD" Doe <jane@acme.com>'          -> "acme.com"
+ *   "Jane <jane@acme.com> (Sales)"           -> "acme.com"
+ *   "Jane <a@acme.com>, Bob <b@other.com>"   -> "acme.com"  (first address wins)
+ *
+ * Deliberately does NOT require a dot — that's a data-quality question, not a
+ * parsing one. Callers that need it use `isRoutableDomain`. Returns null when
+ * there is no parseable `@domain` part.
+ */
+export function emailDomain(addr: string | null | undefined): string | null {
+  if (!addr) return null;
+  // Prefer the first angle-bracketed address: a multi-address or
+  // trailing-comment header must not drag the extra text into the domain.
+  const angle = String(addr).match(/<([^>]*)>/);
+  const raw = (angle ? angle[1] : String(addr)).trim().toLowerCase();
+  const at = raw.lastIndexOf("@");
   if (at < 0) return null;
-  const d = email
+  const domain = raw
     .slice(at + 1)
-    .trim()
-    .toLowerCase();
-  if (!d || !d.includes(".")) return null;
-  return d;
+    // Strip anything that can trail an address when the header was not
+    // angle-bracketed: ">" from a partial parse, list separators, comments.
+    .replace(/[>\s,;].*$/, "")
+    .trim();
+  return domain || null;
+}
+
+/**
+ * Does `d` look like a real, routable domain (has a dot and a TLD)?
+ *
+ * Split out of `emailDomain` so parsing and validation stay separable. Use it
+ * where a dotless value would corrupt data — a DB key, a company-name guess, a
+ * grouping key — not as a security control.
+ *
+ * NOTE: intentionally NOT reusing `isValidDomainShape` from `logo-guards.ts`,
+ * despite the identical regex. That module is an SSRF guard imported only by
+ * server/route code; importing it here would drag `hostResolvesToPublicIp`
+ * into the browser bundle, and folding a data-quality check into a security
+ * guard is how guards get weakened later.
+ */
+export function isRoutableDomain(d: string | null | undefined): boolean {
+  if (!d) return false;
+  return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(d);
 }
 
 export function isPersonalDomain(domain: string | null | undefined): boolean {
@@ -103,7 +148,7 @@ export function contactLogoDomain(
 ): string | null {
   const w = domainFromWebsite(website);
   if (w && !isPersonalDomain(w)) return w;
-  const e = extractDomain(email);
+  const e = emailDomain(email);
   if (e && !isPersonalDomain(e)) return e;
   return null;
 }

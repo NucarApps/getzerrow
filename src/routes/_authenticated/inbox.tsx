@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, useMemo, useRef, memo, lazy, Suspense, Fragment } from "react";
 import type { QueryClient } from "@tanstack/react-query";
+import { emailDomain } from "@/lib/company-domains";
 import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -267,9 +268,7 @@ const EmailListRow = memo(function EmailListRow({
   archFn,
   trashFn,
 }: EmailListRowProps) {
-  const domain = e.from_addr?.includes("@")
-    ? (e.from_addr.split("@")[1]?.toLowerCase() ?? null)
-    : null;
+  const domain = emailDomain(e.from_addr);
   const currentFolderId = e.folder_id;
   const showFolderPill =
     (selectedFolder === "all" || selectedFolder === "all_mail") && !isSearching;
@@ -2279,9 +2278,7 @@ function Reader({
     .join("")
     .toUpperCase();
   const senderFirstName = (email.from_name || email.from_addr || "").split(/\s+/)[0] ?? "";
-  const senderDomain = email.from_addr?.includes("@")
-    ? (email.from_addr.split("@")[1]?.toLowerCase() ?? null)
-    : null;
+  const senderDomain = emailDomain(email.from_addr);
 
   return (
     <div className="flex h-full min-h-0">
