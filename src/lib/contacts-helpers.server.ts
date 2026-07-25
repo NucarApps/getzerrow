@@ -79,15 +79,6 @@ export const EXTRACT_SCHEMA = z.object({
     .nullable(),
 });
 
-export const ADDRESS_FIELDS = [
-  "address_line1",
-  "address_line2",
-  "city",
-  "region",
-  "postal_code",
-  "country",
-] as const;
-
 const BANNED_DOMAINS = new Set([
   "noreply",
   "no-reply",
