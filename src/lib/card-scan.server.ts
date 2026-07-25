@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { generateText, Output } from "ai";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { getModel } from "./ai-gateway";
+import { getModel, describeError } from "./ai-gateway";
 import { parseLenientJson } from "./ai-untrusted";
 import { setContactEncryptedFields } from "./sync/encrypted-writer";
 import { normalizeName } from "./contacts-helpers.server";
@@ -49,16 +49,6 @@ export async function extractCardDraft(imageDataUrl: string): Promise<CardScanDr
     '{"name":<string|null>,"title":<string|null>,"company":<string|null>,"email":<string|null>,"phone":<string|null>,"website":<string|null>,"linkedin":<string|null>,"twitter":<string|null>,"phones":<[{"label":<string>,"number":<string>}]|null>,"address_line1":<string|null>,"address_line2":<string|null>,"city":<string|null>,"region":<string|null>,"postal_code":<string|null>,"country":<string|null>}';
 
   let lastError = "unknown error";
-
-  function describeError(e: unknown): string {
-    const err = e as { name?: string; status?: number; message?: string; responseBody?: unknown };
-    const parts: string[] = [];
-    if (err?.name) parts.push(err.name);
-    if (typeof err?.status === "number") parts.push(`status=${err.status}`);
-    if (err?.message) parts.push(err.message);
-    if (err?.responseBody) parts.push(`body=${String(err.responseBody).slice(0, 200)}`);
-    return parts.join(" | ").slice(0, 400) || "unknown error";
-  }
 
   async function tryStructured(modelId: string): Promise<CardScanDraft | null> {
     try {

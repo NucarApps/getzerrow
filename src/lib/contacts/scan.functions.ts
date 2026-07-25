@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { parseLenientJson } from "../ai-untrusted";
 import { setContactEncryptedFields } from "../sync/encrypted-writer";
 import { getModel, normalizeName, phoneEntrySchema } from "../contacts-helpers.server";
+import { describeError } from "@/lib/ai-gateway";
 
 export const scanCard = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -54,16 +55,6 @@ export const scanCard = createServerFn({ method: "POST" })
       '{"name":<string|null>,"title":<string|null>,"company":<string|null>,"email":<string|null>,"phone":<string|null>,"website":<string|null>,"linkedin":<string|null>,"twitter":<string|null>,"phones":<[{"label":<string>,"number":<string>}]|null>,"address_line1":<string|null>,"address_line2":<string|null>,"city":<string|null>,"region":<string|null>,"postal_code":<string|null>,"country":<string|null>}';
 
     let lastError = "unknown error";
-
-    function describeError(e: unknown): string {
-      const err = e as { name?: string; status?: number; message?: string; responseBody?: unknown };
-      const parts: string[] = [];
-      if (err?.name) parts.push(err.name);
-      if (typeof err?.status === "number") parts.push(`status=${err.status}`);
-      if (err?.message) parts.push(err.message);
-      if (err?.responseBody) parts.push(`body=${String(err.responseBody).slice(0, 200)}`);
-      return parts.join(" | ").slice(0, 400) || "unknown error";
-    }
 
     async function tryStructured(modelId: string): Promise<ScanOut | null> {
       try {

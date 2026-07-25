@@ -25,6 +25,8 @@ vi.mock("../ai-gateway", () => ({
   createLovableAiGatewayProvider: () => (modelId: string) => ({ modelId }),
   getModel: (modelId: string = "google/gemini-2.5-flash") => ({ modelId }),
   getGateway: () => (modelId: string) => ({ modelId }),
+  // ai.server flattens each failed cascade attempt through this.
+  describeError: (e: unknown) => (e as Error)?.message ?? "unknown error",
 }));
 
 import { classifyEmail, classifyEmailsBatch, shouldSurfaceToInbox } from "../ai.server";

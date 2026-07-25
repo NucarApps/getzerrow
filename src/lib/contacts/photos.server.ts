@@ -5,38 +5,15 @@
 // public URL saved to `contacts.avatar_url` and as the etag we compare
 // against when deciding whether to push/pull.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import {
+  shortHash,
+  extForMime,
+  pathToBucketKey as bucketKeyOf,
+  MAX_STORED_PHOTO_BYTES as MAX_PHOTO_BYTES,
+} from "@/lib/photo-storage.server";
 
 export const CONTACT_PHOTO_BUCKET = "contact-photos";
-const MAX_PHOTO_BYTES = 5 * 1024 * 1024; // 5 MB — iOS caps around 2 MB anyway
 export type ContactPhotoSource = "unknown" | "user_upload" | "carddav" | "google" | "company_logo";
-
-async function shortHash(bytes: Uint8Array): Promise<string> {
-  const buf = bytes.buffer.slice(
-    bytes.byteOffset,
-    bytes.byteOffset + bytes.byteLength,
-  ) as ArrayBuffer;
-  const digest = await crypto.subtle.digest("SHA-256", buf);
-  const hex = Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  return hex.slice(0, 16);
-}
-
-function extForMime(mime: string): string {
-  const m = mime.toLowerCase();
-  if (m.includes("png")) return "png";
-  if (m.includes("gif")) return "gif";
-  if (m.includes("webp")) return "webp";
-  return "jpg";
-}
-
-function pathToBucketKey(publicUrl: string | null): string | null {
-  if (!publicUrl) return null;
-  const marker = `/${CONTACT_PHOTO_BUCKET}/`;
-  const idx = publicUrl.indexOf(marker);
-  if (idx < 0) return null;
-  return decodeURIComponent(publicUrl.slice(idx + marker.length).split("?")[0]);
-}
 
 /**
  * Upload photo bytes for a contact and update `contacts.avatar_url`.
@@ -65,7 +42,7 @@ export async function saveContactPhoto(
     .eq("id", contactId)
     .eq("user_id", userId)
     .maybeSingle();
-  const previousKey = pathToBucketKey(current?.avatar_url ?? null);
+  const previousKey = bucketKeyOf(CONTACT_PHOTO_BUCKET, current?.avatar_url ?? null);
 
   const { error: upErr } = await supabaseAdmin.storage
     .from(CONTACT_PHOTO_BUCKET)
@@ -102,7 +79,7 @@ export async function deleteContactPhoto(userId: string, contactId: string): Pro
     .eq("id", contactId)
     .eq("user_id", userId)
     .maybeSingle();
-  const key = pathToBucketKey(current?.avatar_url ?? null);
+  const key = bucketKeyOf(CONTACT_PHOTO_BUCKET, current?.avatar_url ?? null);
   if (key) {
     await supabaseAdmin.storage.from(CONTACT_PHOTO_BUCKET).remove([key]);
   }
@@ -121,7 +98,7 @@ export async function deleteContactPhoto(userId: string, contactId: string): Pro
 export async function loadContactPhotoBytes(
   avatarUrl: string | null,
 ): Promise<{ bytes: Uint8Array; mime: string } | null> {
-  const key = pathToBucketKey(avatarUrl);
+  const key = bucketKeyOf(CONTACT_PHOTO_BUCKET, avatarUrl);
   if (!key) return null;
   const { data, error } = await supabaseAdmin.storage.from(CONTACT_PHOTO_BUCKET).download(key);
   if (error || !data) return null;
@@ -158,7 +135,7 @@ export async function signContactPhotoUrl(
     .eq("id", contactId)
     .eq("user_id", userId)
     .maybeSingle();
-  const key = pathToBucketKey(current?.avatar_url ?? null);
+  const key = bucketKeyOf(CONTACT_PHOTO_BUCKET, current?.avatar_url ?? null);
   if (!key) return null;
   const { data, error } = await supabaseAdmin.storage
     .from(CONTACT_PHOTO_BUCKET)
