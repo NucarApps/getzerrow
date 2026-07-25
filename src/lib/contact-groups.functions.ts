@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { DB } from "@/lib/supabase-db";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { reconcileIfAuto } from "./contacts/auto-company-subgroups.functions";
+import { chainDepth } from "./contacts/group-tree";
 
 const COLOR = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 
@@ -247,18 +248,6 @@ async function loadParentMap(
   const parents = new Map<string, string | null>();
   for (const r of data ?? []) parents.set(r.id, r.parent_group_id ?? null);
   return { parents };
-}
-
-/** Depth of the chain rooted at `startId`. 1 = the group itself has no
- * parent. Bounded loop stops runaway data from freezing the request. */
-function chainDepth(parents: Map<string, string | null>, startId: string): number {
-  let cursor: string | null = startId;
-  let depth = 0;
-  while (cursor && depth < 32) {
-    depth++;
-    cursor = parents.get(cursor) ?? null;
-  }
-  return depth;
 }
 
 /** Replace the set of groups a contact belongs to. */

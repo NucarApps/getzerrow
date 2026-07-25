@@ -17,8 +17,7 @@ import { personToContact, labelToGroupName, type Person } from "./mapper";
 import { loadSyncState, updateSyncState, ensureSyncState } from "./state.server";
 import { isLocalGoogleContactDirty } from "./dirty";
 import type { ProgressReporter } from "./progress.server";
-
-type Ids = { userId: string; gmailAccountId: string; runId: string };
+import type { Ids } from "./state.server";
 
 const MAX_PAGES = 20;
 

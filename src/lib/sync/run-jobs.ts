@@ -20,6 +20,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { GmailApiError } from "../gmail.server";
 import { classifyEmail, classifyEmailsBatch } from "../ai.server";
 import { logError, logInfo, newRunId } from "../log.server";
+import type { ClaimedJob } from "./types";
 import { MAX_JOB_ATTEMPTS, RETRYABLE_FREE_ATTEMPTS, computeBackoffSeconds } from "./backoff";
 import { type AccountContext, loadAccountContext } from "./account-context";
 import { classifyParsedEmail } from "./classify";
@@ -184,15 +185,6 @@ export async function runMessageJobs(
     );
     return { processed: 0, ok: 0, failed: 0, dlq: 0, retryable: 0, error: claimErr.message };
   }
-  type ClaimedJob = {
-    id: string;
-    gmail_account_id: string;
-    gmail_message_id: string;
-    user_id: string;
-    attempt: number;
-    priority: number;
-    published_at_ms: number | null;
-  };
   const claimed = (claimedRows ?? []) as ClaimedJob[];
   if (claimed.length === 0) {
     return { processed: 0, ok: 0, failed: 0, dlq: 0, retryable: 0 };

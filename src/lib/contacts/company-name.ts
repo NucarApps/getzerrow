@@ -1,5 +1,11 @@
 /**
- * Normalize a company name for cross-domain matching.
+ * Aggressively reduce a company name to its BRAND KEY for cross-domain
+ * matching — strips legal suffixes AND corporate qualifiers from both ends,
+ * so "Nissan North America" and "Nissan Motor Co Ltd" both key to "nissan".
+ *
+ * Not the same thing as normalizeCompanyNameDbSynced in companies/normalize.ts,
+ * which is mild and mirrors a Postgres function. Both were once exported as
+ * `normalizeCompanyName`.
  *
  * - Lowercases and trims.
  * - Strips punctuation (.,'"&/) and collapses whitespace.
@@ -64,7 +70,7 @@ const QUALIFIERS = new Set([
   "the",
 ]);
 
-export function normalizeCompanyName(raw: string | null | undefined): string | null {
+export function companyBrandKey(raw: string | null | undefined): string | null {
   if (!raw) return null;
   let s = raw.toLowerCase();
   // Strip punctuation to spaces

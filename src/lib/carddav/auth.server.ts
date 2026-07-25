@@ -13,7 +13,10 @@ export function hashToken(raw: string): string {
   return createHash("sha256").update(raw, "utf8").digest("hex");
 }
 
-export function unauthorizedResponse(): Response {
+/** 401 carrying the Basic-auth challenge iOS needs to prompt for credentials.
+ *  Distinct from cron-auth's bare `unauthorizedResponse()` — the two used to
+ *  share a name despite emitting different headers and bodies. */
+export function carddavAuthChallengeResponse(): Response {
   return new Response("Authentication required", {
     status: 401,
     headers: {
@@ -29,25 +32,25 @@ export type AuthResult =
 export async function verifyCardDavAuth(request: Request): Promise<AuthResult> {
   const header = request.headers.get("authorization") ?? "";
   if (!header.toLowerCase().startsWith("basic ")) {
-    return { ok: false, response: unauthorizedResponse() };
+    return { ok: false, response: carddavAuthChallengeResponse() };
   }
   let decoded: string;
   try {
     decoded = atob(header.slice(6).trim());
   } catch {
-    return { ok: false, response: unauthorizedResponse() };
+    return { ok: false, response: carddavAuthChallengeResponse() };
   }
   const idx = decoded.indexOf(":");
-  if (idx <= 0) return { ok: false, response: unauthorizedResponse() };
+  if (idx <= 0) return { ok: false, response: carddavAuthChallengeResponse() };
   const email = decoded.slice(0, idx).trim().toLowerCase();
   const password = decoded.slice(idx + 1);
-  if (!email || !password) return { ok: false, response: unauthorizedResponse() };
+  if (!email || !password) return { ok: false, response: carddavAuthChallengeResponse() };
 
   const hash = hashToken(password);
   const { data, error } = await supabaseAdmin.rpc("verify_carddav_token", {
     p_user_email: email,
     p_token_hash: hash,
   } as never);
-  if (error || !data) return { ok: false, response: unauthorizedResponse() };
+  if (error || !data) return { ok: false, response: carddavAuthChallengeResponse() };
   return { ok: true, userId: data as string, email };
 }

@@ -4,6 +4,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { tickBackfillJobs } from "@/lib/sync.server";
 import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
 import { withCronRun, logError } from "@/lib/log.server";
+import { clampIntParam } from "@/lib/cron-handler.server";
 
 export const Route = createFileRoute("/api/public/gmail-backfill-tick")({
   server: {
@@ -12,7 +13,7 @@ export const Route = createFileRoute("/api/public/gmail-backfill-tick")({
         if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
         return withCronRun("gmail-backfill-tick", async ({ runId }) => {
           const url = new URL(request.url);
-          const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "2", 10) || 2, 10);
+          const limit = clampIntParam(url, "limit", 1, 10, 2);
           const t0 = Date.now();
           try {
             const r = await tickBackfillJobs(limit);

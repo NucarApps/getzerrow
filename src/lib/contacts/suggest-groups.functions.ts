@@ -6,7 +6,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { getModel } from "@/lib/ai-gateway";
 import { logInfo } from "@/lib/log.server";
 import { getEmailsDecrypted, searchEmailsParticipantsDecrypted } from "@/lib/sync/encrypted-reader";
-import { normalizeCompanyName } from "./company-name";
+import { companyBrandKey } from "./company-name";
 
 const MAX_DEPTH = 4;
 const RESCAN_COOLDOWN_MS = 5 * 60 * 1000;
@@ -256,7 +256,7 @@ export async function runContactGroupSuggestionsImpl(
         batch.map(async (line) => {
           const email = (line.w.c.email ?? "").toLowerCase();
           if (!email) return;
-          const coKey = normalizeCompanyName(line.w.c.company) ?? `d:${line.d ?? ""}`;
+          const coKey = companyBrandKey(line.w.c.company) ?? `d:${line.d ?? ""}`;
           const cached = topicsByCompanyKey.get(coKey);
           if (cached) {
             topicsByContactIndex.set(line.i, cached);

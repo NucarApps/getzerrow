@@ -9,17 +9,17 @@
  * aggressive brand-key normalize (mild as fallback). Pure — the server
  * resolver (label-resolve.server.ts) loads the inputs.
  */
-import { normalizeCompanyName } from "./company-name";
-import { normalizeCompanyName as mildNormalizeCompanyName } from "@/lib/companies/normalize";
+import { companyBrandKey } from "./company-name";
+import { normalizeCompanyNameDbSynced } from "@/lib/companies/normalize";
 
 export function deriveLabelKey(
   name: string,
   nameAliases: Map<string, string> = new Map(),
 ): { key: string | null; viaAlias: boolean } {
-  const mild = mildNormalizeCompanyName(name);
+  const mild = normalizeCompanyNameDbSynced(name);
   const canonical = mild ? nameAliases.get(mild) : undefined;
   const base = canonical ?? name;
-  const key = normalizeCompanyName(base) ?? mildNormalizeCompanyName(base);
+  const key = companyBrandKey(base) ?? normalizeCompanyNameDbSynced(base);
   return { key, viaAlias: !!canonical };
 }
 

@@ -3,6 +3,7 @@
 // server-only — they are loaded via dynamic import inside handlers.
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { assertOwnsContact } from "@/lib/ownership";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { z } from "zod";
 import {
@@ -165,17 +166,6 @@ export const setGoogleContactsSyncInterval = createServerFn({ method: "POST" })
     await updateSyncState(state.id, { sync_interval_minutes: data.intervalMinutes });
     return { ok: true };
   });
-
-async function assertOwnsContact(userId: string, contactId: string): Promise<void> {
-  const { data, error } = await supabaseAdmin
-    .from("contacts")
-    .select("id")
-    .eq("id", contactId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (error) throw new Error(`Contact lookup failed: ${error.message}`);
-  if (!data) throw new Error("Contact not found");
-}
 
 /** Additively re-pull one contact from Google to recover any missing emails/phones. */
 export const repullContactFromGoogle = createServerFn({ method: "POST" })

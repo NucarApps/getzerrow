@@ -7,7 +7,7 @@
  * those echoes to existing groups — instead of blindly re-creating groups by
  * exact name — is what stops merged duplicates from resurrecting forever.
  */
-import { normalizeCompanyName } from "@/lib/companies/normalize";
+import { normalizeCompanyNameDbSynced } from "@/lib/companies/normalize";
 import { deriveLabelKey } from "@/lib/contacts/label-resolve";
 
 export type CategoryGroupInfo = {
@@ -87,7 +87,7 @@ export function resolveCategoryTargets(
     for (const p of buildPathVariants(g, byId)) {
       byPath.set(p, [...(byPath.get(p) ?? []), g]);
     }
-    const norm = normalizeCompanyName(g.name);
+    const norm = normalizeCompanyNameDbSynced(g.name);
     if (norm) byNorm.set(norm, [...(byNorm.get(norm) ?? []), g]);
     const brand = deriveLabelKey(g.name, aliasMap).key;
     if (brand) byBrand.set(brand, [...(byBrand.get(brand) ?? []), g]);
@@ -109,7 +109,7 @@ export function resolveCategoryTargets(
     if (pathHit) return pathHit;
     if ((byPath.get(lower) ?? []).length > 1) return "skip";
     // 3. Mild-normalized name ("Nissan Inc" ≈ "Nissan").
-    const norm = normalizeCompanyName(name);
+    const norm = normalizeCompanyNameDbSynced(name);
     if (norm) {
       const cands = byNorm.get(norm) ?? [];
       const normHit = pickPreferred(cands, opts.memberGroupIds);
@@ -118,7 +118,7 @@ export function resolveCategoryTargets(
       // 4. Merged-away company name → canonical company → its group.
       const canonical = opts.nameAliases?.get(norm);
       if (canonical) {
-        const canonNorm = normalizeCompanyName(canonical);
+        const canonNorm = normalizeCompanyNameDbSynced(canonical);
         const canonCands = [
           ...(byLeaf.get(canonical.toLowerCase()) ?? []),
           ...(canonNorm ? (byNorm.get(canonNorm) ?? []) : []),

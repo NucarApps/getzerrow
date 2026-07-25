@@ -26,8 +26,7 @@ import {
 } from "./dirty";
 
 import type { ProgressReporter } from "./progress.server";
-
-type Ids = { userId: string; gmailAccountId: string; runId: string };
+import type { Ids } from "./state.server";
 
 // Cap per-run work so a big first-time push doesn't hog the cron slot.
 const MAX_CONTACTS_PER_RUN = 500;

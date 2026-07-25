@@ -9,7 +9,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   },
 }));
 
-import { hashToken, unauthorizedResponse, verifyCardDavAuth } from "./auth.server";
+import { hashToken, carddavAuthChallengeResponse, verifyCardDavAuth } from "./auth.server";
 
 const USER_ID = "11111111-2222-3333-4444-555555555555";
 
@@ -46,9 +46,9 @@ describe("hashToken", () => {
   });
 });
 
-describe("unauthorizedResponse", () => {
+describe("carddavAuthChallengeResponse", () => {
   it("is a 401 with the Basic challenge header CardDAV clients require", () => {
-    const res = unauthorizedResponse();
+    const res = carddavAuthChallengeResponse();
     expect(res.status).toBe(401);
     expect(res.headers.get("WWW-Authenticate")).toBe('Basic realm="Zerrow CardDAV"');
   });

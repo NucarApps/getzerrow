@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import type { DB } from "@/lib/supabase-db";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { normalizeCompanyName } from "./company-name";
+import { companyBrandKey } from "./company-name";
 import { deriveCompanyKey } from "./company-key";
 import { loadCompanyKeyContext } from "./company-key.server";
 
@@ -22,7 +22,7 @@ type ContactShape = {
  * members. Auto-created subgroups are marked with
  * `auto_generated_from_group_id=<parent>` so we only ever touch rows we own.
  *
- * The subgroup key is derived via `normalizeCompanyName` — so cleaning up
+ * The subgroup key is derived via `companyBrandKey` — so cleaning up
  * "Hyundai America, Inc." to just "Hyundai America" collapses two auto
  * subgroups into one on the next reconcile. Reconcile fires automatically
  * whenever membership or a member's `company` field changes.
@@ -190,7 +190,7 @@ export async function reconcileAutoCompanySubgroupsImpl(
 
   const existingByKey = new Map<string, { id: string; name: string }>();
   for (const g of existing ?? []) {
-    const k = normalizeCompanyName(g.name);
+    const k = companyBrandKey(g.name);
     if (!k) continue;
     if (!existingByKey.has(k)) existingByKey.set(k, g);
   }
@@ -489,7 +489,7 @@ async function pruneStaleAutoSubgroupMemberships(
     if (!g || !g.auto_generated_from_group_id) continue; // only auto subgroups
     if (!row.auto_added) continue; // never touch manual memberships
     const key = currentKey.get(row.contact_id);
-    const subgroupKey = normalizeCompanyName(g.name);
+    const subgroupKey = companyBrandKey(g.name);
     if (!subgroupKey) continue;
     if (key && subgroupKey === key) continue;
     toDelete.push({ group_id: row.group_id, contact_id: row.contact_id });

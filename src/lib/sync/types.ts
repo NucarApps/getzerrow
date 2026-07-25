@@ -72,3 +72,16 @@ export type GmailAccount = {
   history_id: string | null;
   watch_expiration: string | null;
 };
+
+/** A row returned by the claim_message_jobs RPC. Shared by the cron worker
+ *  (run-jobs) and the synchronous catch-up path, which claim from the same
+ *  queue and previously each re-declared this shape. */
+export type ClaimedJob = {
+  id: string;
+  gmail_account_id: string;
+  gmail_message_id: string;
+  user_id: string;
+  attempt: number;
+  priority: number;
+  published_at_ms: number | null;
+};
