@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listGmailLabels, listMyGmailAccounts } from "@/lib/gmail.functions";
+import { listMyGmailAccounts } from "@/lib/gmail.functions";
 import { getAdminMe } from "@/lib/admin.functions";
 import {
   Inbox,
@@ -47,12 +47,12 @@ import { NavItem } from "@/components/NavItem";
 import { AddFolderDialog } from "@/components/folders/AddFolderDialog";
 import { EditFolderDialog } from "@/components/folders/EditFolderDialog";
 import type { Folder, GLabel } from "@/components/folders/FolderEditor";
-import { FOLDER_COLUMNS } from "@/components/folders/editor/types";
 import { useEmailRealtime } from "@/lib/use-email-realtime";
 import { useContactsRealtime } from "@/lib/use-contacts-realtime";
 import { BackfillBanner } from "@/components/inbox/BackfillBanner";
 import { ReconnectBanner } from "@/components/inbox/ReconnectBanner";
 import zerrowLogo from "@/assets/zerrow-logo-v2.png";
+import { useFoldersFullQuery, useGmailLabelsQuery } from "@/hooks/use-folder-queries";
 
 const SPECIAL_VIEWS = ["all", "all_mail", "no_rules"];
 
@@ -195,7 +195,6 @@ function useSidebarData(onNavigate?: () => void) {
   const { activeAccountId, setActiveAccountId } = useAccountSelection();
 
   const listAccounts = useServerFn(listMyGmailAccounts);
-  const listLabelsFn = useServerFn(listGmailLabels);
   const adminMeFn = useServerFn(getAdminMe);
 
   const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccounts() });
@@ -222,18 +221,7 @@ function useSidebarData(onNavigate?: () => void) {
   });
   const isAdmin = !!adminMeQ.data?.email;
 
-  const foldersQ = useQuery({
-    queryKey: ["folders-full", accountId],
-    enabled: !!accountId,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("folders")
-        .select(FOLDER_COLUMNS)
-        .eq("gmail_account_id", accountId!)
-        .order("name", { ascending: true });
-      return (data ?? []) as Folder[];
-    },
-  });
+  const foldersQ = useFoldersFullQuery<Folder>(accountId);
 
   // Reconcile the selected folder with the current account's folder list.
   // `selected` is stored globally (not per account), so after the active
@@ -249,17 +237,7 @@ function useSidebarData(onNavigate?: () => void) {
     if (!folders.some((f) => f.id === selected)) setSelected("all");
   }, [accountId, foldersQ.isSuccess, foldersQ.data, selected, setSelected]);
 
-  const labelsQ = useQuery({
-    queryKey: ["gmail-labels", accountId],
-    enabled: !!accountId,
-    queryFn: async () => {
-      try {
-        return (await listLabelsFn({ data: { account_id: accountId! } })).labels as GLabel[];
-      } catch {
-        return [] as GLabel[];
-      }
-    },
-  });
+  const labelsQ = useGmailLabelsQuery<GLabel>(accountId);
 
   // Unread/folder counts are computed server-side by a single aggregate RPC
   // instead of downloading thousands of email rows to count in the browser.

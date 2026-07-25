@@ -1,7 +1,6 @@
 import { useState } from "react";
+import { useGoogleReconnect } from "@/hooks/use-google-reconnect";
 import { useNavigate } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
-import { toast } from "sonner";
 import { Mail, ChevronDown, Check, Plus, AlertTriangle } from "lucide-react";
 import {
   DropdownMenu,
@@ -12,7 +11,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAccountSelection } from "@/lib/account-selection";
 import { useFolderSelection } from "@/lib/folder-selection";
-import { startConnectGmail } from "@/lib/gmail.functions";
 
 export type SwitcherAccount = {
   id: string;
@@ -32,7 +30,7 @@ export function AccountSwitcher({ accounts, loading, failed, compact, onNavigate
   const { activeAccountId, setActiveAccountId } = useAccountSelection();
   const { setSelected } = useFolderSelection();
   const navigate = useNavigate();
-  const connect = useServerFn(startConnectGmail);
+  const startGoogleReconnect = useGoogleReconnect();
   const [connecting, setConnecting] = useState(false);
 
   const active = accounts.find((a) => a.id === activeAccountId) ?? accounts[0] ?? null;
@@ -45,12 +43,9 @@ export function AccountSwitcher({ accounts, loading, failed, compact, onNavigate
   const addAccount = async () => {
     if (connecting) return;
     setConnecting(true);
-    try {
-      const { url } = await connect({ data: {} });
-      window.location.href = url;
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Couldn't start Google sign-in";
-      toast.error(msg);
+    // Unlike the other reconnect entry points, a failure here also drops the
+    // user on Settings so they have somewhere to retry from.
+    if (!(await startGoogleReconnect())) {
       setConnecting(false);
       goSettings();
     }

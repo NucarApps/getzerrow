@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useGoogleReconnect } from "@/hooks/use-google-reconnect";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { CalendarCheck, RefreshCw, AlertTriangle } from "lucide-react";
@@ -11,7 +12,6 @@ import {
   setCalendarGuard,
   syncCalendarNow,
 } from "@/lib/calendar.functions";
-import { startConnectGmail } from "@/lib/gmail.functions";
 
 type Props = { accountId: string | null; accountEmail: string | null };
 
@@ -30,7 +30,7 @@ export function CalendarGuardCard({ accountId, accountEmail }: Props) {
   const getStatus = useServerFn(getCalendarGuardStatus);
   const setGuard = useServerFn(setCalendarGuard);
   const syncNow = useServerFn(syncCalendarNow);
-  const connect = useServerFn(startConnectGmail);
+  const startGoogleReconnect = useGoogleReconnect();
   const [busy, setBusy] = useState(false);
 
   const { data: status } = useQuery({
@@ -66,13 +66,11 @@ export function CalendarGuardCard({ accountId, accountEmail }: Props) {
 
   const handleReconnect = async () => {
     setBusy(true);
-    try {
-      const { url } = await connect({ data: { login_hint: accountEmail ?? undefined } });
-      window.location.href = url;
-    } catch {
-      toast.error("Couldn't start Google reconnect.");
-      setBusy(false);
-    }
+    const ok = await startGoogleReconnect({
+      loginHint: accountEmail,
+      errorMessage: "Couldn't start Google reconnect.",
+    });
+    if (!ok) setBusy(false);
   };
 
   const handleSyncNow = async () => {

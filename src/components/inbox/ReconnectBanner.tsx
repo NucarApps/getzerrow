@@ -1,10 +1,10 @@
 import { useState } from "react";
+import { useGoogleReconnect } from "@/hooks/use-google-reconnect";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { AlertTriangle, RefreshCw, X, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { getAccountHealth, runAccountDiagnostic } from "@/lib/account-health.functions";
-import { startConnectGmail } from "@/lib/gmail.functions";
 
 // A watch that expired (or was never armed) means Gmail push has stopped, so
 // new mail no longer classifies within seconds — it falls back to the 2-minute
@@ -17,7 +17,7 @@ function isRealtimePaused(watchExpiresAt: string | null): boolean {
 
 export function ReconnectBanner() {
   const fetchHealth = useServerFn(getAccountHealth);
-  const startConnect = useServerFn(startConnectGmail);
+  const startGoogleReconnect = useGoogleReconnect();
   const rearm = useServerFn(runAccountDiagnostic);
   const [dismissed, setDismissed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -38,13 +38,7 @@ export function ReconnectBanner() {
 
   async function handleReconnect(email: string) {
     setBusy(email);
-    try {
-      const r = await startConnect({ data: { login_hint: email } });
-      window.location.href = r.url;
-    } catch (e) {
-      toast.error((e as Error).message);
-      setBusy(null);
-    }
+    if (!(await startGoogleReconnect({ loginHint: email }))) setBusy(null);
   }
 
   async function handleRearm(accountId: string, email: string) {
