@@ -132,25 +132,46 @@ export function newRunId(): string {
   return c?.randomUUID?.() ?? Math.random().toString(36).slice(2, 14);
 }
 
-/** Wrap a cron handler body. Logs start, end (with duration_ms + ok),
- * and crashes. Provides a stable run_id to thread through inner logs. */
-export async function withCronRun<T>(
+/**
+ * Wrap a cron route handler. Logs start, end (with duration_ms + ok + status),
+ * and crashes. Provides a stable run_id to thread through inner logs.
+ *
+ * Two things this deliberately does that the previous version did not:
+ *
+ *  - `ok` reflects the ACTUAL outcome. Most cron routes signal failure by
+ *    RETURNING an early 500 rather than throwing, and the old version logged
+ *    `ok: true` for every one of them — so `cron.<name>.end` claimed success on
+ *    runs that had failed. `ok` is now derived from the response status.
+ *
+ *  - An escaped throw becomes a JSON 500 instead of propagating. The old
+ *    version rethrew, and 14 of the 21 wrapped routes have no outer try/catch
+ *    of their own, so an unexpected error reached the framework and produced a
+ *    non-JSON 500. Routes that DO catch their own errors are unaffected — this
+ *    only covers what would otherwise be unhandled.
+ */
+export async function withCronRun(
   name: string,
-  fn: (ctx: { runId: string }) => Promise<T>,
-): Promise<T> {
+  fn: (ctx: { runId: string }) => Promise<Response>,
+): Promise<Response> {
   const runId = newRunId();
   const t0 = Date.now();
   logInfo(`cron.${name}.start`, { run_id: runId });
   try {
     const result = await fn({ runId });
+    const status = result instanceof Response ? result.status : 200;
     logInfo(`cron.${name}.end`, {
       run_id: runId,
       duration_ms: Date.now() - t0,
-      ok: true,
+      ok: status < 400,
+      status,
     });
     return result;
   } catch (e) {
     logError(`cron.${name}.crash`, { run_id: runId, duration_ms: Date.now() - t0 }, e);
-    throw e;
+    const message = e instanceof Error ? e.message : String(e);
+    return Response.json(
+      { ok: false, error: message.slice(0, 500), run_id: runId },
+      { status: 500 },
+    );
   }
 }

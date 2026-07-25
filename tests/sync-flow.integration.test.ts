@@ -123,10 +123,15 @@ d("gmail-backfill-tick is idempotent (no active jobs → 0 processed)", () => {
   });
 });
 
-d("gmail-retention prunes pubsub_events + DLQ + decryption audit rows", () => {
-  it("returns {ok, pubsub, dlq, audit} with counts (or null if RPC missing)", async () => {
+d("gmail-retention prunes pubsub_events + DLQ + scheduled_actions + digest_items", () => {
+  // NOTE: this suite previously asserted an `audit` key and passed
+  // `audit_keep_days`/`audit_limit`. The route stopped returning `audit` and
+  // stopped reading those params, so the assertion was stale and would have
+  // failed had this file not been skipped by default (it needs PUBLIC_BASE_URL
+  // + CRON_SECRET). Realigned with what the endpoint actually returns.
+  it("returns {ok, pubsub, dlq, scheduled, digest} with counts (or null if RPC missing)", async () => {
     const res = await authedPost("/api/public/gmail-retention");
-    const json = await expectJsonShape(res, ["ok", "pubsub", "dlq", "audit"]);
+    const json = await expectJsonShape(res, ["ok", "pubsub", "dlq", "scheduled", "digest"]);
     expect(json.ok).toBe(true);
     if (json.pubsub) {
       expect(json.pubsub).toHaveProperty("deleted");
@@ -137,18 +142,22 @@ d("gmail-retention prunes pubsub_events + DLQ + decryption audit rows", () => {
       expect(json.dlq).toHaveProperty("deleted");
       expect(json.dlq).toHaveProperty("total_before");
     }
-    if (json.audit) {
-      expect(json.audit).toHaveProperty("deleted");
-      expect(json.audit).toHaveProperty("total_before");
+    if (json.scheduled) {
+      expect(json.scheduled).toHaveProperty("deleted");
+      expect(json.scheduled).toHaveProperty("total_before");
+    }
+    if (json.digest) {
+      expect(json.digest).toHaveProperty("deleted");
+      expect(json.digest).toHaveProperty("total_before");
     }
   });
 
-  it("honors query params (all three retention windows can be tightened)", async () => {
+  it("honors query params (every retention window can be tightened)", async () => {
     // Just verify the endpoint accepts custom retention windows without
     // crashing. Doesn't assert on counts because they depend on existing
     // data.
     const res = await fetch(
-      `${BASE}/api/public/gmail-retention?pubsub_keep_days=1&pubsub_limit=10&dlq_keep_days=1&dlq_limit=10&audit_keep_days=1&audit_limit=10`,
+      `${BASE}/api/public/gmail-retention?pubsub_keep_days=1&pubsub_limit=10&dlq_keep_days=1&dlq_limit=10&scheduled_keep_days=1&scheduled_limit=10&digest_keep_days=1&digest_limit=10`,
       { method: "POST", headers: { authorization: `Bearer ${SECRET}` } },
     );
     expect(res.status, await res.clone().text()).toBe(200);
