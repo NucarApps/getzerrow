@@ -318,11 +318,6 @@ export function personToContact(person: Person): {
   };
 }
 
-/** Zerrow group → Google contactGroups payload. */
-export function groupToLabel(name: string): { contactGroup: { name: string } } {
-  return { contactGroup: { name: name.trim() } };
-}
-
 /** Google contactGroup → Zerrow group name (system groups have formatted names). */
 export function labelToGroupName(g: {
   name?: string;

@@ -45,8 +45,6 @@ export type RecordedWrite = {
 };
 export type RecordedRpc = { fn: string; args: Record<string, unknown> };
 
-export type SupabaseFake = ReturnType<typeof makeSupabaseFake>;
-
 export function makeSupabaseFake(init?: {
   tables?: Record<string, FakeRow[]>;
   rpc?: Record<string, RpcHandler>;

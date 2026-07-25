@@ -39,8 +39,9 @@ evaluated before the emails row is written, and the AI classifier only sees
 messages the rules didn't decide. Every execution is recorded in
 `executed_rules` (matched conditions, confidence, encrypted reason) and
 surfaced in the UI — the reader's "Why this folder?" link and the rule
-activity page in settings. Per-feature design notes live in
-[`docs/rules/`](docs/rules/).
+activity page in settings; the schema and retention of that trail are in
+[`docs/rules/executed-rules-audit-log.md`](docs/rules/executed-rules-audit-log.md).
+Per-feature design notes live in [`docs/rules/`](docs/rules/).
 
 ### Filter trees
 
@@ -125,10 +126,19 @@ and [`docs/rules/classification-feedback.md`](docs/rules/classification-feedback
   Pub/Sub token) with constant-time comparison.
 - **Bounded untrusted input** — rule trees, regexes, templates, and AI
   prompts/outputs are length- and shape-checked; AI calls are timeboxed
-  and go through the Lovable gateway only.
+  and go through the Lovable gateway only. Email text is attacker-controlled
+  and gets interpolated into classifier prompts, so instructions embedded in
+  it are made inert — see
+  [`docs/rules/prompt-injection-hardening.md`](docs/rules/prompt-injection-hardening.md).
 
 The full control → evidence map for the CASA Tier 2 assessment is in
 [`docs/casa-readiness.md`](docs/casa-readiness.md) and
 [`docs/casa-asvs-map.md`](docs/casa-asvs-map.md). Deployment/upgrade order
 for the rules engine is in
-[`docs/rules/upgrade-notes.md`](docs/rules/upgrade-notes.md).
+[`docs/rules/upgrade-notes.md`](docs/rules/upgrade-notes.md), and the
+end-of-project audit of that work is in
+[`docs/rules/cleanup-pass.md`](docs/rules/cleanup-pass.md).
+
+Signing the native Swift app in against this backend (Google, via the
+`zerrow://auth-callback` deep link) is documented in
+[`docs/swift-auth.md`](docs/swift-auth.md).
