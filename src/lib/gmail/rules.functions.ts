@@ -18,7 +18,7 @@ import { getRequestHost } from "@tanstack/react-start/server";
 import { logError } from "../log.server";
 import { removeLabelsFromCurrent } from "../sync/label-merge";
 import { buildGmailQueries } from "../sync/gmail-query-builder";
-import { matchByFilters } from "../sync/filter-engine";
+import { classifyIngestedMessage } from "./ingest-classify";
 import type { Folder, Filter, RuleNode } from "../sync/types";
 import { upsertEmailEncrypted, updateEmailEncrypted } from "../sync/encrypted-writer";
 import { toEmailUpsert } from "../sync/email-upsert";
@@ -963,50 +963,15 @@ export const scanGmailForFolder = createServerFn({ method: "POST" })
             try {
               const raw = await getMessage(accountId, id);
               const p = parseMessage(raw);
-              let folder_id: string | null = null;
-              let classified_by: string = "gmail_search_ingest";
-              let classification_reason: string | null = `Scanned for folder: ${folderName}`;
-              let matched_filter_ids: string[] = [];
-              for (const lbl of p.raw_labels ?? []) {
-                const fid = labelToFolder.get(lbl);
-                if (fid) {
-                  folder_id = fid;
-                  classified_by = "gmail_label";
-                  classification_reason = "Matched Gmail label";
-                  break;
-                }
-              }
-              if (!folder_id) {
-                const result = matchByFilters(
-                  {
-                    from_addr: p.from_addr ?? "",
-                    from_name: p.from_name ?? "",
-                    to_addrs: p.to_addrs ?? "",
-                    subject: p.subject ?? "",
-                    body_text: p.body_text ?? "",
-                    has_attachment: !!p.has_attachment,
-                  },
-                  allFolders,
-                  allFilters,
-                );
-                if (result?.kind === "match") {
-                  folder_id = result.folder_id;
-                  matched_filter_ids = result.matched_filters.map((f) => f.id);
-                  if (result.tree_used) {
-                    classified_by = "filter";
-                    classification_reason = `Rule group matched for "${allFolders.find((f) => f.id === result.folder_id)?.name ?? folderName}"`;
-                  } else if (result.filter) {
-                    classified_by = result.filter.field === "domain" ? "domain_rule" : "filter";
-                    classification_reason =
-                      result.filter.field === "domain"
-                        ? `Domain rule: ${result.filter.value}`
-                        : `Folder rule: ${result.filter.field} ${result.filter.value}`;
-                  } else {
-                    classified_by = "filter";
-                    classification_reason = "Folder rule matched";
-                  }
-                }
-              }
+              const { folder_id, classified_by, classification_reason, matched_filter_ids } =
+                classifyIngestedMessage(p, {
+                  labelToFolder,
+                  folders: allFolders,
+                  filters: allFilters,
+                  seedReason: `Scanned for folder: ${folderName}`,
+                  nameTreeMatches: true,
+                  fallbackFolderName: folderName,
+                });
               const { id: newId, error } = await upsertEmailEncrypted(
                 toEmailUpsert(p, {
                   user_id: context.userId,

@@ -16,7 +16,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getRequestHost } from "@tanstack/react-start/server";
 import { logError } from "../log.server";
 import { reconcileLabelsToPatch } from "../sync/label-merge";
-import { matchByFilters } from "../sync/filter-engine";
+import { classifyIngestedMessage } from "./ingest-classify";
 import type { Folder, Filter } from "../sync/types";
 import { upsertEmailEncrypted, updateEmailEncrypted } from "../sync/encrypted-writer";
 import { toEmailUpsert } from "../sync/email-upsert";
@@ -245,56 +245,18 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
             try {
               const raw = await getMessage(accountId, id);
               const p = parseMessage(raw);
-              let folder_id: string | null = null;
-              let classified_by: string = "gmail_search_ingest";
-              let classification_reason: string | null = "Pulled from Gmail via search";
-              for (const lbl of p.raw_labels ?? []) {
-                const fid = labelToFolder.get(lbl);
-                if (fid) {
-                  folder_id = fid;
-                  classified_by = "gmail_label";
-                  classification_reason = "Matched Gmail label";
-                  break;
-                }
-              }
-              if (!folder_id) {
-                // Same shared filter engine the live sync pipeline uses, so
-                // search-ingested mail honors domain allowlists (domain_in),
-                // exclude/veto ops, AND/OR rule trees, filter_logic, and
-                // folder priority — not just the contains/equals/regex subset
-                // the old inline matcher supported. Like the sibling
-                // scanGmailForFolder, this builds a partial email (no cc/
-                // list_id/is_reply/sender_group_ids), so filters on those
-                // fields don't apply on the ingest path.
-                const result = matchByFilters(
-                  {
-                    from_addr: p.from_addr ?? "",
-                    from_name: p.from_name ?? "",
-                    to_addrs: p.to_addrs ?? "",
-                    subject: p.subject ?? "",
-                    body_text: p.body_text ?? "",
-                    has_attachment: !!p.has_attachment,
-                  },
-                  allFolders,
+              // NOTE: this path deliberately does not persist matched_filter_ids
+              // (the sibling scan path does). Unchanged from before — worth
+              // revisiting so "why this folder?" works for search-ingested mail.
+              const { folder_id, classified_by, classification_reason } = classifyIngestedMessage(
+                p,
+                {
+                  labelToFolder,
+                  folders: allFolders,
                   filters,
-                );
-                if (result?.kind === "match") {
-                  folder_id = result.folder_id;
-                  if (result.tree_used) {
-                    classified_by = "filter";
-                    classification_reason = "Rule group matched";
-                  } else if (result.filter) {
-                    classified_by = result.filter.field === "domain" ? "domain_rule" : "filter";
-                    classification_reason =
-                      result.filter.field === "domain"
-                        ? `Domain rule: ${result.filter.value}`
-                        : `Folder rule: ${result.filter.field} ${result.filter.value}`;
-                  } else {
-                    classified_by = "filter";
-                    classification_reason = "Folder rule matched";
-                  }
-                }
-              }
+                  seedReason: "Pulled from Gmail via search",
+                },
+              );
               const { id: newId, error } = await upsertEmailEncrypted(
                 toEmailUpsert(p, {
                   user_id: context.userId,
