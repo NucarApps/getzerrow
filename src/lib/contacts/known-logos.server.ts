@@ -1,12 +1,20 @@
 // Shared helper: build the set of SHA-256 hashes for every company logo the
-// user has currently chosen (explicit picks + company_domains fallbacks).
-// Used by both the cleanup batch and the CardDAV PUT guard so iOS "echoes"
-// of any known company logo are recognized and never promoted into
+// user has currently chosen (explicit picks + company_domains fallbacks), so
+// iOS "echoes" of a known company logo are recognized and never promoted into
 // `contacts.avatar_url`.
 //
-// A tiny per-user in-memory TTL cache keeps the CardDAV PUT hot path cheap:
-// logo bytes rarely change and we don't want to hammer the logo providers
-// on every incoming photo write.
+// USED BY: the Google Contacts pull guard (pull.server) and the company-logo
+// cleanup batch (company-logo-cleanup.functions).
+//
+// NOT used by the CardDAV PUT handler, and it must stay that way —
+// `photo-echo-decision.test.ts` asserts the PUT path references neither this
+// nor `getKnownCompanyLogoHashes`, because this set is user-wide and that
+// breadth "is exactly what ate user-chosen photos". The PUT path uses the
+// narrow `decideIncomingPhoto` + `company_logo_photo_sha` instead.
+//
+// The per-user TTL cache keeps callers cheap — logo bytes rarely change and we
+// don't want to hammer providers. It is invalidated on the three things that
+// change the bytes: a custom logo upload, and setting or clearing a brand pick.
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { fetchChosenCompanyLogoBytes } from "@/lib/contacts/logo-photo.server";

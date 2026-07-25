@@ -63,6 +63,11 @@ export const setCompanyLogoChoice = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     await bumpCarddavResync(userId);
     await markContactsForDomainPhotoDirty(userId, data.domain);
+    // Changing the pick changes the bytes the echo guard should recognize; the
+    // SHA set is TTL-cached, so drop it rather than run stale for 5 minutes.
+    const { invalidateKnownCompanyLogoShaCache } =
+      await import("@/lib/contacts/known-logos.server");
+    invalidateKnownCompanyLogoShaCache(userId);
     return { ok: true as const };
   });
 
@@ -79,6 +84,11 @@ export const clearCompanyLogoChoice = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     await bumpCarddavResync(userId);
     await markContactsForDomainPhotoDirty(userId, data.domain);
+    // Changing the pick changes the bytes the echo guard should recognize; the
+    // SHA set is TTL-cached, so drop it rather than run stale for 5 minutes.
+    const { invalidateKnownCompanyLogoShaCache } =
+      await import("@/lib/contacts/known-logos.server");
+    invalidateKnownCompanyLogoShaCache(userId);
     return { ok: true as const };
   });
 
