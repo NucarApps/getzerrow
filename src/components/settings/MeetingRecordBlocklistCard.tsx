@@ -7,13 +7,13 @@ import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { EMAIL_RE } from "@/lib/contacts/email-address";
 import {
   listRecordBlocklist,
   addRecordBlocklistEntry,
   removeRecordBlocklistEntry,
 } from "@/lib/meetings.functions";
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DOMAIN_RE = /^(?:[a-z0-9-]+\.)+[a-z]{2,}$/;
 
 export function MeetingRecordBlocklistCard() {

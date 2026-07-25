@@ -1,5 +1,6 @@
 import { createFileRoute, redirect, isRedirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { truncate } from "@/lib/format";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo } from "react";
 import {
@@ -589,11 +590,6 @@ function fmtMs(ms: number | null): string {
   if (ms === null) return "—";
   if (ms < 1000) return `${Math.round(ms)}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
-}
-
-function truncate(s: string | null, n: number): string {
-  if (!s) return "—";
-  return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
 function SyncMetricsSection({

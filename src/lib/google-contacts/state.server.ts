@@ -88,3 +88,7 @@ export async function loadLocalContact(contactId: string): Promise<LocalContact 
     primary_phone: row.phone,
   };
 }
+
+/** The identifiers every pull/push/repair pass threads through: whose data,
+ *  which connected account, and the run id used to correlate log lines. */
+export type Ids = { userId: string; gmailAccountId: string; runId: string };

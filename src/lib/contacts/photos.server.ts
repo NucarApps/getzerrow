@@ -130,12 +130,6 @@ export async function loadContactPhotoBytes(
   return { bytes: buf, mime };
 }
 
-/** Compute the short SHA-256 the storage layer uses for a byte array. Handy
- * for callers that want to decide whether to re-upload before hitting storage. */
-export async function contactPhotoHash(bytes: Uint8Array): Promise<string> {
-  return shortHash(bytes);
-}
-
 /** Full SHA-256 hex of a byte array. Used to fingerprint the exact company
  * logo we inlined into a vCard PHOTO so a round-tripped copy from iOS can
  * be recognized and skipped instead of promoted to a real personal avatar. */

@@ -39,26 +39,6 @@ export function davResponse(body: string, extraHeaders: Record<string, string> =
   });
 }
 
-/**
- * Read the requested prop names out of a PROPFIND body so we only include
- * what iOS asked for. Missing body means "return everything" per RFC 4918.
- */
-export function parseRequestedProps(body: string): Set<string> {
-  const out = new Set<string>();
-  if (!body || body.length === 0) return out;
-  // Grab tag names inside <D:prop> or <prop>. We just need local names.
-  const propBlockMatch = body.match(/<\w*:?prop[^>]*>([\s\S]*?)<\/\w*:?prop>/i);
-  if (!propBlockMatch) return out;
-  const inner = propBlockMatch[1];
-  const tagRe = /<(\w+:)?([\w-]+)[^/]*\/>|<(\w+:)?([\w-]+)[^>]*>[\s\S]*?<\/\3?[\w-]+>/g;
-  let m: RegExpExecArray | null;
-  while ((m = tagRe.exec(inner))) {
-    const name = (m[2] ?? m[4] ?? "").toLowerCase();
-    if (name) out.add(name);
-  }
-  return out;
-}
-
 /** Read all <D:href> values from an addressbook-multiget body. */
 export function parseMultigetHrefs(body: string): string[] {
   const out: string[] = [];

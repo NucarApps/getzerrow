@@ -8,13 +8,11 @@
 
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/integrations/supabase/types";
+import type { DB } from "@/lib/supabase-db";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import {
   AI_CATEGORIES,
   collectEmailDomains,
-  domainOfEmail,
   matchRules,
   type ContactSignals,
   type GroupRule,
@@ -22,8 +20,7 @@ import {
 import { pairKey, planRuleMembershipSync } from "./company-label-sync";
 import { reconcileIfAuto } from "./auto-company-subgroups.functions";
 import { bumpResyncNonce } from "@/lib/carddav/settings.functions";
-
-type DB = SupabaseClient<Database>;
+import { chunk } from "@/lib/chunk";
 
 const RULE_TYPE = z.enum(["domain", "company_id", "ai_category"]);
 
@@ -35,12 +32,6 @@ const RULE_TYPE = z.enum(["domain", "company_id", "ai_category"]);
 // leavers drop). Only touches source='rule' rows; see company-label-sync.ts.
 
 const CHUNK = 500;
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
 
 export async function syncCompanyRuleMemberships(
   supabase: DB,
@@ -571,112 +562,6 @@ export async function applyRulesForContact(
   }
   return { auto, suggested };
 }
-
-/** Server-fn wrapper called from the contact edit path. */
-export const applyRulesForContactFn = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { contactId: string }) => z.object({ contactId: z.string().uuid() }).parse(d))
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    return applyRulesForContact(supabase, userId, data.contactId);
-  });
-
-/**
- * Preview which labels a contact would join if saved with the given
- * signals — used by the contact form to render suggestion chips before
- * the row is created. Does not write anything.
- */
-export const suggestGroupsForContact = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z
-      .object({
-        email: z.string().trim().email().optional().nullable(),
-        additionalEmails: z.array(z.string().trim().email()).max(20).optional(),
-        companyId: z.string().uuid().optional().nullable(),
-        companyText: z.string().trim().max(200).optional().nullable(),
-        aiCategory: z.string().trim().max(60).optional().nullable(),
-      })
-      .parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    // Resolve companyText → existing company id (does NOT create).
-    let companyId = data.companyId ?? null;
-    let companyName: string | null = null;
-    if (!companyId && data.companyText) {
-      const { normalizeCompanyName } = await import("./company-name");
-      const key = normalizeCompanyName(data.companyText);
-      if (key) {
-        const { data: co } = await supabase
-          .from("companies")
-          .select("id,name")
-          .eq("user_id", userId)
-          .eq("name_key", key)
-          .maybeSingle();
-        if (co) {
-          companyId = co.id;
-          companyName = co.name;
-        }
-      }
-    }
-    const emails = [data.email ?? null, ...(data.additionalEmails ?? []).map((e) => e)];
-    const domains = collectEmailDomains(emails.map((address) => ({ address })));
-    const signals: ContactSignals = {
-      companyId,
-      aiCategory: data.aiCategory ?? null,
-      emailDomains: domains,
-    };
-    const rules = await loadUserRules(supabase, userId);
-    const matches = matchRules(signals, rules);
-    const groupIds = [...new Set(matches.map((m) => m.groupId))];
-    const { data: groups } = groupIds.length
-      ? await supabase
-          .from("contact_groups")
-          .select("id,name,color,parent_group_id")
-          .in("id", groupIds)
-      : { data: [] };
-    const groupsById = new Map((groups ?? []).map((g) => [g.id, g] as const));
-
-    // Also surface close name matches: any existing label whose normalized
-    // name matches the companyText, so the user attaches to an existing
-    // label instead of creating a new one.
-    let closeName: { id: string; name: string } | null = null;
-    if (data.companyText) {
-      const { normalizeCompanyName } = await import("./company-name");
-      const key = normalizeCompanyName(data.companyText);
-      if (key) {
-        const { data: allGroups } = await supabase
-          .from("contact_groups")
-          .select("id,name")
-          .eq("user_id", userId);
-        for (const g of allGroups ?? []) {
-          if (normalizeCompanyName(g.name) === key) {
-            closeName = { id: g.id, name: g.name };
-            break;
-          }
-        }
-      }
-    }
-
-    return {
-      companyResolved: companyId ? { id: companyId, name: companyName } : null,
-      matches: matches.map((m) => {
-        const g = groupsById.get(m.groupId);
-        return {
-          ruleId: m.ruleId,
-          groupId: m.groupId,
-          groupName: g?.name ?? "(deleted)",
-          groupColor: g?.color ?? null,
-          reason: m.reason,
-          ruleType: m.ruleType,
-          autoApply: m.autoApply,
-        };
-      }),
-      closeNameMatch: closeName,
-      aiCategories: AI_CATEGORIES,
-    };
-  });
 
 // ─── Backfill ───────────────────────────────────────────────────────
 

@@ -2,8 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { convergeCompanyMemberships } from "./converge";
-import { normalizeCompanyName } from "./normalize";
-import { normalizeCompanyName as brandKey } from "@/lib/contacts/company-name";
+import { normalizeCompanyNameDbSynced } from "./normalize";
+import { companyBrandKey } from "@/lib/contacts/company-name";
 import { isPersonalDomain, extractDomain, prettyCompanyName } from "@/lib/company-domains";
 import { getModel } from "@/lib/ai-gateway";
 
@@ -287,7 +287,7 @@ export const updateCompany = createServerFn({ method: "POST" })
     const { id, ...patch } = data;
     const update: Record<string, unknown> = { ...patch };
     if (typeof patch.name === "string") {
-      const key = normalizeCompanyName(patch.name);
+      const key = normalizeCompanyNameDbSynced(patch.name);
       if (!key) throw new Error("Invalid company name");
       update.name_key = key;
     }
@@ -800,7 +800,7 @@ export type CompanyLite = {
 
 /** Tokenize a normalized company name into significant words. */
 export function tokenize(name: string): string[] {
-  const key = normalizeCompanyName(name) ?? "";
+  const key = normalizeCompanyNameDbSynced(name) ?? "";
   return key.split(/[^a-z0-9]+/i).filter((t) => t.length >= 3 && !STOP_TOKENS.has(t));
 }
 
@@ -942,8 +942,8 @@ export const findDuplicateCompanies = createServerFn({ method: "POST" })
       });
       const canonical = sorted[0];
       const canonicalRoots = rootDomainsOf(canonical.domains);
-      const canonicalKey = normalizeCompanyName(canonical.name);
-      const canonicalBrand = brandKey(canonical.name);
+      const canonicalKey = normalizeCompanyNameDbSynced(canonical.name);
+      const canonicalBrand = companyBrandKey(canonical.name);
       return {
         canonicalId: canonical.id,
         canonicalName: canonical.name,
@@ -956,8 +956,8 @@ export const findDuplicateCompanies = createServerFn({ method: "POST" })
           // hasty "merge all" can't fold them into the factory brand. The AI
           // pass / user can still flip them.
           const sharesRoot = [...rootDomainsOf(c.domains)].some((r) => canonicalRoots.has(r));
-          const sameKey = !!canonicalKey && normalizeCompanyName(c.name) === canonicalKey;
-          const sameBrand = !!canonicalBrand && brandKey(c.name) === canonicalBrand;
+          const sameKey = !!canonicalKey && normalizeCompanyNameDbSynced(c.name) === canonicalKey;
+          const sameBrand = !!canonicalBrand && companyBrandKey(c.name) === canonicalBrand;
           return {
             id: c.id,
             name: c.name,

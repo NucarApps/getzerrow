@@ -3,8 +3,8 @@
  * auto-company-subgroups reconciler to decide which subgroup a contact
  * belongs to. Kept free of server-fn imports so it is unit-testable.
  */
-import { normalizeCompanyName } from "./company-name";
-import { normalizeCompanyName as mildNormalizeCompanyName } from "@/lib/companies/normalize";
+import { companyBrandKey } from "./company-name";
+import { normalizeCompanyNameDbSynced } from "@/lib/companies/normalize";
 import {
   contactLogoDomain,
   isPersonalDomain,
@@ -54,7 +54,7 @@ export function deriveCompanyKey(
 ): DerivedCompanyKey | null {
   // Resolve a merged-away name variant to its canonical company name.
   const canonicalize = (name: string): string => {
-    const mild = mildNormalizeCompanyName(name);
+    const mild = normalizeCompanyNameDbSynced(name);
     return (mild && ctx.nameAliases?.get(mild)) || name;
   };
   const fromCompanyId = (companyId: string): DerivedCompanyKey | null => {
@@ -62,7 +62,7 @@ export function deriveCompanyKey(
     if (!name) return null;
     const canonical = canonicalize(name);
     const key =
-      normalizeCompanyName(canonical) ?? mildNormalizeCompanyName(canonical) ?? "cid:" + companyId;
+      companyBrandKey(canonical) ?? normalizeCompanyNameDbSynced(canonical) ?? "cid:" + companyId;
     return { key, displayName: canonical, rawCompany: canonical, fromCompany: true };
   };
 
@@ -73,7 +73,7 @@ export function deriveCompanyKey(
   const rawCompany = (contact.company ?? "").trim() || null;
   if (rawCompany) {
     const canonical = canonicalize(rawCompany);
-    const key = normalizeCompanyName(canonical);
+    const key = companyBrandKey(canonical);
     if (key) {
       return {
         key,
@@ -94,7 +94,7 @@ export function deriveCompanyKey(
       if (derived) return { ...derived, rawCompany: null };
     }
     const pretty = prettyCompanyName(resolved);
-    const key = normalizeCompanyName(pretty);
+    const key = companyBrandKey(pretty);
     if (key) return { key, displayName: pretty, rawCompany: null, fromCompany: false };
   }
   return null;

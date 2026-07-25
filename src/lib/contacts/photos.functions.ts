@@ -6,27 +6,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
-const ALLOWED_MIME = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
-
-async function assertOwnsContact(userId: string, contactId: string): Promise<void> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data } = await supabaseAdmin
-    .from("contacts")
-    .select("id")
-    .eq("id", contactId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (!data) throw new Error("Contact not found");
-}
-
-function base64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
+import { assertOwnsContact } from "@/lib/ownership";
+import { MAX_UPLOAD_BYTES, ALLOWED_MIME, base64ToBytes } from "@/lib/photo-upload";
 
 export const uploadContactPhoto = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

@@ -3,6 +3,7 @@
 // and skipped — the next pull → push cycle will reconcile them.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { logInfo, logError } from "@/lib/log.server";
+import { chunk } from "@/lib/chunk";
 import {
   createPerson,
   updatePerson,
@@ -15,7 +16,7 @@ import {
   getPerson,
   PeopleApiError,
 } from "./people-client.server";
-import { contactToPerson, groupToLabel, personToContact } from "./mapper";
+import { contactToPerson, personToContact } from "./mapper";
 import { loadLocalContact } from "./state.server";
 import {
   calculateMembershipDelta,
@@ -25,8 +26,7 @@ import {
 } from "./dirty";
 
 import type { ProgressReporter } from "./progress.server";
-
-type Ids = { userId: string; gmailAccountId: string; runId: string };
+import type { Ids } from "./state.server";
 
 // Cap per-run work so a big first-time push doesn't hog the cron slot.
 const MAX_CONTACTS_PER_RUN = 500;
@@ -41,14 +41,6 @@ const PUSH_WALL_BUDGET_MS = 55_000;
 // each contact does ~2-3 sequential API round-trips; going wider than this
 // runs into per-user rate limits without meaningfully improving throughput.
 const CONTACT_PUSH_CONCURRENCY = 5;
-
-/** Slice `items` into fixed-size chunks preserving order. Exported for tests. */
-export function chunk<T>(items: T[], size: number): T[][] {
-  if (size <= 0) return [items];
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
-}
 
 export async function pushToGoogle(
   ids: Ids,

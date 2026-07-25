@@ -1,4 +1,4 @@
-import { normalizeCompanyName } from "@/lib/contacts/company-name";
+import { companyBrandKey } from "@/lib/contacts/company-name";
 
 export type InlineMergeContact = {
   id: string;
@@ -56,7 +56,7 @@ export function buildInlineCompanyMergeSuggestions(
         dominant = name;
       }
     }
-    const normalizedName = normalizeCompanyName(dominant);
+    const normalizedName = companyBrandKey(dominant);
     if (!normalizedName) continue;
     const entry = byName.get(normalizedName) ?? { displayName: dominant, buckets: [] };
     entry.buckets.push({

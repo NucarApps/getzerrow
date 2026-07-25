@@ -6,27 +6,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
-const ALLOWED_MIME = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
-
-function base64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
-async function assertOwnsCompany(userId: string, companyId: string): Promise<void> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data } = await supabaseAdmin
-    .from("companies")
-    .select("id")
-    .eq("id", companyId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (!data) throw new Error("Company not found");
-}
+import { assertOwnsCompany } from "@/lib/ownership";
+import { MAX_UPLOAD_BYTES, ALLOWED_MIME, base64ToBytes } from "@/lib/photo-upload";
 
 /** Nudge Google sync to repush the logo for every contact linked to this
  *  company, so the change reaches Google People too (best-effort). Also

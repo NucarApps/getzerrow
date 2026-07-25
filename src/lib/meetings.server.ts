@@ -22,7 +22,6 @@ import {
   type TranscriptSegment,
 } from "./recall.server";
 
-const TERMINAL_CODES = new Set(["done", "fatal", "call_ended", "recording_done"]);
 const FAILED_CODES = new Set(["fatal", "call_not_started", "timeout"]);
 
 /** Map a Recall status code to our meeting_status enum. */
@@ -339,11 +338,6 @@ export async function syncMeetingFromRecall(meeting: MeetingRow): Promise<string
   }
 
   return status;
-}
-
-/** Whether a status is terminal (no further polling needed). */
-export function isTerminalCode(code: string | null): boolean {
-  return code ? TERMINAL_CODES.has(code) : false;
 }
 
 /**

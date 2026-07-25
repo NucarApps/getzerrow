@@ -28,6 +28,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getMessage, parseMessage } from "../gmail.server";
 import { logError } from "../log.server";
 import { loadAccountContext, type AccountContext } from "./account-context";
+import type { ClaimedJob } from "./types";
 import { classifyByRules } from "./classify";
 import {
   applyFolderActions,
@@ -43,16 +44,6 @@ import {
   type UpsertEmailInput,
   type UpdateEmailInput,
 } from "./encrypted-writer";
-
-type ClaimedJob = {
-  id: string;
-  gmail_account_id: string;
-  gmail_message_id: string;
-  user_id: string;
-  attempt: number;
-  priority: number;
-  published_at_ms: number | null;
-};
 
 type Parsed = ReturnType<typeof parseMessage>;
 

@@ -7,6 +7,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { replayTransientDlq, retryForwardAttempts } from "@/lib/sync.server";
 import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
 import { withCronRun, logError } from "@/lib/log.server";
+import { clampIntParam } from "@/lib/cron-handler.server";
 
 export const Route = createFileRoute("/api/public/gmail-dlq-replay")({
   server: {
@@ -15,11 +16,8 @@ export const Route = createFileRoute("/api/public/gmail-dlq-replay")({
         if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
         return withCronRun("gmail-dlq-replay", async ({ runId }) => {
           const url = new URL(request.url);
-          const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "200", 10) || 200, 500);
-          const forwardLimit = Math.min(
-            parseInt(url.searchParams.get("forwardLimit") ?? "50", 10) || 50,
-            200,
-          );
+          const limit = clampIntParam(url, "limit", 1, 500, 200);
+          const forwardLimit = clampIntParam(url, "forwardLimit", 1, 200, 50);
 
           let dlq: Awaited<ReturnType<typeof replayTransientDlq>> | null = null;
           let forwards: Awaited<ReturnType<typeof retryForwardAttempts>> | null = null;

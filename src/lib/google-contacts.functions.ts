@@ -3,6 +3,7 @@
 // server-only — they are loaded via dynamic import inside handlers.
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { assertOwnsContact } from "@/lib/ownership";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { z } from "zod";
 import {
@@ -165,34 +166,6 @@ export const setGoogleContactsSyncInterval = createServerFn({ method: "POST" })
     await updateSyncState(state.id, { sync_interval_minutes: data.intervalMinutes });
     return { ok: true };
   });
-
-/** @deprecated Prefer setGoogleContactsSyncMode. Retained for older callers. */
-export const setGoogleContactsSyncEnabled = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { accountId: string; enabled: boolean }) =>
-    z.object({ accountId: z.string().uuid(), enabled: z.boolean() }).parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    await assertOwnsAccount(context.userId, data.accountId);
-    const { ensureSyncState, updateSyncState } = await import("@/lib/google-contacts/state.server");
-    const state = await ensureSyncState(context.userId, data.accountId);
-    await updateSyncState(state.id, {
-      enabled: data.enabled,
-      sync_mode: data.enabled ? (state.sync_mode === "off" ? "pull_only" : state.sync_mode) : "off",
-    });
-    return { ok: true };
-  });
-
-async function assertOwnsContact(userId: string, contactId: string): Promise<void> {
-  const { data, error } = await supabaseAdmin
-    .from("contacts")
-    .select("id")
-    .eq("id", contactId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (error) throw new Error(`Contact lookup failed: ${error.message}`);
-  if (!data) throw new Error("Contact not found");
-}
 
 /** Additively re-pull one contact from Google to recover any missing emails/phones. */
 export const repullContactFromGoogle = createServerFn({ method: "POST" })

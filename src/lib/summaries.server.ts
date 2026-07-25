@@ -159,7 +159,6 @@ export async function runFolderSummary(
       .limit(200);
     const { getEmailsDecrypted } = await import("./sync/encrypted-reader");
     const { rows: emailRows } = await getEmailsDecrypted((emailIds ?? []).map((r) => r.id));
-    const emails = emailRows.length > 0 ? emailRows : null;
 
     const emailCount = emailRows.length;
 

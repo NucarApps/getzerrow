@@ -51,7 +51,7 @@ import {
 } from "@/components/contacts/ContactDetailView";
 import { listCompanyAliases, addCompanyAlias } from "@/lib/company-aliases.functions";
 import { renameCompanyForContacts } from "@/lib/contacts/crud.functions";
-import { normalizeCompanyName } from "@/lib/contacts/company-name";
+import { companyBrandKey } from "@/lib/contacts/company-name";
 import { listCompanyLogoChoices } from "@/lib/company-logo.functions";
 import {
   listCompanies,
@@ -568,7 +568,7 @@ function ContactsPage() {
           companyLogoUrl: company.logoUrl,
         };
       } else if (!d && manualCompany) {
-        key = `name:${normalizeCompanyName(manualCompany)}`;
+        key = `name:${companyBrandKey(manualCompany)}`;
         bucket = map.get(key) ?? {
           key,
           domain: null,
@@ -636,7 +636,7 @@ function ContactsPage() {
     for (const b of arr) {
       if (b.kind === "company" && !b.key.startsWith("name:")) {
         if (b.domain) byDomain.set(b.domain, b);
-        const norm = normalizeCompanyName(b.name);
+        const norm = companyBrandKey(b.name);
         if (norm && !byNormName.has(norm)) byNormName.set(norm, b);
       }
     }
@@ -652,7 +652,7 @@ function ContactsPage() {
         // a DIFFERENT company that merely shares a brand token ("Apex Group"
         // at apexgroup.com must not fold into "Apex" at apex.com).
         if (!b.domain) {
-          const norm = normalizeCompanyName(b.name);
+          const norm = companyBrandKey(b.name);
           if (norm && byNormName.has(norm)) {
             byNormName.get(norm)!.contacts.push(...b.contacts);
             continue;

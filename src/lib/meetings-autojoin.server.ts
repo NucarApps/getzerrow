@@ -7,7 +7,9 @@ import type { Database } from "@/integrations/supabase/types";
 import { getAccessToken } from "./google-oauth.server";
 import { createBot, detectPlatform } from "./recall.server";
 import { loadBotConfig } from "./meetings.server";
+import { MEETING_PROVIDER_HOSTS, DEFAULT_HIDDEN_TYPES } from "./meetings-helpers.server";
 import { logError, logInfo } from "./log.server";
+import { EMAIL_RE } from "./contacts/email-address";
 
 const CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -48,8 +50,6 @@ export type EventFilterPrefs = {
   colorSkip: Set<string>;
 };
 
-const DEFAULT_HIDDEN_EVENT_TYPES = ["outOfOffice", "workingLocation", "focusTime", "birthday"];
-
 /**
  * Load the user's event-type/color capture preferences. Never throws: on any
  * failure it falls back to hiding the standard non-meeting entry types and
@@ -63,12 +63,12 @@ export async function loadEventFilterPrefs(userId: string): Promise<EventFilterP
       .eq("user_id", userId)
       .maybeSingle();
     return {
-      hiddenEventTypes: new Set(data?.hidden_event_types ?? DEFAULT_HIDDEN_EVENT_TYPES),
+      hiddenEventTypes: new Set(data?.hidden_event_types ?? DEFAULT_HIDDEN_TYPES),
       colorSkip: new Set(data?.event_color_skip ?? []),
     };
   } catch (e) {
     logError("meeting_event_filter_prefs_load_failed", { userId }, e);
-    return { hiddenEventTypes: new Set(DEFAULT_HIDDEN_EVENT_TYPES), colorSkip: new Set() };
+    return { hiddenEventTypes: new Set(DEFAULT_HIDDEN_TYPES), colorSkip: new Set() };
   }
 }
 
@@ -102,8 +102,12 @@ export function isDeclinedByUser(event: UpcomingEvent): boolean {
   return self?.responseStatus === "declined";
 }
 
-const MEETING_URL_RE =
-  /https?:\/\/(?:[a-z0-9-]+\.)*(?:zoom\.us|meet\.google\.com|teams\.microsoft\.com|teams\.live\.com|webex\.com)\/[^\s"'<>)]+/i;
+// Same provider set as meetings-helpers, but requires at least one path
+// character (an event field holding a bare origin isn't a join link).
+const MEETING_URL_RE = new RegExp(
+  `https?://(?:[a-z0-9-]+\\.)*(?:${MEETING_PROVIDER_HOSTS})/[^\\s"'<>)]+`,
+  "i",
+);
 
 /** Pull the first supported meeting URL from an event's various fields. */
 export function extractMeetingUrl(event: UpcomingEvent): string | null {
@@ -563,8 +567,6 @@ export async function listCalendarEventsWindow(
       };
     });
 }
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** True when the error means the `mode` column hasn't been migrated yet. */
 function isMissingModeColumn(error: { code?: string; message?: string }): boolean {

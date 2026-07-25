@@ -326,8 +326,6 @@ export const getFolderRetryMetrics = createServerFn({ method: "GET" })
 
 // ─── Sync job metrics (queue counts, latency, retries, failures) ────────────
 
-export type SyncJobStatusCount = { status: string; count: number };
-
 export type SyncJobDlqRow = {
   id: string;
   gmail_message_id: string;

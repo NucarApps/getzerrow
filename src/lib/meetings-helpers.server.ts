@@ -3,13 +3,25 @@
 // handler/inputValidator — belongs here so the `?tss-serverfn-split` transform
 // never has to reach across sibling module scope for it.
 
-const MEETING_URL_RE =
-  /^https?:\/\/(?:[a-z0-9-]+\.)*(?:zoom\.us|meet\.google\.com|teams\.microsoft\.com|teams\.live\.com|webex\.com)\//i;
+/**
+ * Hosts we can send the notetaker to, as a regex alternation. Single-sourced
+ * because the provider list is the part that drifts when support is added —
+ * every meeting-URL pattern in the codebase is built from this.
+ */
+export const MEETING_PROVIDER_HOSTS =
+  "zoom\\.us|meet\\.google\\.com|teams\\.microsoft\\.com|teams\\.live\\.com|webex\\.com";
+
+const MEETING_URL_RE = new RegExp(
+  `^https?://(?:[a-z0-9-]+\\.)*(?:${MEETING_PROVIDER_HOSTS})/`,
+  "i",
+);
 
 // Same pattern, but matches anywhere within a longer string (invite emails,
 // calendar blurbs) so we can pull the join link out of pasted text.
-const MEETING_URL_SCAN_RE =
-  /https?:\/\/(?:[a-z0-9-]+\.)*(?:zoom\.us|meet\.google\.com|teams\.microsoft\.com|teams\.live\.com|webex\.com)\/[^\s<>"')]*/i;
+const MEETING_URL_SCAN_RE = new RegExp(
+  `https?://(?:[a-z0-9-]+\\.)*(?:${MEETING_PROVIDER_HOSTS})/[^\\s<>"')]*`,
+  "i",
+);
 
 /**
  * Pull the first supported meeting URL out of any pasted text. Returns the
@@ -28,7 +40,7 @@ export const NO_LINK_MESSAGE =
 
 // A blocklist entry is either a full email (jane@lawfirm.com) or a bare
 // domain (lawfirm.com) to skip everyone at a firm.
-export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export { EMAIL_RE } from "./contacts/email-address";
 export const DOMAIN_RE = /^(?:[a-z0-9-]+\.)+[a-z]{2,}$/;
 
 export const DEFAULT_CHAT_MESSAGE =

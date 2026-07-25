@@ -43,7 +43,13 @@ vi.mock("@/lib/google-oauth.server", () => {
       this.name = "NeedsReconnectError";
     }
   }
-  return { NeedsReconnectError, getAccessToken: async () => "test-token" };
+  return {
+    NeedsReconnectError,
+    getAccessToken: async () => "test-token",
+    // people-client.server re-exports CONTACTS_SCOPE from here, so the mock
+    // has to carry it or accountHasContactsScope compares against undefined.
+    CONTACTS_SCOPE: "https://www.googleapis.com/auth/contacts",
+  };
 });
 vi.mock("./pull.server", () => ({
   pullFromGoogle: (...args: unknown[]) => pullMock(...args),

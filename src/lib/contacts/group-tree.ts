@@ -70,9 +70,10 @@ export function buildDescendantsById<G extends GroupTreeNode>(
   return out;
 }
 
-/** Depth of the parent chain rooted at `startId` (1 = no parent). Bounded
- *  like the server's chainDepth so malformed data can't loop forever. */
-function chainDepth(parents: Map<string, string | null>, startId: string): number {
+/** Depth of the parent chain rooted at `startId` (1 = no parent). Bounded so
+ *  malformed data can't loop forever. Shared with contact-groups.functions,
+ *  which enforces the same nesting cap server-side. */
+export function chainDepth(parents: Map<string, string | null>, startId: string): number {
   let cursor: string | null = startId;
   let depth = 0;
   while (cursor && depth < 32) {

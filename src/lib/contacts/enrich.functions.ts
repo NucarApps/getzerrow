@@ -5,24 +5,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
-import { sendContactShareEmail } from "../cards.server";
 import { setContactEncryptedFields } from "../sync/encrypted-writer";
 import { PERSONAL_DOMAINS } from "@/lib/company-domains";
-import {
-  getContactDecrypted,
-  getContactListFieldsDecrypted,
-  getEmailsDecrypted,
-} from "../sync/encrypted-reader";
+import { getContactDecrypted, getEmailsDecrypted } from "../sync/encrypted-reader";
 import {
   fetchFromGmail,
   getModel,
   EXTRACT_SCHEMA,
-  ADDRESS_FIELDS,
-  isLikelyHuman,
   normalizeName,
-  firstNameKey,
   pickBetterName,
-  phoneEntrySchema,
 } from "../contacts-helpers.server";
 
 import {

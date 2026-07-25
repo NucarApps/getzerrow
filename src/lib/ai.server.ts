@@ -3,6 +3,7 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 import { getModel } from "./ai-gateway";
 import { raceTimeout } from "./ai-budget";
+import { escapeHtml } from "./escape-html";
 import {
   UNTRUSTED_BOUNDARY_INSTRUCTION,
   sanitizeEmailForPrompt,
@@ -814,9 +815,6 @@ Write a daily digest in Markdown. Start with a single line: "# <short subject>" 
       .join("\n")
       .trim();
   }
-
-  const escapeHtml = (s: string) =>
-    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
   const html = bodyMd
     .split(/\n{2,}/)

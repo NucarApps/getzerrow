@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { truncate } from "@/lib/format";
 
 // Theme id -> [stop1, stop2, stop3] hex
 const THEME_GRADIENTS: Record<string, [string, string, string]> = {
@@ -20,11 +21,6 @@ function esc(s: string | null | undefined) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-}
-
-function truncate(s: string, max: number) {
-  if (s.length <= max) return s;
-  return s.slice(0, max - 1) + "…";
 }
 
 export const Route = createFileRoute("/api/public/og/card/$handle")({

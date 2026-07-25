@@ -2,6 +2,7 @@
 // The <video> element can't send an Authorization header, so we mint an HMAC
 // token (over meetingId + expiry) that the public streaming route verifies.
 import { createHmac, timingSafeEqual } from "crypto";
+import { toBase64Url } from "./base64url";
 
 const DEFAULT_TTL_SECONDS = 60 * 60 * 2; // 2 hours — long enough to watch.
 
@@ -11,12 +12,8 @@ function secret(): string {
   return s;
 }
 
-function base64url(buf: Buffer): string {
-  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
 function sign(meetingId: string, exp: number): string {
-  return base64url(createHmac("sha256", secret()).update(`${meetingId}.${exp}`).digest());
+  return toBase64Url(createHmac("sha256", secret()).update(`${meetingId}.${exp}`).digest());
 }
 
 /** Build a same-origin, tokenized stream path for one meeting recording. */

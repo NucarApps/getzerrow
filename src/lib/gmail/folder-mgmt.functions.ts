@@ -2,73 +2,15 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { emailEncKey } from "@/lib/email-enc-key";
-import {
-  getOwnedAccount,
-  getEmailAccount,
-  getOwnedFolder,
-  getOwnedSchedule,
-  extractDomain,
-  drainCatchupRounds,
-  ianaTz,
-} from "../gmail-helpers.server";
-import { performMove } from "../move-email.server";
-import {
-  backfillRecent,
-  backfillWindow,
-  syncSinceHistory,
-  learnFromLinkedLabel,
-  reconcileLocalInbox,
-  loadOlderFromLabel,
-  runMessageJobs,
-  retryMessageJob,
-  enqueueMessageJob,
-  startBackfillJob,
-  cancelBackfillJob,
-  invalidateAccountContext,
-  invalidateAccountContextForUser,
-  bulkCatchupClaim,
-  syncReadState,
-} from "../sync.server";
-import { CATCHUP_MAX_ROUNDS, CATCHUP_TOTAL_BUDGET_MS } from "../sync/config";
-import {
-  listLabels,
-  createLabel,
-  modifyMessage,
-  batchModifyMessages,
-  trashMessage,
-  sendMessage,
-  ensureWatch,
-  stopWatch,
-  listMessages,
-  getMessage,
-  getMessageMetadata,
-  getMessageLabels,
-  getThread,
-  parseMessage,
-} from "../gmail.server";
-import {
-  suggestReply,
-  suggestRuleUpdates,
-  suggestFolderFromEmails,
-  generateAiRuleFromPurpose,
-  generateAiRuleFromLabelSamples,
-} from "../ai.server";
-import { computeNextRun, enqueueFolderSummaryJob, runFolderSummary } from "../summaries.server";
+import { getOwnedAccount, getOwnedFolder, getOwnedSchedule, ianaTz } from "../gmail-helpers.server";
+import { modifyMessage } from "../gmail.server";
+import { suggestRuleUpdates } from "../ai.server";
+import { computeNextRun, enqueueFolderSummaryJob } from "../summaries.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { signState, buildAuthorizeUrl, getRedirectUri } from "../google-oauth.server";
-import { getRequestHost } from "@tanstack/react-start/server";
 import { logError, logAudit } from "../log.server";
-import { removeLabelsFromCurrent } from "../sync/label-merge";
-import { buildGmailQueries } from "../sync/gmail-query-builder";
-import { matchByFilters, emailVetoedForFolder } from "../sync/filter-engine";
-import type { Folder, Filter, RuleNode } from "../sync/types";
-import {
-  upsertEmailEncrypted,
-  updateEmailEncrypted,
-  setReplyDraftEncrypted,
-  insertFolderExampleEncrypted,
-} from "../sync/encrypted-writer";
+import { updateEmailEncrypted, insertFolderExampleEncrypted } from "../sync/encrypted-writer";
 import { getEmailsDecrypted } from "../sync/encrypted-reader";
+
 export const listFolderHistory = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { folder_id: string; limit?: number; offset?: number }) =>
@@ -700,16 +642,6 @@ export const getFolderSummaryJob = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     if (!job) throw new Error("Job not found");
     return { job };
-  });
-
-// Back-compat: keep the original synchronous entry point available for callers
-// (e.g. the scheduled cron tick) that still want to run a schedule inline.
-export const runFolderSummaryInline = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
-  .handler(async ({ data, context }) => {
-    await getOwnedSchedule(context.userId, data.id);
-    return runFolderSummary(data.id);
   });
 
 // ============ Per-email move + similar ============

@@ -1,26 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { generateText, Output } from "ai";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { sendContactShareEmail } from "../cards.server";
-import { setContactEncryptedFields } from "../sync/encrypted-writer";
-import {
-  getContactDecrypted,
-  getContactListFieldsDecrypted,
-  getEmailsDecrypted,
-} from "../sync/encrypted-reader";
-import {
-  fetchFromGmail,
-  getModel,
-  EXTRACT_SCHEMA,
-  ADDRESS_FIELDS,
-  isLikelyHuman,
-  normalizeName,
-  firstNameKey,
-  pickBetterName,
-  phoneEntrySchema,
-} from "../contacts-helpers.server";
+import { getContactDecrypted } from "../sync/encrypted-reader";
+import { isLikelyHuman, normalizeName } from "../contacts-helpers.server";
 
 export const shareContactByEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

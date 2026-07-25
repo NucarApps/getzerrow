@@ -1,7 +1,7 @@
 // Company resolution shared by contact CRUD, Google Contacts pull, and the
 // CardDAV PUT handler. Plain server module (no createServerFn) so sync/import
 // code can use it without pulling in server-fn machinery.
-import { normalizeCompanyName } from "./normalize";
+import { normalizeCompanyNameDbSynced } from "./normalize";
 
 export type ResolveCtx = {
   supabase: import("@supabase/supabase-js").SupabaseClient;
@@ -20,7 +20,7 @@ export async function findOrCreateCompanyByName(
 ): Promise<ResolvedCompany> {
   const name = rawName.trim();
   if (!name) return null;
-  const key = normalizeCompanyName(name);
+  const key = normalizeCompanyNameDbSynced(name);
   if (!key) return null;
   if (cache?.has(key)) return cache.get(key) ?? null;
 

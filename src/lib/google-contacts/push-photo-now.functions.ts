@@ -7,6 +7,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequestHost } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { assertOwnsContact, assertOwnsCompany } from "@/lib/ownership";
 
 type PhotoSyncFailure = {
   contactId: string;
@@ -63,28 +64,6 @@ async function loadRecentFailures(
       at: r.last_photo_error_at ?? "",
       attempts: r.photo_push_attempts ?? 0,
     }));
-}
-
-async function assertOwnsContact(userId: string, contactId: string): Promise<void> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data } = await supabaseAdmin
-    .from("contacts")
-    .select("id")
-    .eq("id", contactId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (!data) throw new Error("Contact not found");
-}
-
-async function assertOwnsCompany(userId: string, companyId: string): Promise<void> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data } = await supabaseAdmin
-    .from("companies")
-    .select("id")
-    .eq("id", companyId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (!data) throw new Error("Company not found");
 }
 
 /** Fire-and-forget: kick the Google Contacts sync hook in the background so

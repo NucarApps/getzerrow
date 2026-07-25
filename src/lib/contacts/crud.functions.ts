@@ -1,24 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { generateText, Output } from "ai";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { sendContactShareEmail } from "../cards.server";
 import { setContactEncryptedFields } from "../sync/encrypted-writer";
+import { getContactDecrypted, getContactListFieldsDecrypted } from "../sync/encrypted-reader";
 import {
-  getContactDecrypted,
-  getContactListFieldsDecrypted,
-  getEmailsDecrypted,
-} from "../sync/encrypted-reader";
-import {
-  fetchFromGmail,
-  getModel,
-  EXTRACT_SCHEMA,
-  ADDRESS_FIELDS,
-  isLikelyHuman,
   normalizeName,
   firstNameKey,
-  pickBetterName,
   phoneEntrySchema,
   emailEntrySchema,
 } from "../contacts-helpers.server";
@@ -76,8 +64,6 @@ export const MANUAL_TRACKED_FIELDS = [
   "postal_code",
   "country",
 ] as const;
-export type ManualTrackedField = (typeof MANUAL_TRACKED_FIELDS)[number];
-
 const MANUAL_TRACKED_SET: Set<string> = new Set(MANUAL_TRACKED_FIELDS);
 
 /**
@@ -600,42 +586,6 @@ export const renameCompanyForContacts = createServerFn({ method: "POST" })
       p_fields: ["company"],
     });
     await reconcileAutoParentsForContacts(supabase, userId, data.contactIds);
-    return { updated: count ?? 0 };
-  });
-
-/**
- * Set (or clear) the `website` field on every contact in a bucket. Used by
- * the company dialog for name-only buckets so the user can attach a primary
- * domain — bucketing then upgrades the bucket to a domain-keyed one on the
- * next refresh via `contactLogoDomain(website, email)`.
- */
-export const setCompanyWebsiteForContacts = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z
-      .object({
-        contactIds: z.array(z.string().uuid()).min(1).max(1000),
-        website: z.string().trim().max(500).nullable(),
-      })
-      .parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    const value = data.website && data.website.length > 0 ? data.website : null;
-    const { error, count } = await supabase
-      .from("contacts")
-      .update({ website: value }, { count: "exact" })
-      .eq("user_id", userId)
-      .in("id", data.contactIds);
-    if (error) throw new Error(error.message);
-    if (value) {
-      // Only lock when the user set a website. Clearing it should re-open
-      // the field to enrichment.
-      await supabase.rpc("add_manual_overrides", {
-        p_ids: data.contactIds,
-        p_fields: ["website"],
-      });
-    }
     return { updated: count ?? 0 };
   });
 

@@ -13,15 +13,6 @@ export function remainingAttemptTimeout(
   return Math.min(attemptMs, remaining);
 }
 
-/** AbortSignal that fires after `ms`. AbortSignal.timeout where
- * available, controller+setTimeout fallback for older runtimes. */
-export function timeoutSignal(ms: number): AbortSignal {
-  if (typeof AbortSignal.timeout === "function") return AbortSignal.timeout(ms);
-  const ctrl = new AbortController();
-  setTimeout(() => ctrl.abort(new Error(`aborted after ${ms}ms`)), ms);
-  return ctrl.signal;
-}
-
 /** Race a promise against a hard timeout so one stalled upstream call can't
  * hang the caller. Rejects with `${label} timed out after ${ms}ms`. */
 export async function raceTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {

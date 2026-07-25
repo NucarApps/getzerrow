@@ -13,6 +13,7 @@ import type { Database } from "@/integrations/supabase/types";
 type FolderUpdate = Database["public"]["Tables"]["folders"]["Update"];
 import {
   proposeFolderChatChanges,
+  settingsPatchSchema,
   summarizeFolderChat,
   type FolderChatAction,
   type FolderChatContext,
@@ -56,28 +57,6 @@ function describeAppliedAction(action: FolderChatAction): string {
       return "Applied a change";
   }
 }
-
-const settingsPatchSchema = z
-  .object({
-    name: z.string().min(1).max(120).optional(),
-    color: z
-      .string()
-      .regex(/^#[0-9a-fA-F]{6}$/)
-      .optional(),
-    priority: z.number().int().min(0).max(1000).optional(),
-    auto_archive: z.boolean().optional(),
-    auto_mark_read: z.boolean().optional(),
-    auto_star: z.boolean().optional(),
-    hide_from_inbox: z.boolean().optional(),
-    skip_ai: z.boolean().optional(),
-    overrides_inbox_override: z.boolean().optional(),
-    is_cold_email: z.boolean().optional(),
-    forward_to: z.string().max(320).nullable().optional(),
-    snooze_hours: z.number().int().min(0).max(720).optional(),
-    min_ai_confidence: z.number().min(0).max(1).optional(),
-    filter_logic: z.enum(["any", "all"]).optional(),
-  })
-  .strict();
 
 const actionInputSchema = z.discriminatedUnion("type", [
   z.object({

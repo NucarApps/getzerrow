@@ -1,74 +1,27 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import {
-  getOwnedAccount,
-  getEmailAccount,
-  getOwnedFolder,
-  getOwnedSchedule,
-  extractDomain,
-  drainCatchupRounds,
-  restoreEmailToInbox,
-  ianaTz,
-} from "../gmail-helpers.server";
+import { getOwnedAccount, restoreEmailToInbox } from "../gmail-helpers.server";
 import { performMove } from "../move-email.server";
+import { runMessageJobs, retryMessageJob, invalidateAccountContext } from "../sync.server";
 import {
-  backfillRecent,
-  backfillWindow,
-  syncSinceHistory,
-  learnFromLinkedLabel,
-  reconcileLocalInbox,
-  loadOlderFromLabel,
-  runMessageJobs,
-  retryMessageJob,
-  enqueueMessageJob,
-  startBackfillJob,
-  cancelBackfillJob,
-  invalidateAccountContext,
-  invalidateAccountContextForUser,
-  bulkCatchupClaim,
-  syncReadState,
-} from "../sync.server";
-import { CATCHUP_MAX_ROUNDS, CATCHUP_TOTAL_BUDGET_MS } from "../sync/config";
-import {
-  listLabels,
-  createLabel,
   modifyMessage,
   batchModifyMessages,
-  trashMessage,
-  sendMessage,
-  ensureWatch,
-  stopWatch,
   listMessages,
   getMessage,
-  getMessageMetadata,
-  getMessageLabels,
-  getThread,
   parseMessage,
 } from "../gmail.server";
-import {
-  suggestReply,
-  suggestRuleUpdates,
-  suggestFolderFromEmails,
-  generateAiRuleFromPurpose,
-  generateAiRuleFromLabelSamples,
-} from "../ai.server";
-import { computeNextRun, enqueueFolderSummaryJob, runFolderSummary } from "../summaries.server";
+import { suggestFolderFromEmails } from "../ai.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { signState, buildAuthorizeUrl, getRedirectUri } from "../google-oauth.server";
 import { getRequestHost } from "@tanstack/react-start/server";
-import { logError, logAudit } from "../log.server";
+import { logError } from "../log.server";
 import { removeLabelsFromCurrent } from "../sync/label-merge";
 import { buildGmailQueries } from "../sync/gmail-query-builder";
-import { matchByFilters, emailVetoedForFolder } from "../sync/filter-engine";
+import { matchByFilters } from "../sync/filter-engine";
 import type { Folder, Filter, RuleNode } from "../sync/types";
-import {
-  upsertEmailEncrypted,
-  updateEmailEncrypted,
-  setReplyDraftEncrypted,
-  insertFolderExampleEncrypted,
-} from "../sync/encrypted-writer";
+import { upsertEmailEncrypted, updateEmailEncrypted } from "../sync/encrypted-writer";
 import { getEmailsDecrypted } from "../sync/encrypted-reader";
+
 export const getSyncLatencyStats = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) =>
@@ -269,28 +222,6 @@ export const runJobsNow = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     return await runMessageJobs(data.limit ?? 25);
-  });
-
-/** Re-enqueue a single Gmail message id for the current user's connected accounts. */
-export const enqueueGmailMessage = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { gmail_account_id: string; gmail_message_id: string }) =>
-    z
-      .object({
-        gmail_account_id: z.string().uuid(),
-        gmail_message_id: z.string().min(1).max(64),
-      })
-      .parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    const { data: acc } = await supabaseAdmin
-      .from("gmail_accounts")
-      .select("id, user_id")
-      .eq("id", data.gmail_account_id)
-      .maybeSingle();
-    if (!acc || acc.user_id !== context.userId) throw new Error("Not found");
-    await enqueueMessageJob(data.gmail_account_id, context.userId, data.gmail_message_id);
-    return { ok: true };
   });
 
 export const addFolderRule = createServerFn({ method: "POST" })

@@ -36,34 +36,6 @@ export const listTasks = createServerFn({ method: "GET" })
     return { tasks: rows ?? [], suggestions: sugg ?? [] };
   });
 
-export const listTasksForMeeting = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ meetingId: z.string().uuid() }).parse(input))
-  .handler(async ({ data, context }) => {
-    const { data: rows, error } = await context.supabase
-      .from("tasks")
-      .select(TaskSelect)
-      .eq("user_id", context.userId)
-      .eq("source_meeting_id", data.meetingId)
-      .order("created_at", { ascending: false });
-    if (error) throw new Error(error.message);
-    return { tasks: rows ?? [] };
-  });
-
-export const listTasksForEmail = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ emailId: z.string().uuid() }).parse(input))
-  .handler(async ({ data, context }) => {
-    const { data: rows, error } = await context.supabase
-      .from("tasks")
-      .select(TaskSelect)
-      .eq("user_id", context.userId)
-      .eq("source_email_id", data.emailId)
-      .order("created_at", { ascending: false });
-    if (error) throw new Error(error.message);
-    return { tasks: rows ?? [] };
-  });
-
 export const createTask = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
@@ -89,36 +61,6 @@ export const createTask = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     return { task: row };
-  });
-
-export const updateTask = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input) =>
-    z
-      .object({
-        id: z.string().uuid(),
-        title: z.string().trim().min(1).max(500).optional(),
-        notes: z.string().trim().max(4000).nullish(),
-        due_at: z.string().datetime().nullish(),
-      })
-      .parse(input),
-  )
-  .handler(async ({ data, context }) => {
-    const patch: {
-      title?: string;
-      notes?: string | null;
-      due_at?: string | null;
-    } = {};
-    if (data.title !== undefined) patch.title = data.title;
-    if (data.notes !== undefined) patch.notes = data.notes ?? null;
-    if (data.due_at !== undefined) patch.due_at = data.due_at ?? null;
-    const { error } = await context.supabase
-      .from("tasks")
-      .update(patch)
-      .eq("id", data.id)
-      .eq("user_id", context.userId);
-    if (error) throw new Error(error.message);
-    return { ok: true };
   });
 
 export const completeTask = createServerFn({ method: "POST" })

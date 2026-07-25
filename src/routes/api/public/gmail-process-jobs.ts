@@ -5,6 +5,7 @@ import { runMessageJobs } from "@/lib/sync.server";
 import { JOB_WORKER_CONCURRENCY } from "@/lib/sync/config";
 import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.server";
 import { withCronRun, logError } from "@/lib/log.server";
+import { clampIntParam } from "@/lib/cron-handler.server";
 
 export const Route = createFileRoute("/api/public/gmail-process-jobs")({
   server: {
@@ -13,7 +14,7 @@ export const Route = createFileRoute("/api/public/gmail-process-jobs")({
         if (!(await isAuthorizedCronRequest(request))) return unauthorizedResponse();
         return withCronRun("gmail-process-jobs", async ({ runId }) => {
           const url = new URL(request.url);
-          const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "100", 10) || 100, 200);
+          const limit = clampIntParam(url, "limit", 1, 200, 100);
           const priorityRaw = url.searchParams.get("priority");
           const priority =
             priorityRaw !== null && priorityRaw !== ""
