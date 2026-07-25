@@ -10,6 +10,19 @@
 
 const DEFAULT_FALLBACK = "—"; // em dash
 
+/**
+ * Clip a string to `max` characters, replacing the tail with an ellipsis.
+ * Returns `fallback` for null/empty input.
+ */
+export function truncate(
+  s: string | null | undefined,
+  max: number,
+  fallback: string = DEFAULT_FALLBACK,
+): string {
+  if (!s) return fallback;
+  return s.length > max ? s.slice(0, max - 1) + "…" : s;
+}
+
 /** Full locale date + time (e.g. "1/23/2026, 4:05 PM"). */
 export function formatDateTime(
   iso: string | null | undefined,

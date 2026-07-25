@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/integrations/supabase/types";
+import type { DB } from "@/lib/supabase-db";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { normalizeCompanyName } from "./company-name";
 import { deriveCompanyKey } from "./company-key";
@@ -14,8 +13,6 @@ type ContactShape = {
   website: string | null;
   company_id: string | null;
 };
-
-type DB = SupabaseClient<Database>;
 
 /**
  * Auto company subgroups

@@ -1,11 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/integrations/supabase/types";
+import type { DB } from "@/lib/supabase-db";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { reconcileIfAuto } from "./contacts/auto-company-subgroups.functions";
-
-type DB = SupabaseClient<Database>;
 
 const COLOR = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 

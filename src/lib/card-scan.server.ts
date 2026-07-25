@@ -9,6 +9,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getModel } from "./ai-gateway";
 import { parseLenientJson } from "./ai-untrusted";
 import { setContactEncryptedFields } from "./sync/encrypted-writer";
+import { normalizeName } from "./contacts-helpers.server";
 
 const SCAN_SCHEMA = z.object({
   name: z.string().nullable(),
@@ -153,43 +154,6 @@ export type ScanContactInput = {
   phones?: ScanPhoneEntry[];
 };
 
-/** Normalize a contact display name to "First Last" form — a copy of
- *  contacts.functions.ts normalizeName (kept here to stay server-only). */
-function normalizeScannedName(input: string | null | undefined): string | null {
-  if (!input) return null;
-  let s = String(input).trim();
-  s = s.replace(/^["'`<\s]+|["'`>\s]+$/g, "");
-  s = s.replace(/\s*[([][^)\]]*[)\]]\s*$/g, "");
-  s = s.replace(/\s+/g, " ").trim();
-  if (!s) return null;
-  if (/@/.test(s) && /\.[a-z]{2,}$/i.test(s)) return null;
-
-  const commaCount = (s.match(/,/g) ?? []).length;
-  if (commaCount === 1) {
-    const [last, rest] = s.split(",").map((x) => x.trim());
-    if (last && rest && /^[\p{L}'’\-. ]+$/u.test(last) && /^[\p{L}'’\-. ]+$/u.test(rest)) {
-      s = `${rest} ${last}`.replace(/\s+/g, " ").trim();
-    }
-  }
-
-  const isAllCaps = s === s.toUpperCase() && /[A-Z]/.test(s);
-  const isAllLower = s === s.toLowerCase() && /[a-z]/.test(s);
-  if (isAllCaps || isAllLower) {
-    s = s
-      .toLowerCase()
-      .split(" ")
-      .map((tok) =>
-        tok
-          .split("-")
-          .map((p) => (p ? p[0].toUpperCase() + p.slice(1) : p))
-          .join("-"),
-      )
-      .join(" ");
-  }
-
-  return s || null;
-}
-
 /** Save a reviewed scan draft as a contact — the same path as the web's
  *  createContactFromScan: upsert on user+email (no duplicates), sensitive
  *  fields written only through the encrypted RPC, phones replaced in full. */
@@ -200,7 +164,7 @@ export async function saveScannedContact(userId: string, data: ScanContactInput)
   const primaryPhone = primary?.number?.trim() || phoneFromData || null;
   const plaintextPayload = {
     ...rest,
-    name: normalizeScannedName(rest.name ?? null),
+    name: normalizeName(rest.name ?? null),
   };
   const { data: row, error } = await supabaseAdmin
     .from("contacts")

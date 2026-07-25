@@ -8,8 +8,7 @@
 
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/integrations/supabase/types";
+import type { DB } from "@/lib/supabase-db";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import {
   AI_CATEGORIES,
@@ -21,8 +20,7 @@ import {
 import { pairKey, planRuleMembershipSync } from "./company-label-sync";
 import { reconcileIfAuto } from "./auto-company-subgroups.functions";
 import { bumpResyncNonce } from "@/lib/carddav/settings.functions";
-
-type DB = SupabaseClient<Database>;
+import { chunk } from "@/lib/chunk";
 
 const RULE_TYPE = z.enum(["domain", "company_id", "ai_category"]);
 
@@ -34,12 +32,6 @@ const RULE_TYPE = z.enum(["domain", "company_id", "ai_category"]);
 // leavers drop). Only touches source='rule' rows; see company-label-sync.ts.
 
 const CHUNK = 500;
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
 
 export async function syncCompanyRuleMemberships(
   supabase: DB,

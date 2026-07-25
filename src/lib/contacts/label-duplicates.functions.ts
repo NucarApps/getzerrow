@@ -11,7 +11,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/integrations/supabase/types";
+import type { DB } from "@/lib/supabase-db";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { getModel } from "@/lib/ai-gateway";
 import {
@@ -23,8 +23,6 @@ import {
 } from "./label-clusters";
 import { reconcileAutoParentsForContacts } from "./auto-company-subgroups.functions";
 import { bumpResyncNonce } from "@/lib/carddav/settings.functions";
-
-type DB = SupabaseClient<Database>;
 
 type LabelLite = LabelClusterInput & {
   color: string | null;

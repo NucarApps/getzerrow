@@ -2,6 +2,7 @@
 // Server-only. Uses the existing Gmail OAuth pair — the caller is responsible
 // for ensuring the account has granted the `contacts` scope.
 import { getAccessToken } from "@/lib/google-oauth.server";
+import { chunk } from "@/lib/chunk";
 import { READ_PERSON_FIELDS, UPDATE_PERSON_FIELDS, type Person } from "./mapper";
 
 const BASE = "https://people.googleapis.com/v1";
@@ -9,7 +10,8 @@ const TIMEOUT_MS = 20_000;
 const CONTACT_GROUP_LIST_FIELDS = "name,groupType";
 const CONTACT_GROUP_MEMBER_FIELDS = "name,groupType,memberCount";
 
-export const CONTACTS_SCOPE = "https://www.googleapis.com/auth/contacts";
+// Re-exported (not redefined) so the OAuth scope list stays single-sourced.
+export { CONTACTS_SCOPE } from "@/lib/google-oauth.server";
 
 export class PeopleApiError extends Error {
   status: number;
@@ -276,11 +278,6 @@ export async function modifyGroupMembers(
   remove: string[],
 ): Promise<void> {
   // Google caps members:modify at ~1000 per call — chunk to stay safe.
-  const chunk = <T>(arr: T[], n: number): T[][] => {
-    const out: T[][] = [];
-    for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
-    return out;
-  };
   const passes = Math.max(chunk(add, 500).length, chunk(remove, 500).length, 1);
   const addChunks = chunk(add, 500);
   const removeChunks = chunk(remove, 500);

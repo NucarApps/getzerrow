@@ -8,6 +8,7 @@
 // against the local read flags — cheap, and naturally covers every folder and
 // archived mail across the whole mailbox.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { chunk } from "@/lib/chunk";
 import { listMessages } from "../gmail.server";
 import { logError } from "../log.server";
 
@@ -47,12 +48,6 @@ export function diffReadState(
     if (gmailUnread.has(row.gmail_message_id)) toMarkUnread.push(row.id);
   }
   return { toMarkRead, toMarkUnread };
-}
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
 }
 
 /**

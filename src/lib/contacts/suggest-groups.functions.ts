@@ -1,15 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { z } from "zod";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/integrations/supabase/types";
+import type { DB } from "@/lib/supabase-db";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { getModel } from "@/lib/ai-gateway";
 import { logInfo } from "@/lib/log.server";
 import { getEmailsDecrypted, searchEmailsParticipantsDecrypted } from "@/lib/sync/encrypted-reader";
 import { normalizeCompanyName } from "./company-name";
-
-type DB = SupabaseClient<Database>;
 
 const MAX_DEPTH = 4;
 const RESCAN_COOLDOWN_MS = 5 * 60 * 1000;

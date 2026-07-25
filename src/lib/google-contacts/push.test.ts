@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { MY_CONTACTS_RESOURCE, chunk, formatGoogleLabelName, withMyContacts } from "./push.server";
+import { MY_CONTACTS_RESOURCE, formatGoogleLabelName, withMyContacts } from "./push.server";
+import { chunk } from "@/lib/chunk";
 import { buildContactGroupUpdateBody, getContactGroupMemberQuery } from "./people-client.server";
 
 describe("chunk", () => {

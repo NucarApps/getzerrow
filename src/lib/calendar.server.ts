@@ -5,6 +5,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getAccessToken } from "./google-oauth.server";
 import { logError } from "./log.server";
+import { EMAIL_RE } from "./contacts/email-address";
 
 const CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -84,8 +85,6 @@ type EventsResponse = {
   items?: CalendarEvent[];
   nextPageToken?: string;
 };
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * Pure parser: extract every distinct attendee/organizer email address from a

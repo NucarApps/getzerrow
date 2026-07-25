@@ -1,5 +1,6 @@
 // Gmail API helpers — direct calls to Google with per-user OAuth tokens. Server-only.
 import { getAccessToken } from "./google-oauth.server";
+import { toBase64Url } from "./base64url";
 
 const BASE = "https://gmail.googleapis.com/gmail/v1";
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -246,11 +247,7 @@ export async function sendMessage(
   // RFC 822 requires an empty line between headers and body — keep it outside
   // the filter(Boolean) above, which would otherwise strip it.
   const message = `${headers}\r\n\r\n${body}`;
-  const raw = Buffer.from(message)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+  const raw = toBase64Url(message);
   return gmailFetch(accountId, "/users/me/messages/send", {
     method: "POST",
     body: JSON.stringify({ raw, threadId }),
@@ -276,11 +273,7 @@ export async function createDraft(
     .filter(Boolean)
     .join("\r\n");
   const message = `${headers}\r\n\r\n${body}`;
-  const raw = Buffer.from(message)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+  const raw = toBase64Url(message);
   return gmailFetch(accountId, "/users/me/drafts", {
     method: "POST",
     body: JSON.stringify({ message: { raw, ...(threadId ? { threadId } : {}) } }),
@@ -293,11 +286,7 @@ export async function insertMessage(
   rawRfc822: string,
   labelIds: string[] = ["INBOX", "UNREAD"],
 ) {
-  const raw = Buffer.from(rawRfc822)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+  const raw = toBase64Url(rawRfc822);
   return gmailFetch<{ id: string; threadId: string }>(
     accountId,
     "/users/me/messages?internalDateSource=dateHeader",

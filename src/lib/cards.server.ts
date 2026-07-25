@@ -1,5 +1,7 @@
 // Server-only helpers for vCard generation and sending business cards via Gmail.
 import { getAccessToken } from "./google-oauth.server";
+import { toBase64Url } from "./base64url";
+import { escapeHtml } from "./escape-html";
 
 export type CardData = {
   name: string | null;
@@ -60,6 +62,75 @@ export function buildVCard(c: CardData, publicUrl?: string): string {
   return lines.join("\r\n");
 }
 
+/**
+ * Assemble a multipart/mixed RFC822 message (text + html alternative, plus a
+ * base64 vCard attachment) and hand it to Gmail's messages.send.
+ *
+ * Shared by sendCardEmail and sendContactShareEmail, which previously carried
+ * byte-identical copies of this block and differed only in the precomputed
+ * subject/body/filename.
+ */
+async function sendVCardEmail(args: {
+  token: string;
+  fromEmail: string;
+  toEmail: string;
+  subject: string;
+  textBody: string;
+  htmlBody: string;
+  vcf: string;
+  vcfFilename: string;
+}) {
+  const boundaryAlt = `alt_${Math.random().toString(36).slice(2)}`;
+  const boundaryMixed = `mix_${Math.random().toString(36).slice(2)}`;
+  const vcfB64 = Buffer.from(args.vcf, "utf-8").toString("base64");
+
+  const rfc822 = [
+    `From: ${args.fromEmail}`,
+    `To: ${args.toEmail}`,
+    `Subject: ${args.subject}`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/mixed; boundary="${boundaryMixed}"`,
+    "",
+    `--${boundaryMixed}`,
+    `Content-Type: multipart/alternative; boundary="${boundaryAlt}"`,
+    "",
+    `--${boundaryAlt}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: 7bit",
+    "",
+    args.textBody,
+    "",
+    `--${boundaryAlt}`,
+    'Content-Type: text/html; charset="UTF-8"',
+    "Content-Transfer-Encoding: 7bit",
+    "",
+    args.htmlBody,
+    "",
+    `--${boundaryAlt}--`,
+    "",
+    `--${boundaryMixed}`,
+    `Content-Type: text/vcard; name="${args.vcfFilename}"`,
+    "Content-Transfer-Encoding: base64",
+    `Content-Disposition: attachment; filename="${args.vcfFilename}"`,
+    "",
+    vcfB64.replace(/(.{76})/g, "$1\r\n"),
+    "",
+    `--${boundaryMixed}--`,
+    "",
+  ].join("\r\n");
+
+  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${args.token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ raw: toBase64Url(rfc822) }),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Gmail send failed (${res.status}): ${t.slice(0, 300)}`);
+  }
+  return res.json();
+}
+
 /** Send the user's business card to a recipient via their Gmail account, with vCard attachment. */
 export async function sendCardEmail(args: {
   accountId: string;
@@ -103,69 +174,16 @@ View / save my card: ${args.publicUrl}
     footerNote: "Sent with Zerrow",
   });
 
-  const boundaryAlt = `alt_${Math.random().toString(36).slice(2)}`;
-  const boundaryMixed = `mix_${Math.random().toString(36).slice(2)}`;
-  const vcfB64 = Buffer.from(vcf, "utf-8").toString("base64");
-
-  const rfc822 = [
-    `From: ${args.fromEmail}`,
-    `To: ${args.toEmail}`,
-    `Subject: ${subject}`,
-    "MIME-Version: 1.0",
-    `Content-Type: multipart/mixed; boundary="${boundaryMixed}"`,
-    "",
-    `--${boundaryMixed}`,
-    `Content-Type: multipart/alternative; boundary="${boundaryAlt}"`,
-    "",
-    `--${boundaryAlt}`,
-    'Content-Type: text/plain; charset="UTF-8"',
-    "Content-Transfer-Encoding: 7bit",
-    "",
+  return sendVCardEmail({
+    token,
+    fromEmail: args.fromEmail,
+    toEmail: args.toEmail,
+    subject,
     textBody,
-    "",
-    `--${boundaryAlt}`,
-    'Content-Type: text/html; charset="UTF-8"',
-    "Content-Transfer-Encoding: 7bit",
-    "",
     htmlBody,
-    "",
-    `--${boundaryAlt}--`,
-    "",
-    `--${boundaryMixed}`,
-    `Content-Type: text/vcard; name="${vcfFilename}"`,
-    "Content-Transfer-Encoding: base64",
-    `Content-Disposition: attachment; filename="${vcfFilename}"`,
-    "",
-    vcfB64.replace(/(.{76})/g, "$1\r\n"),
-    "",
-    `--${boundaryMixed}--`,
-    "",
-  ].join("\r\n");
-
-  const raw = Buffer.from(rfc822)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-
-  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ raw }),
+    vcf,
+    vcfFilename,
   });
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`Gmail send failed (${res.status}): ${t.slice(0, 300)}`);
-  }
-  return res.json();
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 // ---------------------------------------------------------------------------
@@ -432,59 +450,14 @@ ${sigLines}
     addressLines,
   });
 
-  const boundaryAlt = `alt_${Math.random().toString(36).slice(2)}`;
-  const boundaryMixed = `mix_${Math.random().toString(36).slice(2)}`;
-  const vcfB64 = Buffer.from(vcf, "utf-8").toString("base64");
-
-  const rfc822 = [
-    `From: ${args.fromEmail}`,
-    `To: ${args.toEmail}`,
-    `Subject: ${subject}`,
-    "MIME-Version: 1.0",
-    `Content-Type: multipart/mixed; boundary="${boundaryMixed}"`,
-    "",
-    `--${boundaryMixed}`,
-    `Content-Type: multipart/alternative; boundary="${boundaryAlt}"`,
-    "",
-    `--${boundaryAlt}`,
-    'Content-Type: text/plain; charset="UTF-8"',
-    "Content-Transfer-Encoding: 7bit",
-    "",
+  return sendVCardEmail({
+    token,
+    fromEmail: args.fromEmail,
+    toEmail: args.toEmail,
+    subject,
     textBody,
-    "",
-    `--${boundaryAlt}`,
-    'Content-Type: text/html; charset="UTF-8"',
-    "Content-Transfer-Encoding: 7bit",
-    "",
     htmlBody,
-    "",
-    `--${boundaryAlt}--`,
-    "",
-    `--${boundaryMixed}`,
-    `Content-Type: text/vcard; name="${vcfFilename}"`,
-    "Content-Transfer-Encoding: base64",
-    `Content-Disposition: attachment; filename="${vcfFilename}"`,
-    "",
-    vcfB64.replace(/(.{76})/g, "$1\r\n"),
-    "",
-    `--${boundaryMixed}--`,
-    "",
-  ].join("\r\n");
-
-  const raw = Buffer.from(rfc822)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-
-  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ raw }),
+    vcf,
+    vcfFilename,
   });
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`Gmail send failed (${res.status}): ${t.slice(0, 300)}`);
-  }
-  return res.json();
 }

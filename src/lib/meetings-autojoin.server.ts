@@ -8,6 +8,7 @@ import { getAccessToken } from "./google-oauth.server";
 import { createBot, detectPlatform } from "./recall.server";
 import { loadBotConfig } from "./meetings.server";
 import { logError, logInfo } from "./log.server";
+import { EMAIL_RE } from "./contacts/email-address";
 
 const CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -563,8 +564,6 @@ export async function listCalendarEventsWindow(
       };
     });
 }
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** True when the error means the `mode` column hasn't been migrated yet. */
 function isMissingModeColumn(error: { code?: string; message?: string }): boolean {

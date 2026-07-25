@@ -3,6 +3,7 @@
 // and skipped — the next pull → push cycle will reconcile them.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { logInfo, logError } from "@/lib/log.server";
+import { chunk } from "@/lib/chunk";
 import {
   createPerson,
   updatePerson,
@@ -41,14 +42,6 @@ const PUSH_WALL_BUDGET_MS = 55_000;
 // each contact does ~2-3 sequential API round-trips; going wider than this
 // runs into per-user rate limits without meaningfully improving throughput.
 const CONTACT_PUSH_CONCURRENCY = 5;
-
-/** Slice `items` into fixed-size chunks preserving order. Exported for tests. */
-export function chunk<T>(items: T[], size: number): T[][] {
-  if (size <= 0) return [items];
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
-}
 
 export async function pushToGoogle(
   ids: Ids,

@@ -28,7 +28,7 @@ export const NO_LINK_MESSAGE =
 
 // A blocklist entry is either a full email (jane@lawfirm.com) or a bare
 // domain (lawfirm.com) to skip everyone at a firm.
-export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export { EMAIL_RE } from "./contacts/email-address";
 export const DOMAIN_RE = /^(?:[a-z0-9-]+\.)+[a-z]{2,}$/;
 
 export const DEFAULT_CHAT_MESSAGE =

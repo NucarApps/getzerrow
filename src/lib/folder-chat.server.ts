@@ -10,8 +10,9 @@ import { z } from "zod";
 import { gatewayTextCompletion, proposeWithRetry } from "./lovable-gateway.server";
 
 // Partial patch of scalar/boolean folder settings. Every field optional — the
-// model only sets what it wants to change.
-const settingsPatchSchema = z
+// model only sets what it wants to change. Exported so folder-chat.functions
+// validates against this exact shape instead of a hand-kept duplicate.
+export const settingsPatchSchema = z
   .object({
     name: z.string().min(1).max(120).optional(),
     color: z
