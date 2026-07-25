@@ -25,3 +25,27 @@ export function getGateway() {
 export function getModel(modelId: string = DEFAULT_AI_MODEL) {
   return getGateway()(modelId);
 }
+
+/**
+ * Flatten a provider/model error into one loggable line.
+ *
+ * Model SDK errors carry the useful detail on non-standard fields (`status`,
+ * `responseBody`) that `String(e)` throws away, which is what makes a failed
+ * cascade attempt diagnosable. Four near-identical copies of this lived in
+ * ai.server (twice), card-scan.server, and contacts/scan.functions; this is the
+ * superset — the two that omitted `responseBody` were the lossy ones.
+ */
+export function describeError(e: unknown): string {
+  const err = e as {
+    name?: unknown;
+    status?: unknown;
+    message?: unknown;
+    responseBody?: unknown;
+  };
+  const parts: string[] = [];
+  if (typeof err?.name === "string") parts.push(err.name);
+  if (typeof err?.status === "number") parts.push(`status=${err.status}`);
+  if (typeof err?.message === "string") parts.push(err.message);
+  if (err?.responseBody != null) parts.push(`body=${String(err.responseBody).slice(0, 200)}`);
+  return parts.join(" | ").slice(0, 400) || "unknown error";
+}

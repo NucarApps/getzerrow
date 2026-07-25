@@ -25,7 +25,6 @@ import {
   reconcileInboxFromGmail,
   syncMyReadState,
   backgroundSync,
-  listGmailLabels,
   listMyGmailAccounts,
 } from "@/lib/gmail.functions";
 import { BACKGROUND_SYNC_INTERVAL_MS } from "@/lib/sync/config";
@@ -115,7 +114,6 @@ import { RuleFromEmailDialog } from "@/components/emails/RuleFromEmailDialog";
 import { FilterLikeThisDrawer } from "@/components/emails/FilterLikeThisDrawer";
 import { EditFolderDialog } from "@/components/folders/EditFolderDialog";
 import type { Folder as FolderSettings, GLabel } from "@/components/folders/FolderEditor";
-import { FOLDER_COLUMNS } from "@/components/folders/editor/types";
 import { RouteErrorFallback } from "@/components/RouteErrorFallback";
 import cobwebInbox from "@/assets/cobweb-inbox.svg";
 import type { RuleNode } from "@/lib/sync/types";
@@ -137,6 +135,7 @@ import { EmailBodyFrame, EmailBodyInline } from "@/components/emails/email-body-
 import { hasVisibleHtml } from "@/lib/email-html";
 import { SwipeRow } from "@/components/emails/swipe-row";
 import { AiDecisionDrawer } from "@/components/emails/AiDecisionDrawer";
+import { useFoldersFullQuery, useGmailLabelsQuery } from "@/hooks/use-folder-queries";
 
 export const Route = createFileRoute("/_authenticated/inbox")({
   component: InboxPage,
@@ -672,32 +671,11 @@ function InboxPage() {
   }, [isStaleFolder, setSelectedFolder]);
 
   // Full folder rows + Gmail labels feed the in-place folder settings editor
-  // (gear icon in the folder header). Query keys intentionally mirror the
-  // sidebar's so both share one cache entry — no duplicate fetches.
-  const listLabelsFn = useServerFn(listGmailLabels);
-  const fullFoldersQ = useQuery({
-    queryKey: ["folders-full", accountId],
-    enabled: !!accountId,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("folders")
-        .select(FOLDER_COLUMNS)
-        .eq("gmail_account_id", accountId!)
-        .order("name", { ascending: true });
-      return (data ?? []) as FolderSettings[];
-    },
-  });
-  const labelsQ = useQuery({
-    queryKey: ["gmail-labels", accountId],
-    enabled: !!accountId,
-    queryFn: async () => {
-      try {
-        return (await listLabelsFn({ data: { account_id: accountId! } })).labels as GLabel[];
-      } catch {
-        return [] as GLabel[];
-      }
-    },
-  });
+  // (gear icon in the folder header). Shared hooks with the sidebar, so both
+  // the cache entry AND the fetch itself are common — the query keys already
+  // matched, but the queryFns used to be copy-pasted.
+  const fullFoldersQ = useFoldersFullQuery<FolderSettings>(accountId);
+  const labelsQ = useGmailLabelsQuery<GLabel>(accountId);
 
   // Search data fetching keys off the debounced term so it's stable across
   // keystrokes; `searchTerm` is the single source of truth for "what are we

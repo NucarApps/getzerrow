@@ -19,6 +19,7 @@ import { reconcileLabelsToPatch } from "../sync/label-merge";
 import { matchByFilters } from "../sync/filter-engine";
 import type { Folder, Filter } from "../sync/types";
 import { upsertEmailEncrypted, updateEmailEncrypted } from "../sync/encrypted-writer";
+import { toEmailUpsert } from "../sync/email-upsert";
 
 export const stripFolderLabelPast = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -294,30 +295,13 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
                   }
                 }
               }
-              const { id: newId, error } = await upsertEmailEncrypted({
-                user_id: context.userId,
-                gmail_account_id: accountId,
-                gmail_message_id: p.gmail_message_id,
-                thread_id: p.thread_id,
-                from_addr: p.from_addr,
-                from_name: p.from_name,
-                to_addrs: p.to_addrs,
-                cc: null,
-                list_id: null,
-                in_reply_to: null,
-                subject: p.subject,
-                snippet: p.snippet,
-                body_text: p.body_text,
-                body_html: p.body_html,
-                received_at: p.received_at,
-                is_read: p.is_read,
-                is_archived: !(p.raw_labels ?? []).includes("INBOX"),
-                has_attachment: p.has_attachment,
-                raw_labels: p.raw_labels,
-                classified_by: classified_by ?? "pending",
-                processed_at: null,
-                published_at_ms: null,
-              });
+              const { id: newId, error } = await upsertEmailEncrypted(
+                toEmailUpsert(p, {
+                  user_id: context.userId,
+                  gmail_account_id: accountId,
+                  classified_by: classified_by ?? "pending",
+                }),
+              );
               if (!error) {
                 totalIngested++;
                 if (newId && folder_id) {

@@ -159,9 +159,3 @@ export const LATENCY_WARN_MS = 3_000;
 export const STALENESS_LIVE_HOURS = 1;
 /** Between LIVE and this: amber. Above: red. */
 export const STALENESS_AMBER_HOURS = 6;
-
-// ─── Retention defaults ──────────────────────────────────────────────────
-
-/** pubsub_events retention for error rows, kept longer than normal rows
- * for forensics. */
-export const PUBSUB_KEEP_ERRORS_DAYS = 60;

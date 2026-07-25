@@ -4,37 +4,14 @@
 // A custom company photo takes priority over the picked/auto brand logo and
 // cascades to every member of the company that has no photo of their own.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import {
+  shortHash,
+  extForMime,
+  pathToBucketKey as bucketKeyOf,
+  MAX_STORED_PHOTO_BYTES as MAX_LOGO_BYTES,
+} from "@/lib/photo-storage.server";
 
 export const COMPANY_LOGO_BUCKET = "company-logos";
-const MAX_LOGO_BYTES = 5 * 1024 * 1024;
-
-async function shortHash(bytes: Uint8Array): Promise<string> {
-  const buf = bytes.buffer.slice(
-    bytes.byteOffset,
-    bytes.byteOffset + bytes.byteLength,
-  ) as ArrayBuffer;
-  const digest = await crypto.subtle.digest("SHA-256", buf);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("")
-    .slice(0, 16);
-}
-
-function extForMime(mime: string): string {
-  const m = mime.toLowerCase();
-  if (m.includes("png")) return "png";
-  if (m.includes("gif")) return "gif";
-  if (m.includes("webp")) return "webp";
-  return "jpg";
-}
-
-function pathToBucketKey(publicUrl: string | null): string | null {
-  if (!publicUrl) return null;
-  const marker = `/${COMPANY_LOGO_BUCKET}/`;
-  const idx = publicUrl.indexOf(marker);
-  if (idx < 0) return null;
-  return decodeURIComponent(publicUrl.slice(idx + marker.length).split("?")[0]);
-}
 
 /** Upload a custom logo for a company and set `companies.logo_url`. Records
  *  the bytes' SHA-256 into `company_logo_hashes` so an iOS round-trip of this
@@ -59,7 +36,8 @@ export async function saveCompanyPhoto(
     .eq("id", companyId)
     .eq("user_id", userId)
     .maybeSingle();
-  const previousKey = pathToBucketKey(
+  const previousKey = bucketKeyOf(
+    COMPANY_LOGO_BUCKET,
     (current as { logo_url?: string | null } | null)?.logo_url ?? null,
   );
 
@@ -112,7 +90,10 @@ export async function deleteCompanyPhoto(userId: string, companyId: string): Pro
     .eq("id", companyId)
     .eq("user_id", userId)
     .maybeSingle();
-  const key = pathToBucketKey((current as { logo_url?: string | null } | null)?.logo_url ?? null);
+  const key = bucketKeyOf(
+    COMPANY_LOGO_BUCKET,
+    (current as { logo_url?: string | null } | null)?.logo_url ?? null,
+  );
   if (key) {
     await supabaseAdmin.storage.from(COMPANY_LOGO_BUCKET).remove([key]);
   }
@@ -129,7 +110,7 @@ export async function deleteCompanyPhoto(userId: string, companyId: string): Pro
 export async function loadCompanyPhotoBytes(
   logoUrl: string | null,
 ): Promise<{ bytes: Uint8Array; mime: string } | null> {
-  const key = pathToBucketKey(logoUrl);
+  const key = bucketKeyOf(COMPANY_LOGO_BUCKET, logoUrl);
   if (!key) return null;
   const { data, error } = await supabaseAdmin.storage.from(COMPANY_LOGO_BUCKET).download(key);
   if (error || !data) return null;

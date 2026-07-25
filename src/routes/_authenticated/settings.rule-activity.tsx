@@ -1,4 +1,5 @@
 import { Fragment, useState } from "react";
+import { formatRelativeTime } from "@/lib/format";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -59,18 +60,6 @@ function statusVariant(status: ExecutedRuleRow["status"]) {
   if (status === "error") return "destructive" as const;
   if (status === "applied") return "secondary" as const;
   return "outline" as const;
-}
-
-function relTime(iso: string | null): string {
-  if (!iso) return "—";
-  const diff = Date.now() - new Date(iso).getTime();
-  const s = Math.floor(diff / 1000);
-  if (s < 60) return `${Math.max(s, 0)}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
 }
 
 function RuleActivitySettings() {
@@ -205,7 +194,7 @@ function RuleActivitySettings() {
                           )}
                         </TableCell>
                         <TableCell className="p-2 whitespace-nowrap" title={r.created_at}>
-                          {relTime(r.created_at)}
+                          {formatRelativeTime(r.created_at)}
                         </TableCell>
                         <TableCell className="p-2">
                           <Badge variant={statusVariant(r.status)} className="text-[10px]">

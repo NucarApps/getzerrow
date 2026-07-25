@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useGoogleReconnect } from "@/hooks/use-google-reconnect";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -22,7 +23,7 @@ import {
 import { toast } from "sonner";
 import { RefreshCw, AlertCircle } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
-import { listMyGmailAccounts, startConnectGmail } from "@/lib/gmail/accounts.functions";
+import { listMyGmailAccounts } from "@/lib/gmail/accounts.functions";
 import {
   syncGoogleContactsNow,
   getGoogleContactsSyncStatus,
@@ -79,7 +80,7 @@ function AccountRow({
   const forceFull = useServerFn(forceFullGoogleContactsResync);
   const backfillEmails = useServerFn(backfillMultiEmailsFromGoogle);
   const backfillPhotos = useServerFn(backfillGoogleContactPhotos);
-  const connect = useServerFn(startConnectGmail);
+  const startGoogleReconnect = useGoogleReconnect();
   const [reconnecting, setReconnecting] = useState(false);
   const [confirmUpgrade, setConfirmUpgrade] = useState(false);
   const [confirmForce, setConfirmForce] = useState(false);
@@ -190,13 +191,11 @@ function AccountRow({
 
   async function handleReconnect() {
     setReconnecting(true);
-    try {
-      const { url } = await connect({ data: { login_hint: account.email_address } });
-      window.location.href = url;
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to start reconnect");
-      setReconnecting(false);
-    }
+    const ok = await startGoogleReconnect({
+      loginHint: account.email_address,
+      errorMessage: "Failed to start reconnect",
+    });
+    if (!ok) setReconnecting(false);
   }
 
   function handleModeChange(next: string) {

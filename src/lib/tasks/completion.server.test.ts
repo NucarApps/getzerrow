@@ -26,6 +26,7 @@ vi.mock("@/lib/ai-gateway", () => ({
   createLovableAiGatewayProvider: vi.fn(() => () => ({})),
   getModel: vi.fn(() => ({})),
   getGateway: vi.fn(() => () => ({})),
+  describeError: vi.fn((e: unknown) => (e as Error)?.message ?? "unknown error"),
 }));
 vi.mock("@/lib/log.server", () => ({ logError: vi.fn(), logInfo: vi.fn() }));
 

@@ -34,6 +34,7 @@ import {
   type ParsedEmailForClassify,
 } from "./classify";
 import { bumpEmailsSinceLearn } from "./folder-learn";
+import { toEmailUpsert } from "./email-upsert";
 import { upsertEmailEncrypted, updateEmailEncrypted } from "./encrypted-writer";
 import { recordExecution } from "./executed-rules";
 import {
@@ -508,30 +509,23 @@ export async function processGmailMessage(
   // rest). It forces folder_id=null and can't carry classification
   // metadata, so the rules-final / pending_ai metadata is applied in a
   // follow-up write below.
-  const { id: insertedId, error } = await upsertEmailEncrypted({
-    user_id: userId,
-    gmail_account_id: accountId,
-    gmail_message_id: parsed.gmail_message_id,
-    thread_id: parsed.thread_id,
-    from_addr: parsed.from_addr,
-    from_name: parsed.from_name,
-    to_addrs: parsed.to_addrs,
-    cc: parsed.cc || null,
-    list_id: parsed.list_id || null,
-    in_reply_to: parsed.in_reply_to || null,
-    subject: parsed.subject,
-    snippet: parsed.snippet,
-    body_text: parsed.body_text,
-    body_html: parsed.body_html,
-    received_at: parsed.received_at,
-    is_read: isReadFlag,
-    is_archived: isArchived,
-    has_attachment: parsed.has_attachment,
-    raw_labels: parsed.raw_labels,
-    classified_by: rules.needs_ai ? "pending_ai" : rules.classified_by,
-    processed_at: new Date().toISOString(),
-    published_at_ms: publishedAtMs,
-  });
+  const { id: insertedId, error } = await upsertEmailEncrypted(
+    toEmailUpsert(parsed, {
+      user_id: userId,
+      gmail_account_id: accountId,
+      classified_by: rules.needs_ai ? "pending_ai" : rules.classified_by,
+      // Live path: real headers, an explicit read/archive decision, and
+      // processing timestamps — the ingest paths leave all of these at the
+      // builder's null/derived defaults.
+      cc: parsed.cc || null,
+      list_id: parsed.list_id || null,
+      in_reply_to: parsed.in_reply_to || null,
+      is_read: isReadFlag,
+      is_archived: isArchived,
+      processed_at: new Date().toISOString(),
+      published_at_ms: publishedAtMs,
+    }),
+  );
   if (t) t.db += performance.now() - _tIns;
 
   if (error || !insertedId) {

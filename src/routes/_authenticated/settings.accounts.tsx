@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useGoogleReconnect } from "@/hooks/use-google-reconnect";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import {
   listMyGmailAccounts,
-  startConnectGmail,
   disconnectGmailAccount,
   triggerBackfill,
   triggerWeekBackfill,
@@ -29,7 +29,7 @@ export const Route = createFileRoute("/_authenticated/settings/accounts")({
 function AccountsSettings() {
   const qc = useQueryClient();
   const listAccounts = useServerFn(listMyGmailAccounts);
-  const connect = useServerFn(startConnectGmail);
+  const startGoogleReconnect = useGoogleReconnect();
   const disconnect = useServerFn(disconnectGmailAccount);
   const backfill = useServerFn(triggerBackfill);
   const weekBackfill = useServerFn(triggerWeekBackfill);
@@ -62,13 +62,11 @@ function AccountsSettings() {
 
   async function startConnect(loginHint?: string) {
     setBusy(loginHint ? `reconnect-${loginHint}` : "connect");
-    try {
-      const { url } = await connect({ data: loginHint ? { login_hint: loginHint } : {} });
-      window.location.href = url;
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Something went wrong");
-      setBusy(null);
-    }
+    const ok = await startGoogleReconnect({
+      loginHint,
+      errorMessage: "Something went wrong",
+    });
+    if (!ok) setBusy(null);
   }
 
   const accounts = accountsQ.data?.accounts ?? [];
