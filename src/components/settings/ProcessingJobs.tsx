@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatRelativeTime } from "@/lib/format";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listMessageJobs, retryJob, runJobsNow } from "@/lib/gmail.functions";
@@ -17,19 +18,6 @@ import { RefreshCw, PlayCircle, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
 type StatusFilter = "all" | "pending" | "running" | "dlq";
-
-function relTime(iso: string | null): string {
-  if (!iso) return "—";
-  const diff = Date.now() - new Date(iso).getTime();
-  const s = Math.floor(diff / 1000);
-  if (s < 0) return `in ${Math.abs(s)}s`;
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
 
 export function ProcessingJobs({ accountId }: { accountId: string | null }) {
   const fetchJobs = useServerFn(listMessageJobs);
@@ -178,7 +166,7 @@ export function ProcessingJobs({ accountId }: { accountId: string | null }) {
                   <TableCell className="p-2 max-w-[260px] truncate">{j.subject ?? "—"}</TableCell>
                   <TableCell className="p-2 text-right">{j.attempt}/5</TableCell>
                   <TableCell className="p-2 whitespace-nowrap" title={j.next_run_at}>
-                    {relTime(j.next_run_at)}
+                    {formatRelativeTime(j.next_run_at)}
                   </TableCell>
                   <TableCell
                     className="p-2 max-w-[280px] truncate text-destructive"

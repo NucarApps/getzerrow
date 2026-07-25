@@ -11,6 +11,44 @@
 const DEFAULT_FALLBACK = "—"; // em dash
 
 /**
+ * Compact relative time: "45s ago", "12m ago", "3h ago", "2d ago", and
+ * "in 5m" for timestamps in the future.
+ *
+ * Four settings/activity screens had their own copy of this ladder, differing
+ * only in fallback text and in how badly they handled a future timestamp — one
+ * rendered a negative "-5s ago", another clamped it to "0s ago". Both now read
+ * "in 5s".
+ *
+ * Uses floor, not round, so 1h59m reads "1h ago" rather than "2h ago".
+ *
+ * Deliberately NOT used by folder-history-panel or FolderEditor: those speak a
+ * different vocabulary ("just now" with a date fallback past a week; "today"
+ * and months) and are different formats, not copies of this one.
+ */
+export function formatRelativeTime(
+  iso: string | null | undefined,
+  opts: { fallback?: string } = {},
+): string {
+  const { fallback = DEFAULT_FALLBACK } = opts;
+  if (!iso) return fallback;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return fallback;
+
+  const diffMs = Date.now() - t;
+  const future = diffMs < 0;
+  const s = Math.floor(Math.abs(diffMs) / 1000);
+  const unit =
+    s < 60
+      ? `${s}s`
+      : s < 3600
+        ? `${Math.floor(s / 60)}m`
+        : s < 86_400
+          ? `${Math.floor(s / 3600)}h`
+          : `${Math.floor(s / 86_400)}d`;
+  return future ? `in ${unit}` : `${unit} ago`;
+}
+
+/**
  * Clip a string to `max` characters, replacing the tail with an ellipsis.
  * Returns `fallback` for null/empty input.
  */

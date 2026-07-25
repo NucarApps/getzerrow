@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useGoogleReconnect } from "@/hooks/use-google-reconnect";
+import { formatRelativeTime } from "@/lib/format";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -19,31 +21,14 @@ import {
   retryDlqJobs,
   runAccountDiagnostic,
 } from "@/lib/account-health.functions";
-import { startConnectGmail } from "@/lib/gmail.functions";
 import { DlqDrawer } from "./DlqDrawer";
-
-function fmtRelative(iso: string | null): string {
-  if (!iso) return "never";
-  const ms = Date.now() - new Date(iso).getTime();
-  if (ms < 0) {
-    const future = -ms;
-    if (future < 60_000) return `in ${Math.round(future / 1000)}s`;
-    if (future < 3600_000) return `in ${Math.round(future / 60_000)}m`;
-    if (future < 86_400_000) return `in ${Math.round(future / 3600_000)}h`;
-    return `in ${Math.round(future / 86_400_000)}d`;
-  }
-  if (ms < 60_000) return `${Math.round(ms / 1000)}s ago`;
-  if (ms < 3600_000) return `${Math.round(ms / 60_000)}m ago`;
-  if (ms < 86_400_000) return `${Math.round(ms / 3600_000)}h ago`;
-  return `${Math.round(ms / 86_400_000)}d ago`;
-}
 
 export function AccountHealthPanel({ accountId }: { accountId: string | null }) {
   const qc = useQueryClient();
   const fetchHealth = useServerFn(getAccountHealth);
   const retryAll = useServerFn(retryDlqJobs);
   const diagnose = useServerFn(runAccountDiagnostic);
-  const startConnect = useServerFn(startConnectGmail);
+  const startGoogleReconnect = useGoogleReconnect();
   const [drawerAccount, setDrawerAccount] = useState<{ id: string; email: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [diagBusy, setDiagBusy] = useState<string | null>(null);
@@ -98,7 +83,7 @@ export function AccountHealthPanel({ accountId }: { accountId: string | null }) 
         toast.error(r.error ?? "Diagnostic failed");
       } else {
         toast.success(
-          `OAuth ok · watch ${r.watch}${r.watchExpiresAt ? " · " + fmtRelative(r.watchExpiresAt) : ""}`,
+          `OAuth ok · watch ${r.watch}${r.watchExpiresAt ? " · " + formatRelativeTime(r.watchExpiresAt, { fallback: "never" }) : ""}`,
         );
       }
       qc.invalidateQueries({ queryKey: ["account-health"] });
@@ -111,13 +96,7 @@ export function AccountHealthPanel({ accountId }: { accountId: string | null }) 
 
   async function handleReconnect(accountId: string, email: string) {
     setReconnectBusy(accountId);
-    try {
-      const r = await startConnect({ data: { login_hint: email } });
-      window.location.href = r.url;
-    } catch (e) {
-      toast.error((e as Error).message);
-      setReconnectBusy(null);
-    }
+    if (!(await startGoogleReconnect({ loginHint: email }))) setReconnectBusy(null);
   }
 
   return (
@@ -139,10 +118,12 @@ export function AccountHealthPanel({ accountId }: { accountId: string | null }) 
                   <div className="truncate font-medium">{a.email}</div>
                   <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <span className="inline-flex items-center gap-1">
-                      <Clock className="h-3 w-3" /> poll {fmtRelative(a.lastPollAt)}
+                      <Clock className="h-3 w-3" /> poll{" "}
+                      {formatRelativeTime(a.lastPollAt, { fallback: "never" })}
                     </span>
                     <span className="inline-flex items-center gap-1">
-                      <Activity className="h-3 w-3" /> push {fmtRelative(a.lastPushAt)}
+                      <Activity className="h-3 w-3" /> push{" "}
+                      {formatRelativeTime(a.lastPushAt, { fallback: "never" })}
                     </span>
                     <span
                       className={`inline-flex items-center gap-1 ${watchActive ? "" : "text-destructive"}`}
@@ -153,7 +134,9 @@ export function AccountHealthPanel({ accountId }: { accountId: string | null }) 
                         <AlertTriangle className="h-3 w-3" />
                       )}
                       watch {watchActive ? (watchSoon ? "expiring " : "renews ") : "expired "}
-                      {a.watchExpiresAt ? fmtRelative(a.watchExpiresAt) : "—"}
+                      {a.watchExpiresAt
+                        ? formatRelativeTime(a.watchExpiresAt, { fallback: "never" })
+                        : "—"}
                     </span>
                   </div>
                 </div>

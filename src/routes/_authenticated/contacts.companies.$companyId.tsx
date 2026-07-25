@@ -19,7 +19,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -832,7 +832,7 @@ function CompanyDetailPage() {
                   <AlertDialogFooter>
                     <AlertDialogCancel disabled={deleteMut.isPending}>Cancel</AlertDialogCancel>
                     <AlertDialogAction
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      className={buttonVariants({ variant: "destructive" })}
                       onClick={(e) => {
                         e.preventDefault();
                         deleteMut.mutate();

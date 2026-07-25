@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { buttonVariants } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
@@ -87,7 +88,7 @@ export function ContactDrawer({ contactId, open, onOpenChange }: Props) {
           <AlertDialogFooter>
             <AlertDialogCancel>Keep editing</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className={buttonVariants({ variant: "destructive" })}
               onClick={() => {
                 setConfirmDiscard(false);
                 close();

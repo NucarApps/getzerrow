@@ -18,7 +18,7 @@ import {
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageTitle } from "@/components/PageTitle";
 import { Badge } from "@/components/ui/badge";
@@ -394,7 +394,7 @@ function LabelsPage() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className={buttonVariants({ variant: "destructive" })}
               onClick={() => deleteTarget && removeLabel(deleteTarget)}
             >
               Delete label

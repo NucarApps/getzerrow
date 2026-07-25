@@ -1,4 +1,5 @@
 import { Fragment, useState, useMemo } from "react";
+import { formatRelativeTime } from "@/lib/format";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -39,18 +40,6 @@ import { fmtLatency, latencyTone, LATENCY_TONE_CLASS, computeStaleness } from ".
 
 type Filter = "all" | "push" | "poll" | "errors" | "watch_renew";
 type AlertKind = "danger" | "warn" | "success" | "info";
-
-function relTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const diff = Date.now() - new Date(iso).getTime();
-  const s = Math.floor(diff / 1000);
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
 
 const KIND_STYLE: Record<AlertKind, { border: string; bg: string; icon: string; title: string }> = {
   danger: {
@@ -334,7 +323,7 @@ function deriveHealth(args: {
       title: "Watch is armed, but no real Google push has arrived",
       body: (
         <>
-          Watch re-armed {relTime(lastRenew.received_at)} against{" "}
+          Watch re-armed {formatRelativeTime(lastRenew.received_at)} against{" "}
           <span className="font-mono">{pubsubTopic ?? "(unset)"}</span>, but Google has not POSTed a
           real <span className="font-mono">push</span> envelope since. The GCP Pub/Sub push
           subscription is the likely broken piece — verify it POSTs to:
@@ -413,8 +402,8 @@ function deriveHealth(args: {
       title: "Push is healthy",
       body: (
         <>
-          {stats.push24} pushes in the last 24h, last one {relTime(stats.lastPushAt)}. New mail is
-          arriving in real time.
+          {stats.push24} pushes in the last 24h, last one {formatRelativeTime(stats.lastPushAt)}.
+          New mail is arriving in real time.
         </>
       ),
     };
@@ -646,7 +635,7 @@ export function PubsubActivity({
                       </div>
                       <div className="font-mono text-[10px] text-muted-foreground">
                         msg {j.gmail_message_id} · attempt {j.attempt ?? 0} · locked{" "}
-                        {relTime(j.locked_at)}
+                        {formatRelativeTime(j.locked_at)}
                       </div>
                     </div>
                     <Button
@@ -730,10 +719,10 @@ export function PubsubActivity({
             <div className="mt-3 text-xs text-muted-foreground">
               Last event{" "}
               {stats.lastReceivedAt
-                ? `${relTime(stats.lastReceivedAt)} (${new Date(stats.lastReceivedAt).toLocaleString()})`
+                ? `${formatRelativeTime(stats.lastReceivedAt)} (${new Date(stats.lastReceivedAt).toLocaleString()})`
                 : "never"}
-              {stats.lastPushAt && <> · Last push {relTime(stats.lastPushAt)}</>}
-              {stats.lastPollAt && <> · Last poll {relTime(stats.lastPollAt)}</>}
+              {stats.lastPushAt && <> · Last push {formatRelativeTime(stats.lastPushAt)}</>}
+              {stats.lastPollAt && <> · Last poll {formatRelativeTime(stats.lastPollAt)}</>}
             </div>
           </section>
         )}
@@ -798,7 +787,7 @@ export function PubsubActivity({
                   )}
                   Last push from Google ({lastPush.event_type})
                   <span className="text-xs font-normal text-muted-foreground">
-                    — {relTime(lastPush.received_at)}
+                    — {formatRelativeTime(lastPush.received_at)}
                   </span>
                   <LastPushStaleBadge lastPush={lastPush} lastRenew={lastRenew} />
                 </span>
@@ -920,7 +909,7 @@ export function PubsubActivity({
                           className="p-2 whitespace-nowrap"
                           title={new Date(e.received_at).toLocaleString()}
                         >
-                          {relTime(e.received_at)}
+                          {formatRelativeTime(e.received_at)}
                         </TableCell>
                         <TableCell className="p-2">
                           <Badge
@@ -992,7 +981,7 @@ export function PubsubActivity({
                     icon={Activity}
                     title={
                       <>
-                        Watch re-armed {relTime(lastRenew.received_at)}
+                        Watch re-armed {formatRelativeTime(lastRenew.received_at)}
                         {(() => {
                           const lastPushMs = lastPush
                             ? new Date(lastPush.received_at).getTime()
@@ -1045,7 +1034,9 @@ export function PubsubActivity({
                               ? new Date(a.watch_expiration).toLocaleString()
                               : "—"}
                           </div>
-                          <div>Last poll: {a.last_poll_at ? relTime(a.last_poll_at) : "—"}</div>
+                          <div>
+                            Last poll: {a.last_poll_at ? formatRelativeTime(a.last_poll_at) : "—"}
+                          </div>
                         </dl>
                       </div>
                     ))}
@@ -1116,7 +1107,9 @@ export function PubsubActivity({
                     Logged as <span className="font-mono">webhook_test</span> — proves our endpoint
                     works but does NOT prove the GCP push subscription is delivering. Only a real{" "}
                     <span className="font-mono">push</span> row from Google does that.
-                    {lastWebhookTest && <> · Last test {relTime(lastWebhookTest.received_at)}</>}
+                    {lastWebhookTest && (
+                      <> · Last test {formatRelativeTime(lastWebhookTest.received_at)}</>
+                    )}
                   </p>
                 </div>
 

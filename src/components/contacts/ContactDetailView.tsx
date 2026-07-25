@@ -20,7 +20,7 @@ import {
   Video,
   Lock,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { ColorDotChip } from "@/components/ui/status-pill";
 import { Input } from "@/components/ui/input";
 import { CompanyCombobox } from "@/components/contacts/CompanyCombobox";
@@ -624,7 +624,7 @@ export function ContactDetailView({ id, onDeleted, onDirtyChange, flushRef }: Pr
             <AlertDialogFooter>
               <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
               <AlertDialogAction
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                className={buttonVariants({ variant: "destructive" })}
                 onClick={(e) => {
                   e.preventDefault();
                   void performDelete();
@@ -761,7 +761,7 @@ export function ContactDetailView({ id, onDeleted, onDirtyChange, flushRef }: Pr
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      className={buttonVariants({ variant: "destructive" })}
                       onClick={(e) => {
                         e.preventDefault();
                         void performRemoveCardImage();

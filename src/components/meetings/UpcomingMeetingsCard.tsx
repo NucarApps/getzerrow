@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useGoogleReconnect } from "@/hooks/use-google-reconnect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { AlertTriangle, CalendarClock, Mic, RefreshCw, Video } from "lucide-react";
@@ -12,7 +13,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { startConnectGmail } from "@/lib/gmail.functions";
 import { formatEventTime } from "@/lib/format";
 import {
   listAllUpcomingCalendarEvents,
@@ -48,7 +48,7 @@ export function UpcomingMeetingsCard({
   const qc = useQueryClient();
   const listEvents = useServerFn(listAllUpcomingCalendarEvents);
   const setMode = useServerFn(setEventRecordingMode);
-  const startConnect = useServerFn(startConnectGmail);
+  const startGoogleReconnect = useGoogleReconnect();
   const resendBot = useServerFn(resendMeetingBot);
   const [reconnectBusy, setReconnectBusy] = useState<string | null>(null);
 
@@ -59,13 +59,7 @@ export function UpcomingMeetingsCard({
 
   async function handleReconnect(accountId: string, email: string | null) {
     setReconnectBusy(accountId);
-    try {
-      const r = await startConnect({ data: email ? { login_hint: email } : {} });
-      window.location.href = r.url;
-    } catch (e) {
-      toast.error((e as Error).message);
-      setReconnectBusy(null);
-    }
+    if (!(await startGoogleReconnect({ loginHint: email }))) setReconnectBusy(null);
   }
 
   const mutation = useMutation({
