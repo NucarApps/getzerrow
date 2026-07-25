@@ -1,24 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { generateText, Output } from "ai";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { sendContactShareEmail } from "../cards.server";
 import { setContactEncryptedFields } from "../sync/encrypted-writer";
+import { getContactDecrypted, getContactListFieldsDecrypted } from "../sync/encrypted-reader";
 import {
-  getContactDecrypted,
-  getContactListFieldsDecrypted,
-  getEmailsDecrypted,
-} from "../sync/encrypted-reader";
-import {
-  fetchFromGmail,
-  getModel,
-  EXTRACT_SCHEMA,
-  ADDRESS_FIELDS,
-  isLikelyHuman,
   normalizeName,
   firstNameKey,
-  pickBetterName,
   phoneEntrySchema,
   emailEntrySchema,
 } from "../contacts-helpers.server";

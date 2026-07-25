@@ -287,7 +287,7 @@ function deriveHealth(args: {
   pubsubTopic: string | undefined;
   renewBtn: React.ReactNode;
 }): HealthState | null {
-  const { stats, diag, lastPush, lastRenew, watchActive, webhookUrl, pubsubTopic, renewBtn } = args;
+  const { stats, lastPush, lastRenew, watchActive, webhookUrl, pubsubTopic, renewBtn } = args;
 
   const lastPushMs = lastPush ? new Date(lastPush.received_at).getTime() : 0;
   const lastRenewMs = lastRenew ? new Date(lastRenew.received_at).getTime() : 0;

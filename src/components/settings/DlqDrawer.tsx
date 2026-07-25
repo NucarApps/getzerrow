@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { RotateCcw, Trash2 } from "lucide-react";
-import { Spinner, SpinnerLabel } from "@/components/ui/spinner";
+import { SpinnerLabel } from "@/components/ui/spinner";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";

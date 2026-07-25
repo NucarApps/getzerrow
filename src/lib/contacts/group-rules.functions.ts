@@ -14,7 +14,6 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import {
   AI_CATEGORIES,
   collectEmailDomains,
-  domainOfEmail,
   matchRules,
   type ContactSignals,
   type GroupRule,

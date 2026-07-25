@@ -1,17 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  useEffect,
-  useLayoutEffect,
-  useState,
-  useMemo,
-  useId,
-  useRef,
-  useCallback,
-  memo,
-  lazy,
-  Suspense,
-  Fragment,
-} from "react";
+import { useEffect, useState, useMemo, useRef, memo, lazy, Suspense, Fragment } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
@@ -82,7 +70,6 @@ import {
   ContextMenuSubTrigger,
   ContextMenuSubContent,
   ContextMenuSeparator,
-  ContextMenuLabel,
 } from "@/components/ui/context-menu";
 
 import {
@@ -131,6 +118,7 @@ import { FOLDER_COLUMNS } from "@/components/folders/editor/types";
 import { RouteErrorFallback } from "@/components/RouteErrorFallback";
 import cobwebInbox from "@/assets/cobweb-inbox.svg";
 import type { RuleNode } from "@/lib/sync/types";
+
 const TrackingStandby = lazy(() =>
   import("@/components/inbox/TrackingStandby").then((m) => ({ default: m.TrackingStandby })),
 );
@@ -810,7 +798,6 @@ function InboxPage() {
     queryFn: async () => {
       const isNoRules = effectiveFolder === "no_rules";
       const isAllMail = effectiveFolder === "all_mail";
-      const folderRows = foldersQ.data ?? [];
       if (isSearching) {
         // Single server-side path for both free-text and `from:` / `to:`
         // operator search. The server ranks over the GIN-indexed search index:

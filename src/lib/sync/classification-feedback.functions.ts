@@ -12,8 +12,6 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { performMove } from "../move-email.server";
 import { insertFolderExampleEncrypted } from "./encrypted-writer";
 import { getEmailsDecrypted } from "./encrypted-reader";
-import { loadAccountContext } from "./account-context";
-import { matchByFilters, type EmailForFilter } from "./filter-engine";
 import { logAudit } from "../log.server";
 
 const admin = () => supabaseAdmin;

@@ -15,7 +15,7 @@ import {
   getPerson,
   PeopleApiError,
 } from "./people-client.server";
-import { contactToPerson, groupToLabel, personToContact } from "./mapper";
+import { contactToPerson, personToContact } from "./mapper";
 import { loadLocalContact } from "./state.server";
 import {
   calculateMembershipDelta,
