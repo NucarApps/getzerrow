@@ -31,6 +31,7 @@ import {
   upsertEmailEncrypted,
   updateEmailEncrypted,
 } from "./encrypted-writer";
+import { toEmailUpsert } from "./email-upsert";
 
 /** Promote an email to a folder + record a "manual_move" example.
  * Skips the example/promotion when the row was ALREADY in this folder
@@ -289,30 +290,16 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
           claimed++;
         }
       } else {
-        const { id: newId, error: insErr } = await upsertEmailEncrypted({
-          user_id: userId,
-          gmail_account_id: accountId,
-          gmail_message_id: p.gmail_message_id,
-          thread_id: p.thread_id,
-          from_addr: p.from_addr,
-          from_name: p.from_name,
-          to_addrs: p.to_addrs,
-          cc: null,
-          list_id: null,
-          in_reply_to: null,
-          subject: p.subject,
-          snippet: p.snippet,
-          body_text: null,
-          body_html: null,
-          received_at: p.received_at,
-          is_read: p.is_read,
-          is_archived: !p.raw_labels?.includes("INBOX"),
-          has_attachment: p.has_attachment,
-          raw_labels: p.raw_labels,
-          classified_by: "gmail_label",
-          processed_at: null,
-          published_at_ms: null,
-        });
+        const { id: newId, error: insErr } = await upsertEmailEncrypted(
+          toEmailUpsert(p, {
+            user_id: userId,
+            gmail_account_id: accountId,
+            classified_by: "gmail_label",
+            // Learning only needs headers for the few-shot example, not bodies.
+            body_text: null,
+            body_html: null,
+          }),
+        );
         if (!insErr) {
           ingested++;
           if (newId) {
@@ -432,30 +419,16 @@ export async function loadOlderFromLabel(
         }
         const raw = await getMessageMetadata(folder.gmail_account_id, id);
         const p = parseMessage(raw);
-        const { id: newId, error } = await upsertEmailEncrypted({
-          user_id: userId,
-          gmail_account_id: folder.gmail_account_id,
-          gmail_message_id: p.gmail_message_id,
-          thread_id: p.thread_id,
-          from_addr: p.from_addr,
-          from_name: p.from_name,
-          to_addrs: p.to_addrs,
-          cc: null,
-          list_id: null,
-          in_reply_to: null,
-          subject: p.subject,
-          snippet: p.snippet,
-          body_text: null,
-          body_html: null,
-          received_at: p.received_at,
-          is_read: p.is_read,
-          is_archived: !p.raw_labels?.includes("INBOX"),
-          has_attachment: p.has_attachment,
-          raw_labels: p.raw_labels,
-          classified_by: "gmail_label",
-          processed_at: null,
-          published_at_ms: null,
-        });
+        const { id: newId, error } = await upsertEmailEncrypted(
+          toEmailUpsert(p, {
+            user_id: userId,
+            gmail_account_id: folder.gmail_account_id,
+            classified_by: "gmail_label",
+            // Learning only needs headers for the few-shot example, not bodies.
+            body_text: null,
+            body_html: null,
+          }),
+        );
         if (!error) {
           ingested++;
           if (newId) {

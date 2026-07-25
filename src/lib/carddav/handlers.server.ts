@@ -57,33 +57,9 @@ function groupHref(email: string, groupId: string): string {
 async function computeBookCTag(userId: string): Promise<string> {
   // Include contact_groups.updated_at so group renames / membership changes
   // invalidate iOS's cached copy. Include tombstone max seq so hard deletes
-  // also bump the CTag.
-  const [{ data: cLatest }, { data: gLatest }, { data: tLatest }] = await Promise.all([
-    supabaseAdmin
-      .from("contacts")
-      .select("updated_at")
-      .eq("user_id", userId)
-      .order("updated_at", { ascending: false })
-      .limit(1),
-    supabaseAdmin
-      .from("contact_groups")
-      .select("updated_at")
-      .eq("user_id", userId)
-      .order("updated_at", { ascending: false })
-      .limit(1),
-    supabaseAdmin
-      .from("carddav_tombstones")
-      .select("sync_seq")
-      .eq("user_id", userId)
-      .order("sync_seq", { ascending: false })
-      .limit(1),
-  ]);
-  const latest =
-    [cLatest?.[0]?.updated_at, gLatest?.[0]?.updated_at]
-      .filter((v): v is string => !!v)
-      .sort()
-      .pop() ?? "1970-01-01T00:00:00Z";
-  const tombSeq = (tLatest?.[0] as { sync_seq: number } | undefined)?.sync_seq ?? 0;
+  // also bump the CTag. Same snapshot the sync-token path uses — these were
+  // two byte-identical copies of the query and derivation.
+  const { updatedAt: latest, seq: tombSeq } = await currentSyncSnapshot(userId);
   const [{ count: cCount }, { count: gCount }] = await Promise.all([
     supabaseAdmin
       .from("contacts")

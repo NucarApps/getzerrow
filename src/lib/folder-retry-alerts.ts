@@ -12,6 +12,8 @@
 // spike of retried writes per folder and applies a cooldown so we page once
 // per incident instead of on every tick.
 
+import { selectByThresholdWithCooldown, type AlertCooldownConfig } from "./alert-cooldown";
+
 /** A single folder_example_write that needed more than one attempt. */
 export type RetryRow = {
   folder_id: string | null;
@@ -39,14 +41,8 @@ export type RetryAlertGroup = {
   last_at: string;
 };
 
-export type EvaluateRetryConfig = {
-  /** Minimum retried writes for one folder in the window before it's a spike. */
-  threshold: number;
-  /** Don't re-fire the same folder within this many minutes. */
-  cooldownMinutes: number;
-  /** Current time in ms (injectable for tests). */
-  now: number;
-};
+/** Re-exported so callers keep importing the config type from here. */
+export type EvaluateRetryConfig = AlertCooldownConfig;
 
 function groupKey(folderId: string | null): string {
   return folderId ?? "null";
@@ -90,18 +86,11 @@ export function selectRetryAlertsToFire(
   recentAlerts: RecentRetryAlert[],
   config: EvaluateRetryConfig,
 ): RetryAlertGroup[] {
-  const cooldownMs = config.cooldownMinutes * 60_000;
-  const suppressed = new Set<string>();
-  for (const alert of recentAlerts) {
-    const firedMs = Date.parse(alert.fired_at);
-    if (Number.isNaN(firedMs)) continue;
-    if (config.now - firedMs < cooldownMs) {
-      suppressed.add(groupKey(alert.folder_id ?? null));
-    }
-  }
-  return groups.filter(
-    (g) => g.retry_count >= config.threshold && !suppressed.has(groupKey(g.folder_id)),
-  );
+  return selectByThresholdWithCooldown(groups, recentAlerts, config, {
+    keyOf: (g) => groupKey(g.folder_id),
+    recentKeyOf: (a) => groupKey(a.folder_id ?? null),
+    countOf: (g) => g.retry_count,
+  });
 }
 
 /** Convenience: group then select in one call. */

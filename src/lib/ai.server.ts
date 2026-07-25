@@ -1,7 +1,7 @@
 // AI classification & summarization. Server-only.
 import { generateText, Output } from "ai";
 import { z } from "zod";
-import { getModel } from "./ai-gateway";
+import { getModel, describeError } from "./ai-gateway";
 import { raceTimeout } from "./ai-budget";
 import { escapeHtml } from "./escape-html";
 import {
@@ -111,21 +111,6 @@ Choose the BEST matching folder, or "NONE" if nothing fits. Provide a one-line s
 
   type Out = z.infer<typeof schema>;
   let lastError = "";
-
-  function describeError(e: unknown): string {
-    const err = e as {
-      name?: unknown;
-      status?: unknown;
-      message?: unknown;
-      responseBody?: unknown;
-    };
-    const parts: string[] = [];
-    if (typeof err?.name === "string") parts.push(err.name);
-    if (typeof err?.status === "number") parts.push(`status=${err.status}`);
-    if (typeof err?.message === "string") parts.push(err.message);
-    if (err?.responseBody != null) parts.push(`body=${String(err.responseBody).slice(0, 200)}`);
-    return parts.join(" | ").slice(0, 400) || "unknown error";
-  }
 
   const deadline = Date.now() + AI_CLASSIFY_TOTAL_BUDGET_MS;
   const budgetLeft = () => deadline - Date.now();
@@ -447,15 +432,6 @@ Return ONE result per email, in any order, with the correct \`index\`.`;
   let parsed: Out | null = null;
   let lastError = "";
 
-  const describe = (e: unknown): string => {
-    const err = e as { name?: unknown; status?: unknown; message?: unknown };
-    const parts: string[] = [];
-    if (typeof err?.name === "string") parts.push(err.name);
-    if (typeof err?.status === "number") parts.push(`status=${err.status}`);
-    if (typeof err?.message === "string") parts.push(err.message);
-    return parts.join(" | ").slice(0, 300) || "unknown";
-  };
-
   for (const modelId of ["google/gemini-2.5-flash-lite", "google/gemini-2.5-flash"]) {
     try {
       const { output } = await raceTimeout(
@@ -470,7 +446,7 @@ Return ONE result per email, in any order, with the correct \`index\`.`;
       parsed = output as Out;
       break;
     } catch (e) {
-      lastError = describe(e);
+      lastError = describeError(e);
       console.error(`classifyEmailsBatch structured failed (${modelId})`, lastError);
     }
   }

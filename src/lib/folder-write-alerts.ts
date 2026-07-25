@@ -7,6 +7,8 @@
 // this module detects a spike per group and applies a cooldown so we page
 // once per incident instead of on every tick.
 
+import { selectByThresholdWithCooldown, type AlertCooldownConfig } from "./alert-cooldown";
+
 /** A single folder_example_write failure recorded in the durable log. */
 export type FailureRow = {
   error_code: string | null;
@@ -30,14 +32,8 @@ export type AlertGroup = {
   last_at: string;
 };
 
-export type EvaluateConfig = {
-  /** Minimum failures inside the window before a group is considered spiking. */
-  threshold: number;
-  /** Don't re-fire the same group within this many minutes. */
-  cooldownMinutes: number;
-  /** Current time in ms (injectable for tests). */
-  now: number;
-};
+/** Re-exported so callers keep importing the config type from here. */
+export type EvaluateConfig = AlertCooldownConfig;
 
 /** Normalize a possibly-missing error code so grouping is stable. */
 export function normalizeErrorCode(code: string | null | undefined): string {
@@ -83,19 +79,11 @@ export function selectAlertsToFire(
   recentAlerts: RecentAlert[],
   config: EvaluateConfig,
 ): AlertGroup[] {
-  const cooldownMs = config.cooldownMinutes * 60_000;
-  const suppressed = new Set<string>();
-  for (const alert of recentAlerts) {
-    const firedMs = Date.parse(alert.fired_at);
-    if (Number.isNaN(firedMs)) continue;
-    if (config.now - firedMs < cooldownMs) {
-      suppressed.add(groupKey(normalizeErrorCode(alert.error_code), alert.folder_id ?? null));
-    }
-  }
-  return groups.filter(
-    (g) =>
-      g.failure_count >= config.threshold && !suppressed.has(groupKey(g.error_code, g.folder_id)),
-  );
+  return selectByThresholdWithCooldown(groups, recentAlerts, config, {
+    keyOf: (g) => groupKey(g.error_code, g.folder_id),
+    recentKeyOf: (a) => groupKey(normalizeErrorCode(a.error_code), a.folder_id ?? null),
+    countOf: (g) => g.failure_count,
+  });
 }
 
 /** Convenience: group then select in one call. */
