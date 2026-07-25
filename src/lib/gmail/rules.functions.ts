@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { escapeLike } from "../escape-like";
 import { getOwnedAccount, restoreEmailToInbox } from "../gmail-helpers.server";
 import { performMove } from "../move-email.server";
 import { runMessageJobs, retryMessageJob, invalidateAccountContext } from "../sync.server";
@@ -310,7 +311,7 @@ export const countMatchingForRule = createServerFn({ method: "POST" })
     const raw = data.value.trim();
     if (!raw) return { count: 0 };
     const v = data.field === "subject" ? raw : raw.toLowerCase().replace(/^@/, "");
-    const esc = v.replace(/[\\%_]/g, (m) => `\\${m}`);
+    const esc = escapeLike(v);
     let q = supabaseAdmin
       .from("emails")
       .select("id", { count: "exact", head: true })
@@ -370,7 +371,7 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
     const raw = data.value.trim();
     if (!raw) return { moved: 0, failed: 0, archived: 0 };
     const v = data.field === "subject" ? raw : raw.toLowerCase().replace(/^@/, "");
-    const esc = v.replace(/[\\%_]/g, (m) => `\\${m}`);
+    const esc = escapeLike(v);
 
     // Build a query with the rule predicate applied (without folder/archive scoping).
     const applyRulePredicate = <T extends { ilike(column: string, pattern: string): T }>(

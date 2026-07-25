@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { escapeLike } from "../escape-like";
 import { loadOlderFromLabel, invalidateAccountContext } from "../sync.server";
 import { modifyMessage } from "../gmail.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -143,7 +144,7 @@ export const reassignDomainToFolder = createServerFn({ method: "POST" })
       .select("id, gmail_message_id, gmail_account_id")
       .eq("user_id", context.userId)
       .eq("folder_id", data.from_folder_id)
-      .ilike("from_addr", `%@${domain}%`);
+      .ilike("from_addr", `%@${escapeLike(domain)}%`);
 
     const ids = (matches ?? []).map((m) => m.id);
 
@@ -187,7 +188,7 @@ export const reassignDomainToFolder = createServerFn({ method: "POST" })
       .from("folder_examples")
       .select("id, from_addr, gmail_message_id, gmail_account_id")
       .eq("folder_id", data.from_folder_id)
-      .ilike("from_addr", `%@${domain}%`);
+      .ilike("from_addr", `%@${escapeLike(domain)}%`);
 
     const srcExampleIds = (srcExamples ?? []).map((e) => e.id);
     if (srcExampleIds.length > 0) {

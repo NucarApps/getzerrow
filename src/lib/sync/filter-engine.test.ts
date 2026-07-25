@@ -233,6 +233,53 @@ describe("domain_in allowlist", () => {
   });
 });
 
+// Rows ingested before the From-header parser was hardened still hold the whole
+// header in from_addr. The engine derives `domain` with emailDomain(), so a
+// user-typed rule like "acme.com" must still match them. The old
+// `from_addr.split("@")[1]` produced "acme.com>" / "acme.com> (sales)" here and
+// the rule silently never fired.
+describe("domain matching on unnormalized from_addr", () => {
+  const MALFORMED = [
+    'Jane "JD" Doe <jane@acme.com>',
+    "Jane <jane@acme.com> (Sales)",
+    "Jane Doe <jane@acme.com>, Bob <bob@other.com>",
+    "jane@acme.com>",
+  ];
+
+  it("domain equals matches every malformed sender shape", () => {
+    for (const from_addr of MALFORMED) {
+      expect(
+        applyFilter(email({ from_addr }), filter("f", "domain", "equals", "acme.com")),
+        `domain equals should match ${from_addr}`,
+      ).toBe(true);
+    }
+  });
+
+  it("domain_in allowlist admits every malformed sender shape", () => {
+    for (const from_addr of MALFORMED) {
+      expect(
+        applyFilter(email({ from_addr }), filter("f", "domain", "domain_in", "acme.com,foo.io")),
+        `domain_in should admit ${from_addr}`,
+      ).toBe(true);
+    }
+  });
+
+  it("domain_in still vetoes an outside sender written the same malformed way", () => {
+    const allow = filter("f", "domain", "domain_in", "acme.com");
+    expect(filterVetoes(email({ from_addr: 'Bob "B" <bob@evil.com> (spam)' }), allow)).toBe(true);
+  });
+
+  it("routes a malformed sender to the folder its domain rule names", () => {
+    const r = matchByFilters(
+      email({ from_addr: "Jane <jane@acme.com> (Sales)" }),
+      [folder({ id: "clients", name: "Clients" })],
+      [filter("clients", "domain", "equals", "acme.com")],
+    );
+    expect(r?.kind).toBe("match");
+    if (r?.kind === "match") expect(r.folder_id).toBe("clients");
+  });
+});
+
 describe("matchByFilters — basic routing", () => {
   it("returns null when no folder matches", () => {
     const r = matchByFilters(

@@ -139,16 +139,6 @@ export async function restoreEmailToInbox(opts: {
   }
 }
 
-export function extractDomain(addr: string | null): string | null {
-  if (!addr) return null;
-  const at = addr.lastIndexOf("@");
-  if (at < 0) return null;
-  return addr
-    .slice(at + 1)
-    .toLowerCase()
-    .replace(/[>\s]+$/g, "");
-}
-
 // IANA timezone identifier validator used by folder-summary schedules.
 export const ianaTz = z
   .string()

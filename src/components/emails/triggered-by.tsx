@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { emailDomain } from "@/lib/company-domains";
 import { collectMatchingLeaves } from "@/lib/sync/filter-engine";
 import type { RuleNode } from "@/lib/sync/types";
 
@@ -39,7 +40,9 @@ function applyFilterClient(
       case "body":
         return (email.body_text ?? "").toLowerCase();
       case "domain":
-        return ((email.from_addr ?? "").split("@")[1] ?? "").toLowerCase();
+        // Mirrors filter-engine's `domain` field exactly, or this explanation
+        // disagrees with what actually matched.
+        return emailDomain(email.from_addr) ?? "";
       case "has_attachment":
         return email.has_attachment ? "true" : "false";
       default:

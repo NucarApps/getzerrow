@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { emailDomain } from "@/lib/company-domains";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -55,10 +56,10 @@ export function FilterLikeThisDrawer({
   const addOverrideFn = useServerFn(addInboxOverride);
   const stripLabelFn = useServerFn(stripFolderLabelPast);
 
-  const domain = useMemo(
-    () => (fromAddr?.includes("@") ? (fromAddr.split("@")[1]?.toLowerCase() ?? null) : null),
-    [fromAddr],
-  );
+  // Same derivation the filter engine and override matcher use — this drawer
+  // WRITES rules/overrides, so a divergent value here creates a rule that can
+  // never match the sender it was created from.
+  const domain = useMemo(() => emailDomain(fromAddr), [fromAddr]);
 
   const [field, setField] = useState<Field>("from");
   const [value, setValue] = useState("");

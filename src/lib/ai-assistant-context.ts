@@ -2,6 +2,7 @@
 // assistant feeds to the model. Kept free of Supabase / server imports so
 // they stay unit-testable and reusable from both the server function and
 // tests.
+import { emailDomain } from "./company-domains";
 
 export type DomainCluster = {
   domain: string;
@@ -9,22 +10,6 @@ export type DomainCluster = {
   // Where mail from this domain currently lands, most common first.
   folders: Array<{ name: string; count: number }>;
 };
-
-/** Extract the bare lowercase domain from an email address. Returns null
- * when there's no parseable `@domain` part. */
-export function extractDomain(addr: string | null | undefined): string | null {
-  if (!addr) return null;
-  // Handle "Name <user@host>" as well as a bare address.
-  const angle = addr.match(/<([^>]+)>/);
-  const raw = (angle ? angle[1] : addr).trim().toLowerCase();
-  const at = raw.lastIndexOf("@");
-  if (at === -1) return null;
-  const domain = raw
-    .slice(at + 1)
-    .replace(/[>\s]+$/, "")
-    .trim();
-  return domain || null;
-}
 
 const INBOX_LABEL = "Inbox";
 
@@ -41,7 +26,7 @@ export function aggregateDomainClusters(
 
   const byDomain = new Map<string, { count: number; folders: Map<string, number> }>();
   for (const row of rows) {
-    const domain = extractDomain(row.from_addr);
+    const domain = emailDomain(row.from_addr);
     if (!domain) continue;
     let entry = byDomain.get(domain);
     if (!entry) {

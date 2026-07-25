@@ -9,7 +9,8 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { performMove } from "./move-email.server";
 import { getEmailsDecrypted } from "./sync/encrypted-reader";
-import { aggregateDomainClusters, extractDomain, matchFolderByName } from "./ai-assistant-context";
+import { aggregateDomainClusters, matchFolderByName } from "./ai-assistant-context";
+import { emailDomain } from "./company-domains";
 import {
   proposeAssistantChanges as proposeAi,
   type AssistantAction,
@@ -150,7 +151,7 @@ export const proposeAssistantChanges = createServerFn({ method: "POST" })
           subject: d?.subject ?? null,
           snippet: d?.snippet ?? null,
           folder_id: e.folder_id,
-          domain: extractDomain(e.from_addr),
+          domain: emailDomain(e.from_addr),
           is_reply: !!(e.in_reply_to && e.in_reply_to.trim()),
           list_id: e.list_id,
           classification_reason: d?.classification_reason ?? null,
