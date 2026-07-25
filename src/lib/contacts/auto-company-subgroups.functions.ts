@@ -34,9 +34,6 @@ type DB = SupabaseClient<Database>;
  * server rejects direct writes (see contact-groups.functions.ts).
  */
 
-const GROUP_SELECT =
-  "id,name,color,created_at,folder_id,carddav_uid,updated_at,parent_group_id,auto_company_subgroups,auto_generated_from_group_id";
-
 function trimRaw(raw: string | null | undefined): string {
   return (raw ?? "").trim().replace(/\s+/g, " ");
 }
@@ -654,7 +651,3 @@ export const pruneAutoCompanySubgroups = createServerFn({ method: "POST" })
     if (dErr) throw new Error(dErr.message);
     return { removed: ids.length };
   });
-
-// Suppress lint for unused GROUP_SELECT — kept for parity with other files
-// and possible future selects that want the full shape.
-void GROUP_SELECT;

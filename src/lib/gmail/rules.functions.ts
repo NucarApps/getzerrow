@@ -271,28 +271,6 @@ export const runJobsNow = createServerFn({ method: "POST" })
     return await runMessageJobs(data.limit ?? 25);
   });
 
-/** Re-enqueue a single Gmail message id for the current user's connected accounts. */
-export const enqueueGmailMessage = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { gmail_account_id: string; gmail_message_id: string }) =>
-    z
-      .object({
-        gmail_account_id: z.string().uuid(),
-        gmail_message_id: z.string().min(1).max(64),
-      })
-      .parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    const { data: acc } = await supabaseAdmin
-      .from("gmail_accounts")
-      .select("id, user_id")
-      .eq("id", data.gmail_account_id)
-      .maybeSingle();
-    if (!acc || acc.user_id !== context.userId) throw new Error("Not found");
-    await enqueueMessageJob(data.gmail_account_id, context.userId, data.gmail_message_id);
-    return { ok: true };
-  });
-
 export const addFolderRule = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(

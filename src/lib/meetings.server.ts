@@ -341,11 +341,6 @@ export async function syncMeetingFromRecall(meeting: MeetingRow): Promise<string
   return status;
 }
 
-/** Whether a status is terminal (no further polling needed). */
-export function isTerminalCode(code: string | null): boolean {
-  return code ? TERMINAL_CODES.has(code) : false;
-}
-
 /**
  * Resolve a playable recording URL for the streaming proxy hot path. Kept
  * deliberately cheap: it reads the stored `recording_url` and returns it

@@ -64,17 +64,3 @@ export function clampIntParam(
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, n));
 }
-
-/** Optional integer param — returns undefined if absent or invalid. */
-export function optionalIntParam(
-  url: URL,
-  key: string,
-  min: number,
-  max: number,
-): number | undefined {
-  const raw = url.searchParams.get(key);
-  if (raw == null || raw === "") return undefined;
-  const n = parseInt(raw, 10);
-  if (!Number.isFinite(n)) return undefined;
-  return Math.max(min, Math.min(max, n));
-}

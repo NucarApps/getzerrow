@@ -92,7 +92,6 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
         // Authenticate Pub/Sub push. Preferred: OIDC bearer JWT signed by
         // Google (set on the subscription via pushConfig.oidcToken). Fallback:
         // legacy `?token=` shared secret. Authenticated test calls are exempt.
-        let authMode: "jwt" | "legacy_token" | "none" = "none";
         if (!isTest) {
           const url = new URL(request.url);
           const authHeader = request.headers.get("authorization");
@@ -130,9 +129,7 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
               return new Response("Unauthorized", { status: 401 });
             }
             const result = await verifyGoogleJwt(bearer, { audiences, expectedEmail });
-            if (result.ok) {
-              authMode = "jwt";
-            } else {
+            if (!result.ok) {
               try {
                 await supabaseAdmin.from("pubsub_events").insert({
                   event_type: "push_unauthorized",
@@ -183,7 +180,6 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
               }
               return new Response("Unauthorized", { status: 401 });
             }
-            authMode = "legacy_token";
             // Log so we can see which subscriptions still need OIDC migration.
             try {
               await supabaseAdmin.from("pubsub_events").insert({
@@ -200,8 +196,6 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
             }
           }
         }
-        // Suppress unused-var lint while still capturing for future telemetry.
-        void authMode;
         let emailAddress: string | null = null;
         let historyId: string | null = null;
         let accountsMatched = 0;

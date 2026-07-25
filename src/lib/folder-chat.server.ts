@@ -33,8 +33,6 @@ const settingsPatchSchema = z
   })
   .strict();
 
-export type FolderSettingsPatch = z.infer<typeof settingsPatchSchema>;
-
 const actionSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("add_filter"),

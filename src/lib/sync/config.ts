@@ -25,18 +25,7 @@ export const BACKFILL_LIST_PAGES_PER_TICK = 20;
 /** maxResults per Gmail listMessages call during backfill paging. */
 export const BACKFILL_PAGE_SIZE = 100;
 
-/** Hard cap on bootstrap-bootstrap-anchored history catch-up. Anything
- * older falls to the deep-backfill job rather than blocking the
- * sync-since-history hot path. */
-export const BOOTSTRAP_MAX_MESSAGES = 2000;
-
 // ─── Poll cron ───────────────────────────────────────────────────────────
-
-/** Per-account threshold for "push has gone silent → re-arm watch".
- * Looked up against gmail_accounts.last_push_at; lower = quicker
- * recovery from a broken watch, higher = fewer false positives on
- * quiet mailboxes. */
-export const POLL_PER_ACCOUNT_SILENCE_MS = 2 * 60 * 60 * 1000; // 2h
 
 /** Cooldown after an auto re-arm before we'll re-arm the same account
  * again. Stops a broken Pub/Sub topic from causing a re-arm loop. */
@@ -59,13 +48,6 @@ export const WEBHOOK_INLINE_DRAIN_BUDGET_MS = 4_000;
  * Gmail a third time. Still short enough that the next
  * `gmail-process-live-5s` cron tick finishes the AI pass within seconds. */
 export const WEBHOOK_DEFERRED_AI_REQUEUE_MS = 5_000;
-
-// ─── History sync ────────────────────────────────────────────────────────
-
-/** Parallelism for the labelsAdded metadata fetches in syncSinceHistory.
- * Each fetch is ~200ms against the Gmail API; sequential fetching made a
- * push with N label events cost N×200ms. */
-export const HISTORY_LABEL_FETCH_CONCURRENCY = 5;
 
 // ─── AI classification budgets ───────────────────────────────────────────
 
@@ -147,18 +129,6 @@ export const RESCUE_BATCH_LIMIT = 50;
 /** Emails per batched LLM call inside the rescue sweep. */
 export const RESCUE_AI_BATCH_SIZE = 8;
 
-// ─── Watch renewal ───────────────────────────────────────────────────────
-
-/** Watch renewal cron runs every 6h and renews any watch expiring
- * within this window. 72h means a missed renewal cron is absorbed
- * without watches lapsing. */
-export const WATCH_RENEW_WINDOW_HOURS = 72;
-
-/** Operator alert threshold — after a renewal pass, any account still
- * expiring within this window gets a watch_renew_failed event logged
- * to pubsub_events. */
-export const WATCH_NEAR_EXPIRY_ALERT_HOURS = 24;
-
 // ─── Forward retry ───────────────────────────────────────────────────────
 
 /** Max attempts for an auto-forward before we park the row and require
@@ -176,16 +146,6 @@ export const FORWARD_BACKOFF_SECONDS = [60, 300, 1800, 7200, 21600]; // 1m, 5m, 
  * user-facing inbox email (sent/draft/trash/spam/chat). */
 export const EXCLUDED_LABELS = ["SENT", "DRAFT", "TRASH", "SPAM", "CHAT"];
 
-// ─── Reconcile ───────────────────────────────────────────────────────────
-
-/** Default per-tick reconcile window. Operator can override per-call
- * via the cron endpoint's `?limit=` param. */
-export const RECONCILE_DEFAULT_LIMIT = 200;
-
-/** Bumped window when an account looks "suspect" (recent push event
- * had an error, or last_history_sync_at is over 30 min old). */
-export const RECONCILE_SUSPECT_LIMIT = 500;
-
 // ─── Latency tile SLO ────────────────────────────────────────────────────
 
 /** Push → ack and push → visible latencies under this are green. */
@@ -202,13 +162,6 @@ export const STALENESS_AMBER_HOURS = 6;
 
 // ─── Retention defaults ──────────────────────────────────────────────────
 
-/** pubsub_events retention for normal rows. Error rows kept longer
- * (PUBSUB_KEEP_ERRORS_DAYS) for forensics. */
-export const PUBSUB_KEEP_DAYS = 30;
+/** pubsub_events retention for error rows, kept longer than normal rows
+ * for forensics. */
 export const PUBSUB_KEEP_ERRORS_DAYS = 60;
-
-/** DLQ retention. Truly-dead jobs eventually purge. */
-export const DLQ_KEEP_DAYS = 30;
-
-/** Decryption audit log retention. */
-export const AUDIT_KEEP_DAYS = 90;

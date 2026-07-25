@@ -702,14 +702,4 @@ export const getFolderSummaryJob = createServerFn({ method: "POST" })
     return { job };
   });
 
-// Back-compat: keep the original synchronous entry point available for callers
-// (e.g. the scheduled cron tick) that still want to run a schedule inline.
-export const runFolderSummaryInline = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
-  .handler(async ({ data, context }) => {
-    await getOwnedSchedule(context.userId, data.id);
-    return runFolderSummary(data.id);
-  });
-
 // ============ Per-email move + similar ============

@@ -657,8 +657,6 @@ const ManualMergeInput = z.object({
   manualLockFields: z.array(z.string()).default([]),
 });
 
-export type ManualMergeInputType = z.infer<typeof ManualMergeInput>;
-
 export const mergeContactsManual = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => ManualMergeInput.parse(d))

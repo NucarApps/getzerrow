@@ -166,23 +166,6 @@ export const setGoogleContactsSyncInterval = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-/** @deprecated Prefer setGoogleContactsSyncMode. Retained for older callers. */
-export const setGoogleContactsSyncEnabled = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { accountId: string; enabled: boolean }) =>
-    z.object({ accountId: z.string().uuid(), enabled: z.boolean() }).parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    await assertOwnsAccount(context.userId, data.accountId);
-    const { ensureSyncState, updateSyncState } = await import("@/lib/google-contacts/state.server");
-    const state = await ensureSyncState(context.userId, data.accountId);
-    await updateSyncState(state.id, {
-      enabled: data.enabled,
-      sync_mode: data.enabled ? (state.sync_mode === "off" ? "pull_only" : state.sync_mode) : "off",
-    });
-    return { ok: true };
-  });
-
 async function assertOwnsContact(userId: string, contactId: string): Promise<void> {
   const { data, error } = await supabaseAdmin
     .from("contacts")
