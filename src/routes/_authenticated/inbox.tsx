@@ -124,13 +124,14 @@ const TrackingStandby = lazy(() =>
 import { AssistantPanel } from "@/components/inbox/AssistantPanel";
 import { PullToRefresh } from "@/components/inbox/PullToRefresh";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { decodeEntities, errMsg, parseSearchQuery } from "@/lib/email-text";
 import {
-  decodeEntities,
-  errMsg,
-  withInbox,
-  withoutInbox,
-  parseSearchQuery,
-} from "@/lib/email-text";
+  patchMovedToInbox,
+  patchMovedToFolder,
+  patchArchived,
+  patchReadState,
+  patchRemoved,
+} from "@/lib/email-cache-patches";
 import { EmailBodyFrame, EmailBodyInline } from "@/components/emails/email-body-frame";
 import { hasVisibleHtml } from "@/lib/email-html";
 import { SwipeRow } from "@/components/emails/swipe-row";
@@ -383,17 +384,7 @@ const EmailListRow = memo(function EmailListRow({
             <ContextMenuItem
               onSelect={async () => {
                 qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                  prev?.map((x) =>
-                    x.id === e.id
-                      ? {
-                          ...x,
-                          folder_id: null,
-                          is_archived: false,
-                          raw_labels: withInbox(x.raw_labels),
-                          classified_by: "manual_inbox",
-                        }
-                      : x,
-                  ),
+                  patchMovedToInbox(prev, e.id),
                 );
                 try {
                   await moveInboxFn({ data: { email_id: e.id } });
@@ -423,17 +414,7 @@ const EmailListRow = memo(function EmailListRow({
                 <ContextMenuItem
                   onSelect={async () => {
                     qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                      prev?.map((x) =>
-                        x.id === e.id
-                          ? {
-                              ...x,
-                              folder_id: null,
-                              is_archived: false,
-                              raw_labels: withInbox(x.raw_labels),
-                              classified_by: "manual_inbox",
-                            }
-                          : x,
-                      ),
+                      patchMovedToInbox(prev, e.id),
                     );
                     try {
                       await moveInboxFn({ data: { email_id: e.id } });
@@ -459,20 +440,9 @@ const EmailListRow = memo(function EmailListRow({
                   key={f.id}
                   onSelect={async () => {
                     // Optimistically remove from any view that wouldn't show an archived row in this folder.
+                    // Drops out of Inbox-style views (is_archived=false) and other folder views.
                     qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                      prev?.flatMap((x) => {
-                        if (x.id !== e.id) return [x];
-                        // Drop from Inbox-style views (is_archived=false filter) and from other folder views.
-                        return [
-                          {
-                            ...x,
-                            folder_id: f.id,
-                            is_archived: true,
-                            raw_labels: withoutInbox(x.raw_labels),
-                            classified_by: "manual_move",
-                          },
-                        ];
-                      }),
+                      patchMovedToFolder(prev, e.id, f.id, { classifiedBy: "manual_move" }),
                     );
                     qc.setQueriesData<Email[]>({ queryKey: ["emails", "all"] }, (prev) =>
                       prev?.filter((x) => x.id !== e.id),
@@ -527,11 +497,7 @@ const EmailListRow = memo(function EmailListRow({
         <ContextMenuItem
           onSelect={async () => {
             qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-              prev?.map((x) =>
-                x.id === e.id
-                  ? { ...x, is_archived: true, raw_labels: withoutInbox(x.raw_labels) }
-                  : x,
-              ),
+              patchArchived(prev, e.id),
             );
             try {
               await archFn({ data: { id: e.id } });
@@ -549,7 +515,7 @@ const EmailListRow = memo(function EmailListRow({
           className="text-destructive focus:text-destructive"
           onSelect={async () => {
             qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-              prev?.filter((x) => x.id !== e.id),
+              patchRemoved(prev, e.id),
             );
             try {
               await trashFn({ data: { id: e.id } });
@@ -572,9 +538,7 @@ const EmailListRow = memo(function EmailListRow({
   ) : (
     <SwipeRow
       onArchive={async () => {
-        qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-          prev?.filter((x) => x.id !== e.id),
-        );
+        qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) => patchRemoved(prev, e.id));
         try {
           await archFn({ data: { id: e.id } });
           toast.success("Archived");
@@ -2166,7 +2130,7 @@ function Reader({
   useEffect(() => {
     if (email.is_read) return;
     qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-      prev?.map((e) => (e.id === email.id ? { ...e, is_read: true } : e)),
+      patchReadState(prev, email.id, true),
     );
     markFn({ data: { id: email.id, read: true } }).catch(() =>
       qc.invalidateQueries({ queryKey: ["emails"] }),
@@ -2180,16 +2144,7 @@ function Reader({
     setMoving(true);
     // Optimistic: flip folder_id locally so the row jumps immediately.
     qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-      prev?.map((e) =>
-        e.id === email.id
-          ? {
-              ...e,
-              folder_id: target.id,
-              is_archived: true,
-              raw_labels: withoutInbox(e.raw_labels),
-            }
-          : e,
-      ),
+      patchMovedToFolder(prev, email.id, target.id),
     );
     try {
       const r = await moveFn({ data: { email_id: email.id, to_folder_id: target.id } });
@@ -2324,16 +2279,7 @@ function Reader({
                       onSelect={async () => {
                         setMoving(true);
                         qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                          prev?.map((e) =>
-                            e.id === email.id
-                              ? {
-                                  ...e,
-                                  folder_id: null,
-                                  is_archived: false,
-                                  raw_labels: withInbox(e.raw_labels),
-                                }
-                              : e,
-                          ),
+                          patchMovedToInbox(prev, email.id),
                         );
                         try {
                           const r = await inboxFn({
@@ -2380,7 +2326,7 @@ function Reader({
               onClick={() => {
                 const next = !email.is_read;
                 qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                  prev?.map((e) => (e.id === email.id ? { ...e, is_read: next } : e)),
+                  patchReadState(prev, email.id, next),
                 );
                 markFn({ data: { id: email.id, read: next } }).catch(() =>
                   qc.invalidateQueries({ queryKey: ["emails"] }),
@@ -2395,11 +2341,7 @@ function Reader({
               className="h-8 w-8 p-0"
               onClick={async () => {
                 qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                  prev?.map((e) =>
-                    e.id === email.id
-                      ? { ...e, is_archived: true, raw_labels: withoutInbox(e.raw_labels) }
-                      : e,
-                  ),
+                  patchArchived(prev, email.id),
                 );
                 try {
                   await archFn({ data: { id: email.id } });
@@ -2418,7 +2360,7 @@ function Reader({
               className="h-8 w-8 p-0"
               onClick={async () => {
                 qc.setQueriesData<Email[]>({ queryKey: ["emails"] }, (prev) =>
-                  prev?.filter((e) => e.id !== email.id),
+                  patchRemoved(prev, email.id),
                 );
                 try {
                   await trashFn({ data: { id: email.id } });
