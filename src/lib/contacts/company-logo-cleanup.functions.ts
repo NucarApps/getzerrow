@@ -23,51 +23,6 @@ export const listContactsForLogoCleanup = createServerFn({ method: "GET" })
     return { ids: (data ?? []).map((r) => (r as { id: string }).id) };
   });
 
-/** Build a set of SHA-256 hashes for every company logo the user has
- * currently chosen. Used by the cleanup to detect stale historical logo
- * snapshots (e.g. a Nissan logo pinned onto a contact now under Fenway). */
-async function buildKnownCompanyLogoShaSet(userId: string): Promise<Set<string>> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { fetchChosenCompanyLogoBytes } = await import("@/lib/contacts/logo-photo.server");
-  const { sha256Hex } = await import("@/lib/contacts/photos.server");
-
-  const domains = new Set<string>();
-
-  const { data: choices } = await supabaseAdmin
-    .from("company_logo_choices")
-    .select("domain,source_domain")
-    .eq("user_id", userId);
-  for (const row of choices ?? []) {
-    const choice = row as { domain?: string | null; source_domain?: string | null };
-    const d = choice.domain;
-    if (d) domains.add(d.toLowerCase());
-    if (choice.source_domain) domains.add(choice.source_domain.toLowerCase());
-  }
-
-  // Also cover companies with a domain but no explicit choice — the fallback
-  // walker still produces a specific logo we might have inlined previously.
-  const { data: cdomains } = await supabaseAdmin
-    .from("company_domains")
-    .select("domain")
-    .eq("user_id", userId);
-  for (const row of cdomains ?? []) {
-    const d = (row as { domain?: string | null }).domain;
-    if (d) domains.add(d.toLowerCase());
-  }
-
-  const shas = new Set<string>();
-  // Fetch sequentially — small N, avoids hammering logo providers.
-  for (const domain of domains) {
-    try {
-      const hit = await fetchChosenCompanyLogoBytes(userId, domain);
-      if (hit) shas.add(await sha256Hex(hit.bytes));
-    } catch {
-      // Skip — provider hiccups shouldn't abort the whole cleanup.
-    }
-  }
-  return shas;
-}
-
 export const cleanupCompanyLogoPhotosBatch = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
@@ -87,7 +42,20 @@ export const cleanupCompanyLogoPhotosBatch = createServerFn({ method: "POST" })
       .eq("user_id", context.userId);
     if (error) throw new Error(error.message);
 
-    const knownLogoShas = await buildKnownCompanyLogoShaSet(context.userId);
+    // Canonical implementation (known-logos.server): capped at 60 domains,
+    // 6-way concurrent, 2s per-fetch timeout, TTL-cached. This file used to
+    // carry a private copy that was unbounded, unordered, sequential and had no
+    // timeout — it ran on EVERY 10-id batch, so a tenant with hundreds of
+    // company_domains did hundreds of serial provider fetches per request.
+    //
+    // The cap also makes cleanup no MORE aggressive than the online pull guard,
+    // which already used the capped set. That matters because a false positive
+    // here is destructive and sticky: it deletes the avatar and records a
+    // permanent company_logo_hashes row. Coverage is not lost — recordedShas
+    // below still carries every previously recorded hash (including custom
+    // uploads), and variantShasFor walks the contact's own company in full.
+    const { buildKnownCompanyLogoShaSet } = await import("@/lib/contacts/known-logos.server");
+    const knownLogoShas = await buildKnownCompanyLogoShaSet(context.userId, { useCache: true });
     const { getCompanyLogoVariantShas, getKnownCompanyLogoHashes, recordCompanyLogoHash } =
       await import("@/lib/contacts/logo-photo.server");
     const recordedShas = await getKnownCompanyLogoHashes(context.userId);

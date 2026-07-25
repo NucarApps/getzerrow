@@ -90,6 +90,11 @@ export async function saveCompanyPhoto(
     sha256: sha,
     source: "custom_upload",
   });
+  // The known-logo SHA set is TTL-cached per user; without this the pull guard
+  // keeps a stale set for up to 5 minutes after an upload and can promote the
+  // brand-new logo into a contact's avatar.
+  const { invalidateKnownCompanyLogoShaCache } = await import("@/lib/contacts/known-logos.server");
+  invalidateKnownCompanyLogoShaCache(userId);
 
   if (previousKey && previousKey !== key) {
     await supabaseAdmin.storage.from(COMPANY_LOGO_BUCKET).remove([previousKey]);
