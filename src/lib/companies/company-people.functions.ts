@@ -10,7 +10,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { convergeCompanyMemberships } from "./converge";
 import { getModel } from "@/lib/ai-gateway";
-import { extractDomain, isPersonalDomain } from "@/lib/company-domains";
+import { emailDomain, isPersonalDomain } from "@/lib/company-domains";
 import { isLikelyHuman } from "@/lib/contacts-helpers.server";
 import { emailLocalPart, nameMatchConfidence, normalizeNameLoose } from "@/lib/contacts/name-match";
 
@@ -162,7 +162,7 @@ export const findCompanyPeopleByDomain = createServerFn({ method: "POST" })
     ) => {
       const email = addr.trim().toLowerCase();
       if (!email || exclude.has(email) || !isLikelyHuman(email)) return;
-      const dom = extractDomain(email);
+      const dom = emailDomain(email);
       if (!dom || !domainSet.has(dom)) return; // exact-domain guard (no subdomains)
       if (displayName && displayName.trim() && !bestNameByEmail.has(email)) {
         bestNameByEmail.set(email, displayName.trim());
@@ -198,7 +198,7 @@ export const findCompanyPeopleByDomain = createServerFn({ method: "POST" })
     for (const person of agg.values()) {
       const candidateName = bestNameByEmail.get(person.email) ?? person.name;
       const candidateLocal = emailLocalPart(person.email);
-      const candidateDom = extractDomain(person.email);
+      const candidateDom = emailDomain(person.email);
       const seen = new Map<string, PossibleMatch>();
       const upsertMatch = (m: PossibleMatch) => {
         const prev = seen.get(m.contactId);
@@ -218,7 +218,7 @@ export const findCompanyPeopleByDomain = createServerFn({ method: "POST" })
             reason: "name_exact",
             score: 0.95,
             sameCompanyId: c.company_id === data.companyId,
-            differentDomain: !c.email || extractDomain(c.email) !== candidateDom,
+            differentDomain: !c.email || emailDomain(c.email) !== candidateDom,
           });
         }
         // Loose name matches across all contacts (bounded scan).
@@ -233,7 +233,7 @@ export const findCompanyPeopleByDomain = createServerFn({ method: "POST" })
             reason: "loose_tokens",
             score: conf === "high" ? 0.9 : conf === "medium" ? 0.7 : 0.5,
             sameCompanyId: c.company_id === data.companyId,
-            differentDomain: !c.email || extractDomain(c.email) !== candidateDom,
+            differentDomain: !c.email || emailDomain(c.email) !== candidateDom,
           });
         }
       }
@@ -245,7 +245,7 @@ export const findCompanyPeopleByDomain = createServerFn({ method: "POST" })
           if (!c) continue;
           const contactAddrs = emailsByContact.get(id) ?? [];
           const sameLocalDifferentDomain = contactAddrs.every(
-            (a) => extractDomain(a) !== candidateDom,
+            (a) => emailDomain(a) !== candidateDom,
           );
           if (!sameLocalDifferentDomain) continue;
           upsertMatch({

@@ -9,6 +9,7 @@
 // a deterministic domain rule built from the example email itself.
 import { z } from "zod";
 import { validateRuleNode } from "./filter-engine";
+import { emailDomain } from "../company-domains";
 import type { RuleNode } from "./types";
 
 /** Actions the AI may propose — flag-like only, never network/outbound. */
@@ -76,7 +77,9 @@ export function buildFallbackProposal(email: {
   from_name: string | null;
 }): RuleProposal {
   const addr = (email.from_addr ?? "").toLowerCase();
-  const domain = addr.includes("@") ? addr.split("@")[1] : "";
+  // Derive with the same helper the filter engine matches with, or we propose
+  // a rule whose value can never match the sender it was proposed from.
+  const domain = emailDomain(email.from_addr) ?? "";
   const name =
     (email.from_name ?? "").trim() || (domain ? domain.split(".")[0] : "") || "New folder";
   const filter_tree: RuleNode = domain

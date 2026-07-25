@@ -70,6 +70,45 @@ describe("parseMessage", () => {
     expect(p.from_addr).toBe("bob@example.com");
   });
 
+  // These From forms all defeated the old fully-anchored regex, which then fell
+  // through to storing the ENTIRE header as from_addr. Rows like that break
+  // every domain-keyed folder rule and inbox override, because the stored value
+  // isn't an address at all.
+  describe("From headers that are not a clean `Name <addr>`", () => {
+    it("handles an inner-quoted display name", () => {
+      const p = parseMessage(msg({ headers: { From: 'Jane "JD" Doe <jane@acme.com>' } }));
+      expect(p.from_addr).toBe("jane@acme.com");
+      expect(p.from_name).toBe('Jane "JD" Doe');
+    });
+
+    it("handles a trailing comment after the address", () => {
+      const p = parseMessage(msg({ headers: { From: "Jane <jane@acme.com> (Sales)" } }));
+      expect(p.from_addr).toBe("jane@acme.com");
+    });
+
+    it("takes the first address from a multi-address From", () => {
+      const p = parseMessage(
+        msg({ headers: { From: "Jane Doe <a@acme.com>, Bob <b@other.com>" } }),
+      );
+      expect(p.from_addr).toBe("a@acme.com");
+    });
+
+    it("handles an RFC 2047 encoded display name", () => {
+      const p = parseMessage(msg({ headers: { From: "=?UTF-8?Q?Jan=C3=A9?= <jane@acme.com>" } }));
+      expect(p.from_addr).toBe("jane@acme.com");
+    });
+
+    it("strips list punctuation from a bare address", () => {
+      const p = parseMessage(msg({ headers: { From: "bob@example.com," } }));
+      expect(p.from_addr).toBe("bob@example.com");
+    });
+
+    it("preserves an unparseable value rather than dropping it", () => {
+      const p = parseMessage(msg({ headers: { From: "Mailer Daemon" } }));
+      expect(p.from_addr).toBe("Mailer Daemon");
+    });
+  });
+
   it("populates standard headers (to/cc/list-id/in-reply-to/subject)", () => {
     const p = parseMessage(
       msg({

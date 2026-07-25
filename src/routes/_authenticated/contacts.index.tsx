@@ -36,8 +36,9 @@ import { toast } from "sonner";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 import { CompanyBucketHeader } from "@/components/contacts/CompanyBucketHeader";
 import {
-  extractDomain,
+  emailDomain,
   isPersonalDomain,
+  isRoutableDomain,
   prettyCompanyName,
   contactLogoDomain,
   resolveCompanyDomain,
@@ -539,7 +540,10 @@ function ContactsPage() {
     const PERSONAL_KEY = "__personal__";
     const OTHER_KEY = "__other__";
     for (const c of filtered) {
-      const rawDomain = extractDomain(c.email);
+      const rawDomainRaw = emailDomain(c.email);
+      // Dotless hosts must not become their own bucket (emailDomain no longer
+      // filters them; that check now lives in isRoutableDomain).
+      const rawDomain = isRoutableDomain(rawDomainRaw) ? rawDomainRaw : null;
       const d = resolveCompanyDomain(rawDomain, aliasMap);
       const webDomain = contactLogoDomain(c.website, c.email);
       const resolvedWeb = resolveCompanyDomain(webDomain, aliasMap);

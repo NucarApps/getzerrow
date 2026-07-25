@@ -30,6 +30,7 @@ import {
   type EmailForFilter,
 } from "./filter-engine";
 import type { OverrideException } from "./types";
+import { emailDomain } from "../company-domains";
 
 export type ClassificationResult = {
   folder_id: string | null;
@@ -104,7 +105,10 @@ export function classifyByRules(
   let aiSkipped = false;
 
   const fromAddr = (parsed.from_addr || "").toLowerCase();
-  const fromDomain = fromAddr.split("@")[1] || "";
+  // Must use the same derivation the override WRITER uses
+  // (gmail/move.functions.ts), or a domain override stored from a malformed
+  // sender can never match the domain computed here and silently never fires.
+  const fromDomain = emailDomain(parsed.from_addr) ?? "";
   // Attach sender_in_group hits so applyFilter can evaluate
   // `sender_in_group` conditions without a second DB round trip.
   if (!parsed.sender_group_ids) {

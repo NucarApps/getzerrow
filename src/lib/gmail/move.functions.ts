@@ -1,7 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { extractDomain, restoreEmailToInbox } from "../gmail-helpers.server";
+import { restoreEmailToInbox } from "../gmail-helpers.server";
+import { emailDomain } from "../company-domains";
+import { escapeLike } from "../escape-like";
 import { performMove } from "../move-email.server";
 import { invalidateAccountContextForUser } from "../sync.server";
 import { modifyMessage } from "../gmail.server";
@@ -37,7 +39,7 @@ export const moveEmailToFolder = createServerFn({ method: "POST" })
       ok: true,
       from_folder_id: fromFolderId,
       from_addr: email.from_addr,
-      domain: extractDomain(email.from_addr),
+      domain: emailDomain(email.from_addr),
     };
   });
 
@@ -76,9 +78,9 @@ export const findSimilarEmails = createServerFn({ method: "POST" })
       if (!email.from_addr) return { matches: [], domain: null };
       query = query.eq("from_addr", email.from_addr);
     } else {
-      const domain = extractDomain(email.from_addr);
+      const domain = emailDomain(email.from_addr);
       if (!domain) return { matches: [], domain: null };
-      query = query.ilike("from_addr", `%@${domain}%`);
+      query = query.ilike("from_addr", `%@${escapeLike(domain)}%`);
     }
     const { data: rows } = await query;
     return {
@@ -97,7 +99,7 @@ export const findSimilarEmails = createServerFn({ method: "POST" })
         received_at: string | null;
         snippet: string | null;
       }>,
-      domain: extractDomain(email.from_addr),
+      domain: emailDomain(email.from_addr),
     };
   });
 
@@ -488,7 +490,7 @@ export const moveEmailToInbox = createServerFn({ method: "POST" })
         .eq("gmail_message_id", email.gmail_message_id);
     }
 
-    const domain = extractDomain(email.from_addr);
+    const domain = emailDomain(email.from_addr);
     let override_added: "email" | "domain" | null = null;
     if (data.add_override && email.from_addr) {
       const value = data.add_override === "email" ? email.from_addr.toLowerCase() : domain;
@@ -598,14 +600,20 @@ export const addInboxOverride = createServerFn({ method: "POST" })
         .eq("user_id", context.userId)
         .not("folder_id", "is", null);
       if (data.match_type === "email") {
-        q = q.ilike("from_addr", value);
+        q = q.ilike("from_addr", escapeLike(value));
       } else {
-        q = q.ilike("from_addr", `%@${value}`);
+        // Trailing % matters: a row stored unnormalized ("Jane <j@acme.com>
+        // (Sales)") does not END with "@acme.com", so without it those rows
+        // were skipped even though the rule matches them. This is only a
+        // prefilter — the exact emailDomain() check below narrows it.
+        q = q.ilike("from_addr", `%@${escapeLike(value)}%`);
       }
       const { data: rows } = await q;
       const matches = (rows ?? []).filter((r) => {
         const fa = (r.from_addr || "").toLowerCase();
-        return data.match_type === "email" ? fa === value : fa.split("@")[1] === value;
+        // Same derivation as classify.ts, so the preview can't disagree with
+        // what the classifier will actually do.
+        return data.match_type === "email" ? fa === value : emailDomain(r.from_addr) === value;
       });
 
       if (matches.length) {
