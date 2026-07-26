@@ -274,7 +274,8 @@ export function FolderEditor({
       | "hide_from_inbox"
       | "skip_ai"
       | "overrides_inbox_override"
-      | "is_cold_email",
+      | "is_cold_email"
+      | "processing_enabled",
     value: boolean,
     retro: "mark_read" | "archive" | "star" | null,
   ) {
