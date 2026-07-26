@@ -18,6 +18,7 @@ export type Folder = {
   auto_star?: boolean;
   hide_from_inbox?: boolean;
   skip_ai?: boolean;
+  processing_enabled?: boolean;
   filter_tree?: RuleNode | null;
   forward_to?: string | null;
   min_ai_confidence?: number;
