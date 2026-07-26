@@ -255,7 +255,12 @@ export function classifyByRules(
 function aiCandidateFolders(parsed: ParsedEmailForClassify, context: AccountContext) {
   const eligibleIds = new Set(
     context.folders
-      .filter((f) => !f.skip_ai && (f.ai_rule ?? "").trim().length > 0)
+      .filter(
+        (f) =>
+          f.processing_enabled !== false &&
+          !f.skip_ai &&
+          (f.ai_rule ?? "").trim().length > 0,
+      )
       .map((f) => f.id),
   );
   return context.enrichedFolders.filter(
