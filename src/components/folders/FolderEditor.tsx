@@ -254,6 +254,7 @@ export function FolderEditor({
         is_cold_email: local.is_cold_email ?? false,
         surface_ai_rule: local.surface_ai_rule?.trim() || null,
         surface_names: local.surface_names?.trim() || null,
+        processing_enabled: local.processing_enabled !== false,
       })
       .eq("id", folder.id);
     if (error) {
