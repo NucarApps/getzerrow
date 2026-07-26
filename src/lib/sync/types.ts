@@ -23,6 +23,11 @@ export type Folder = {
   auto_star: boolean;
   hide_from_inbox: boolean;
   skip_ai: boolean;
+  /** Master switch. When false the folder is inert: rule matching, AI
+   *  classification, and side-effects are all skipped. Rules stay saved so
+   *  flipping it back on resumes without reconfiguration. Optional so old
+   *  cached contexts and fixtures default to enabled. */
+  processing_enabled?: boolean;
   priority: number;
   gmail_account_id: string;
   filter_logic: "any" | "all";
