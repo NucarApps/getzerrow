@@ -547,6 +547,30 @@ export function FolderEditor({
         </DropdownMenu>
       </div>
 
+      {/* Master pause switch: when off, no rules, no AI, no side-effects
+          run for this folder. Rules stay saved. */}
+      <label
+        className={`mt-3 flex items-center justify-between rounded-md border p-3 text-sm ${
+          local.processing_enabled === false
+            ? "border-amber-500/50 bg-amber-500/5"
+            : "border-border"
+        }`}
+        title="Turn off to pause all filtering, AI classification, and side-effects for this folder without deleting its rules."
+      >
+        <div>
+          <div className="font-medium">Filtering &amp; rules</div>
+          <div className="text-xs text-muted-foreground">
+            {local.processing_enabled === false
+              ? "Paused — new mail bypasses this folder. Rules are kept."
+              : "Enabled — new mail is evaluated against this folder's rules and AI."}
+          </div>
+        </div>
+        <Switch
+          checked={local.processing_enabled !== false}
+          onCheckedChange={(v) => toggleBehavior("processing_enabled", v, null)}
+        />
+      </label>
+
       {/* Stats strip */}
       <div className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-border bg-border sm:grid-cols-4">
         <StatCell label="Emails" value={emailCountQ.data ?? "—"} />
