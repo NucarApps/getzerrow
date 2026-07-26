@@ -1,0 +1,1 @@
+ALTER TABLE public.folders ADD COLUMN IF NOT EXISTS processing_enabled boolean NOT NULL DEFAULT true;

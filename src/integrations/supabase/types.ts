@@ -2066,6 +2066,7 @@ export type Database = {
           name: string
           overrides_inbox_override: boolean
           priority: number
+          processing_enabled: boolean
           relearn_threshold: number
           run_on_threads: boolean
           skip_ai: boolean
@@ -2099,6 +2100,7 @@ export type Database = {
           name: string
           overrides_inbox_override?: boolean
           priority?: number
+          processing_enabled?: boolean
           relearn_threshold?: number
           run_on_threads?: boolean
           skip_ai?: boolean
@@ -2132,6 +2134,7 @@ export type Database = {
           name?: string
           overrides_inbox_override?: boolean
           priority?: number
+          processing_enabled?: boolean
           relearn_threshold?: number
           run_on_threads?: boolean
           skip_ai?: boolean
