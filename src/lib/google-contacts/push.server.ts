@@ -260,6 +260,27 @@ async function pushGroups(ids: Ids, progress?: ProgressReporter): Promise<number
           await progress?.increment(1);
           continue;
         }
+        // Adoption failed — the Google group with this name is either not
+        // findable via listContactGroups OR is already linked to a different
+        // local group (UNIQUE gmail_account_id,resource_name). Either way,
+        // retrying every cron tick will keep hitting the same 409. Bump
+        // last_synced_at on this local link (if any) so the candidate filter
+        // (updated_at > last_synced_at) stops re-selecting this row until the
+        // user changes it again. Log distinctly so it's visible in dashboards.
+        logError(
+          "google_contacts.push.group_conflict_unresolved",
+          { ...ids, group_id: g.id, label },
+          e,
+        );
+        if (link) {
+          await supabaseAdmin
+            .from("google_group_links")
+            .update({ last_synced_at: new Date().toISOString() })
+            .eq("contact_group_id", g.id)
+            .eq("gmail_account_id", ids.gmailAccountId);
+        }
+        await progress?.increment(1);
+        continue;
       }
       logError("google_contacts.push.group_failed", { ...ids, group_id: g.id }, e);
     }
