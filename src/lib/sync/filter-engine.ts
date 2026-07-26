@@ -327,6 +327,9 @@ export function matchByFiltersOnThread(
   }> = [];
   const excludedFolders: Array<{ folder: Folder; exclude: Filter }> = [];
   for (const folder of folders) {
+    // Paused folder — user disabled filtering & rules. Skip entirely so no
+    // rule matches, no side-effects, no candidacy for downstream AI.
+    if (folder.processing_enabled === false) continue;
     const fs = byFolder.get(folder.id) || [];
     const excludes = fs.filter((f) => EXCLUDE_OPS.has(f.op));
     const includes = fs.filter((f) => !EXCLUDE_OPS.has(f.op));
