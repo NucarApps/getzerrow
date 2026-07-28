@@ -13,7 +13,6 @@ const BASE = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "");
 // Every /api/public/* endpoint gated by isAuthorizedCronRequest belongs in
 // this list (task 13 audit brought it back in sync with the routes dir).
 const CRON_ENDPOINTS = [
-  "/api/public/encryption-backfill",
   "/api/public/gmail-poll",
   "/api/public/gmail-process-jobs",
   "/api/public/gmail-renew-watches",
