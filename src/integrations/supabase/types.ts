@@ -2294,9 +2294,13 @@ export type Database = {
           last_photo_error_at: string | null
           last_photo_reason: string | null
           last_photo_status: number | null
+          last_push_error: string | null
+          last_push_error_at: string | null
           last_synced_at: string
           photo_etag: string | null
           photo_push_attempts: number
+          push_attempts: number
+          push_backoff_until: string | null
           resource_name: string
           updated_at: string
           user_id: string
@@ -2312,9 +2316,13 @@ export type Database = {
           last_photo_error_at?: string | null
           last_photo_reason?: string | null
           last_photo_status?: number | null
+          last_push_error?: string | null
+          last_push_error_at?: string | null
           last_synced_at?: string
           photo_etag?: string | null
           photo_push_attempts?: number
+          push_attempts?: number
+          push_backoff_until?: string | null
           resource_name: string
           updated_at?: string
           user_id: string
@@ -2330,9 +2338,13 @@ export type Database = {
           last_photo_error_at?: string | null
           last_photo_reason?: string | null
           last_photo_status?: number | null
+          last_push_error?: string | null
+          last_push_error_at?: string | null
           last_synced_at?: string
           photo_etag?: string | null
           photo_push_attempts?: number
+          push_attempts?: number
+          push_backoff_until?: string | null
           resource_name?: string
           updated_at?: string
           user_id?: string
