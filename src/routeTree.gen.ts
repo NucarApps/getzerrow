@@ -48,7 +48,6 @@ import { Route as ApiMobileGmailConnectRouteImport } from './routes/api/mobile/g
 import { Route as ApiMobileMeetingSettingsRouteImport } from './routes/api/mobile/meeting-settings'
 import { Route as ApiMobileMeetingsRouteImport } from './routes/api/mobile/meetings'
 import { Route as ApiMobilePushTestRouteImport } from './routes/api/mobile/push-test'
-import { Route as ApiPublicEncryptionBackfillRouteImport } from './routes/api/public/encryption-backfill'
 import { Route as ApiPublicGmailBackfillTickRouteImport } from './routes/api/public/gmail-backfill-tick'
 import { Route as ApiPublicGmailDlqReplayRouteImport } from './routes/api/public/gmail-dlq-replay'
 import { Route as ApiPublicGmailPollRouteImport } from './routes/api/public/gmail-poll'
@@ -296,12 +295,6 @@ const ApiMobilePushTestRoute = ApiMobilePushTestRouteImport.update({
   path: '/api/mobile/push-test',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicEncryptionBackfillRoute =
-  ApiPublicEncryptionBackfillRouteImport.update({
-    id: '/api/public/encryption-backfill',
-    path: '/api/public/encryption-backfill',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const ApiPublicGmailBackfillTickRoute =
   ApiPublicGmailBackfillTickRouteImport.update({
     id: '/api/public/gmail-backfill-tick',
@@ -549,7 +542,6 @@ export interface FileRoutesByFullPath {
   '/api/mobile/meeting-settings': typeof ApiMobileMeetingSettingsRoute
   '/api/mobile/meetings': typeof ApiMobileMeetingsRoute
   '/api/mobile/push-test': typeof ApiMobilePushTestRoute
-  '/api/public/encryption-backfill': typeof ApiPublicEncryptionBackfillRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
@@ -626,7 +618,6 @@ export interface FileRoutesByTo {
   '/api/mobile/meeting-settings': typeof ApiMobileMeetingSettingsRoute
   '/api/mobile/meetings': typeof ApiMobileMeetingsRoute
   '/api/mobile/push-test': typeof ApiMobilePushTestRoute
-  '/api/public/encryption-backfill': typeof ApiPublicEncryptionBackfillRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
@@ -706,7 +697,6 @@ export interface FileRoutesById {
   '/api/mobile/meeting-settings': typeof ApiMobileMeetingSettingsRoute
   '/api/mobile/meetings': typeof ApiMobileMeetingsRoute
   '/api/mobile/push-test': typeof ApiMobilePushTestRoute
-  '/api/public/encryption-backfill': typeof ApiPublicEncryptionBackfillRoute
   '/api/public/gmail-backfill-tick': typeof ApiPublicGmailBackfillTickRoute
   '/api/public/gmail-dlq-replay': typeof ApiPublicGmailDlqReplayRoute
   '/api/public/gmail-poll': typeof ApiPublicGmailPollRoute
@@ -786,7 +776,6 @@ export interface FileRouteTypes {
     | '/api/mobile/meeting-settings'
     | '/api/mobile/meetings'
     | '/api/mobile/push-test'
-    | '/api/public/encryption-backfill'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-dlq-replay'
     | '/api/public/gmail-poll'
@@ -863,7 +852,6 @@ export interface FileRouteTypes {
     | '/api/mobile/meeting-settings'
     | '/api/mobile/meetings'
     | '/api/mobile/push-test'
-    | '/api/public/encryption-backfill'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-dlq-replay'
     | '/api/public/gmail-poll'
@@ -942,7 +930,6 @@ export interface FileRouteTypes {
     | '/api/mobile/meeting-settings'
     | '/api/mobile/meetings'
     | '/api/mobile/push-test'
-    | '/api/public/encryption-backfill'
     | '/api/public/gmail-backfill-tick'
     | '/api/public/gmail-dlq-replay'
     | '/api/public/gmail-poll'
@@ -1002,7 +989,6 @@ export interface RootRouteChildren {
   ApiMobileMeetingSettingsRoute: typeof ApiMobileMeetingSettingsRoute
   ApiMobileMeetingsRoute: typeof ApiMobileMeetingsRoute
   ApiMobilePushTestRoute: typeof ApiMobilePushTestRoute
-  ApiPublicEncryptionBackfillRoute: typeof ApiPublicEncryptionBackfillRoute
   ApiPublicGmailBackfillTickRoute: typeof ApiPublicGmailBackfillTickRoute
   ApiPublicGmailDlqReplayRoute: typeof ApiPublicGmailDlqReplayRoute
   ApiPublicGmailPollRoute: typeof ApiPublicGmailPollRoute
@@ -1314,13 +1300,6 @@ declare module '@tanstack/react-router' {
       path: '/api/mobile/push-test'
       fullPath: '/api/mobile/push-test'
       preLoaderRoute: typeof ApiMobilePushTestRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/encryption-backfill': {
-      id: '/api/public/encryption-backfill'
-      path: '/api/public/encryption-backfill'
-      fullPath: '/api/public/encryption-backfill'
-      preLoaderRoute: typeof ApiPublicEncryptionBackfillRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/gmail-backfill-tick': {
@@ -1676,7 +1655,6 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMobileMeetingSettingsRoute: ApiMobileMeetingSettingsRoute,
   ApiMobileMeetingsRoute: ApiMobileMeetingsRoute,
   ApiMobilePushTestRoute: ApiMobilePushTestRoute,
-  ApiPublicEncryptionBackfillRoute: ApiPublicEncryptionBackfillRoute,
   ApiPublicGmailBackfillTickRoute: ApiPublicGmailBackfillTickRoute,
   ApiPublicGmailDlqReplayRoute: ApiPublicGmailDlqReplayRoute,
   ApiPublicGmailPollRoute: ApiPublicGmailPollRoute,
