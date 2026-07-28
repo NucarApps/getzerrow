@@ -84,8 +84,8 @@ vi.mock("@/lib/log.server", () => ({
   logError: (...args: unknown[]) => logErrorMock(...args),
 }));
 
-import { pushToGoogle, formatGoogleLabelName } from "./push.server";
-import { MAX_PHOTO_PUSH_ATTEMPTS } from "./dirty";
+import { pushToGoogle, formatGoogleLabelName, CONTACT_PUSH_CONCURRENCY } from "./push.server";
+import { MAX_PHOTO_PUSH_ATTEMPTS, PUSH_BACKOFF_BASE_MS } from "./dirty";
 import { PeopleApiError } from "./people-client.server";
 import { SUMMARY_HEADING } from "@/lib/carddav/vcard";
 
@@ -155,6 +155,8 @@ function link(contactId: string, over: Record<string, unknown> = {}): Record<str
     photo_etag: SETTLED_PHOTO,
     photo_push_attempts: 0,
     google_photo_url: null,
+    push_attempts: 0,
+    push_backoff_until: null,
     ...over,
   };
 }
@@ -318,6 +320,124 @@ describe("pushContacts clobber guard", () => {
       "google_contacts.push.etag_conflict_skip",
       expect.objectContaining({ contact_id: CT1 }),
     );
+  });
+});
+
+describe("pushContacts failure backoff", () => {
+  // Regression: a contact Google rejects (429 RESOURCE_EXHAUSTED / "FBS quota
+  // limit exceeded") stayed dirty forever — every run re-attempted it, burning
+  // the account's daily contact-write quota on a call that could not succeed.
+  // Failures must now cost the link a retry slot and a backoff window.
+  function linkUpdateFor(contactId: string): Record<string, unknown> | undefined {
+    const write = writesTo("updates", "google_contact_links").find((w) =>
+      w.filters.some((f) => f.col === "contact_id" && f.value === contactId),
+    );
+    return write?.payload as Record<string, unknown> | undefined;
+  }
+
+  it("records an attempt and a future backoff window when Google returns 429", async () => {
+    seedContact(CT1, NEWER);
+    fake.seed("google_contact_links", [link(CT1)]);
+    people.updatePerson.mockRejectedValue(
+      new PeopleApiError("People API 429: FBS quota limit exceeded", 429, "RESOURCE_EXHAUSTED"),
+    );
+
+    const before = Date.now();
+    const res = await pushToGoogle(IDS);
+
+    expect(res.contactsPushed).toBe(0);
+    const payload = linkUpdateFor(CT1);
+    expect(payload?.push_attempts).toBe(1);
+    expect(Date.parse(String(payload?.push_backoff_until))).toBeGreaterThan(before);
+    expect(String(payload?.last_push_error)).toContain("429");
+    expect(logErrorMock).toHaveBeenCalledWith(
+      "google_contacts.push.contact_failed",
+      expect.objectContaining({ contact_id: CT1 }),
+      expect.anything(),
+    );
+  });
+
+  it("escalates the backoff window with each consecutive failure", async () => {
+    seedContact(CT1, NEWER);
+    fake.seed("google_contact_links", [link(CT1, { push_attempts: 3 })]);
+    people.updatePerson.mockRejectedValue(new PeopleApiError("boom", 500));
+
+    await pushToGoogle(IDS);
+
+    const payload = linkUpdateFor(CT1);
+    expect(payload?.push_attempts).toBe(4);
+    const waitMs = Date.parse(String(payload?.push_backoff_until)) - Date.now();
+    expect(waitMs).toBeGreaterThan(PUSH_BACKOFF_BASE_MS * 4); // 4th failure → 8x base
+  });
+
+  it("stops the rest of the run once Google reports quota exhaustion", async () => {
+    // Hammering hundreds more contacts after a 429 only digs the quota hole
+    // deeper. In-flight peers in the same concurrency batch still finish —
+    // the guarantee is that no LATER batch is started.
+    const ids = Array.from(
+      { length: 3 * CONTACT_PUSH_CONCURRENCY },
+      (_, i) => `eeeeeeee-eeee-4eee-8eee-${String(i).padStart(12, "0")}`,
+    );
+    for (const id of ids) seedContact(id, NEWER);
+    fake.seed(
+      "google_contact_links",
+      ids.map((id) => link(id)),
+    );
+    people.updatePerson.mockRejectedValue(new PeopleApiError("429 exhausted", 429));
+
+    await pushToGoogle(IDS);
+
+    expect(people.updatePerson.mock.calls.length).toBeLessThanOrEqual(CONTACT_PUSH_CONCURRENCY);
+    expect(logInfoMock).toHaveBeenCalledWith(
+      "google_contacts.push.quota_exhausted_stop",
+      expect.objectContaining({ contact_id: expect.any(String) }),
+    );
+  });
+
+  it("makes zero People API calls for a contact still inside its backoff window", async () => {
+    seedContact(CT1, NEWER);
+    fake.seed("google_contact_links", [
+      link(CT1, {
+        push_attempts: 2,
+        push_backoff_until: new Date(Date.now() + 60_000).toISOString(),
+      }),
+    ]);
+
+    const res = await pushToGoogle(IDS);
+
+    expect(res.contactsPushed).toBe(0);
+    expect(people.getPerson).not.toHaveBeenCalled();
+    expect(people.updatePerson).not.toHaveBeenCalled();
+  });
+
+  it("clears the backoff state after a successful push", async () => {
+    seedContact(CT1, NEWER);
+    fake.seed("google_contact_links", [
+      link(CT1, {
+        push_attempts: 3,
+        push_backoff_until: new Date(Date.now() - 60_000).toISOString(),
+        last_push_error: "429 exhausted",
+      }),
+    ]);
+
+    const res = await pushToGoogle(IDS);
+
+    expect(res.contactsPushed).toBe(1);
+    const payload = linkUpdateFor(CT1);
+    expect(payload?.push_attempts).toBe(0);
+    expect(payload?.push_backoff_until).toBeNull();
+    expect(payload?.last_push_error).toBeNull();
+  });
+
+  it("a 404 still clears the stale link instead of recording a backoff", async () => {
+    seedContact(CT1, NEWER);
+    fake.seed("google_contact_links", [link(CT1)]);
+    people.updatePerson.mockRejectedValue(new PeopleApiError("gone", 404));
+
+    await pushToGoogle(IDS);
+
+    expect(writesTo("deletes", "google_contact_links")).toHaveLength(1);
+    expect(linkUpdateFor(CT1)?.push_attempts).toBeUndefined();
   });
 });
 
@@ -583,9 +703,12 @@ describe("pushGroups", () => {
     const res = await pushToGoogle(IDS);
 
     expect(res.groupsPushed).toBe(0);
+    // The unresolved-409 branch logs under its own scope (not the generic
+    // group_failed) so dashboards can separate "Google refuses this name" from
+    // ordinary push errors.
     expect(logErrorMock).toHaveBeenCalledWith(
-      "google_contacts.push.group_failed",
-      expect.objectContaining({ group_id: G1 }),
+      "google_contacts.push.group_conflict_unresolved",
+      expect.objectContaining({ group_id: G1, label: "Renamed" }),
       expect.anything(),
     );
     expect(logInfoMock).not.toHaveBeenCalledWith(

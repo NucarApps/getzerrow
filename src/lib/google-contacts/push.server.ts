@@ -22,6 +22,8 @@ import {
   calculateMembershipDelta,
   filterDirtyForPush,
   isGooglePhotoLinkDirty,
+  isPushBackedOff,
+  nextPushBackoffMs,
   MAX_PHOTO_PUSH_ATTEMPTS,
 } from "./dirty";
 
@@ -40,7 +42,7 @@ const PUSH_WALL_BUDGET_MS = 55_000;
 // How many contacts to push in parallel. People API calls are I/O bound and
 // each contact does ~2-3 sequential API round-trips; going wider than this
 // runs into per-user rate limits without meaningfully improving throughput.
-const CONTACT_PUSH_CONCURRENCY = 5;
+export const CONTACT_PUSH_CONCURRENCY = 5;
 
 export async function pushToGoogle(
   ids: Ids,
@@ -305,7 +307,7 @@ async function pushContacts(
   const { data: links } = await supabaseAdmin
     .from("google_contact_links")
     .select(
-      "contact_id, resource_name, etag, last_synced_at, photo_etag, google_photo_url, photo_push_attempts",
+      "contact_id, resource_name, etag, last_synced_at, photo_etag, google_photo_url, photo_push_attempts, push_attempts, push_backoff_until",
     )
     .eq("gmail_account_id", ids.gmailAccountId);
   const byLocal = new Map((links ?? []).map((l) => [l.contact_id, l]));
@@ -318,11 +320,13 @@ async function pushContacts(
   const dirty: ContactRow[] = [];
   const seen = new Set<string>();
   const photoDirtyIds = (links ?? [])
-    .filter((l) =>
-      isGooglePhotoLinkDirty({
-        photoEtag: l.photo_etag ?? null,
-        photoPushAttempts: l.photo_push_attempts ?? 0,
-      }),
+    .filter(
+      (l) =>
+        !isPushBackedOff(l) &&
+        isGooglePhotoLinkDirty({
+          photoEtag: l.photo_etag ?? null,
+          photoPushAttempts: l.photo_push_attempts ?? 0,
+        }),
     )
     .map((l) => l.contact_id);
   if (photoDirtyIds.length) {
@@ -373,9 +377,13 @@ async function pushContacts(
     false;
 
   let count = 0;
+  // Set when Google reports an account-wide write-quota exhaustion (429).
+  // Ends the run early — see the catch in processOne.
+  let quotaExhausted = false;
   const pushStartedAt = Date.now();
   const budgetHit = () => Date.now() - pushStartedAt > PUSH_WALL_BUDGET_MS;
   const processOne = async (c: ContactRow): Promise<void> => {
+    if (quotaExhausted) return;
     const link = byLocal.get(c.id);
     const linkPhotoEtag = (link as { photo_etag?: string | null } | undefined)?.photo_etag ?? null;
     const linkGooglePhotoUrl =
@@ -520,7 +528,14 @@ async function pushContacts(
             });
             await supabaseAdmin
               .from("google_contact_links")
-              .update({ etag: updated.etag ?? null, last_synced_at: new Date().toISOString() })
+              .update({
+                etag: updated.etag ?? null,
+                last_synced_at: new Date().toISOString(),
+                // A clean write clears whatever backoff a previous failure left.
+                push_attempts: 0,
+                push_backoff_until: null,
+                last_push_error: null,
+              })
               .eq("contact_id", c.id)
               .eq("gmail_account_id", ids.gmailAccountId);
             count++;
@@ -677,12 +692,38 @@ async function pushContacts(
         logInfo("google_contacts.push.stale_link_cleared", { ...ids, contact_id: c.id });
       } else {
         logError("google_contacts.push.contact_failed", { ...ids, contact_id: c.id }, e);
+        // Charge the failure to the link so the contact cools off instead of
+        // being re-attempted on every run for hours. Unlinked contacts have no
+        // row to charge — they get created fresh next run either way.
+        if (link) {
+          const attempts = ((link as { push_attempts?: number | null }).push_attempts ?? 0) + 1;
+          const message = e instanceof Error ? e.message : String(e);
+          await supabaseAdmin
+            .from("google_contact_links")
+            .update({
+              push_attempts: attempts,
+              push_backoff_until: new Date(Date.now() + nextPushBackoffMs(attempts)).toISOString(),
+              last_push_error: message.slice(0, 500),
+              last_push_error_at: new Date().toISOString(),
+            })
+            .eq("contact_id", c.id)
+            .eq("gmail_account_id", ids.gmailAccountId);
+        }
+        // 429 RESOURCE_EXHAUSTED is an account-wide write quota, not a
+        // per-contact problem: every further write this run is guaranteed to
+        // fail and to dig the quota hole deeper. Stop the loop; the backoff
+        // above staggers the retries.
+        if (e instanceof PeopleApiError && e.status === 429) {
+          quotaExhausted = true;
+          logInfo("google_contacts.push.quota_exhausted_stop", { ...ids, contact_id: c.id });
+        }
       }
     }
     await progress?.increment(1);
   };
 
   for (const batch of chunk(contacts, CONTACT_PUSH_CONCURRENCY)) {
+    if (quotaExhausted) break;
     if (budgetHit()) {
       logInfo("google_contacts.push.budget_exceeded", {
         ...ids,

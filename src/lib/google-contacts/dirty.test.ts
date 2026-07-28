@@ -5,7 +5,11 @@ import {
   isGooglePhotoLinkDirty,
   filterDirtyForPush,
   calculateMembershipDelta,
+  isPushBackedOff,
+  nextPushBackoffMs,
   MAX_PHOTO_PUSH_ATTEMPTS,
+  PUSH_BACKOFF_BASE_MS,
+  PUSH_BACKOFF_MAX_MS,
   type PushLinkState,
 } from "./dirty";
 
@@ -126,11 +130,50 @@ describe("isGooglePhotoLinkDirty", () => {
   });
 });
 
+describe("nextPushBackoffMs", () => {
+  it("grows exponentially from the base delay", () => {
+    expect(nextPushBackoffMs(1)).toBe(PUSH_BACKOFF_BASE_MS);
+    expect(nextPushBackoffMs(2)).toBe(PUSH_BACKOFF_BASE_MS * 2);
+    expect(nextPushBackoffMs(3)).toBe(PUSH_BACKOFF_BASE_MS * 4);
+  });
+
+  it("caps at PUSH_BACKOFF_MAX_MS so a stuck contact still retries daily-ish", () => {
+    expect(nextPushBackoffMs(20)).toBe(PUSH_BACKOFF_MAX_MS);
+    expect(nextPushBackoffMs(1000)).toBe(PUSH_BACKOFF_MAX_MS);
+  });
+
+  it("treats a missing/zero attempt count as the first failure", () => {
+    expect(nextPushBackoffMs(0)).toBe(PUSH_BACKOFF_BASE_MS);
+  });
+});
+
+describe("isPushBackedOff", () => {
+  const now = Date.parse("2026-07-28T05:00:00.000Z");
+
+  it("is not backed off when no backoff was ever recorded", () => {
+    expect(isPushBackedOff({ push_backoff_until: null }, now)).toBe(false);
+    expect(isPushBackedOff({ push_backoff_until: undefined }, now)).toBe(false);
+  });
+
+  it("suppresses the contact until the backoff expires", () => {
+    expect(isPushBackedOff({ push_backoff_until: "2026-07-28T05:05:00.000Z" }, now)).toBe(true);
+  });
+
+  it("releases the contact once the backoff has passed", () => {
+    expect(isPushBackedOff({ push_backoff_until: "2026-07-28T04:55:00.000Z" }, now)).toBe(false);
+  });
+
+  it("ignores an unparseable timestamp rather than wedging the contact forever", () => {
+    expect(isPushBackedOff({ push_backoff_until: "not-a-date" }, now)).toBe(false);
+  });
+});
+
 describe("filterDirtyForPush", () => {
   const syncedLink = (overrides: Partial<PushLinkState> = {}): PushLinkState => ({
     last_synced_at: "2026-07-19T12:00:00.000Z",
     photo_etag: null,
     photo_push_attempts: 0,
+    push_backoff_until: null,
     ...overrides,
   });
   const row = (id: string, updatedAt: string, avatarUrl: string | null = null) => ({
@@ -171,5 +214,26 @@ describe("filterDirtyForPush", () => {
       ["gave-up", syncedLink({ photo_push_attempts: MAX_PHOTO_PUSH_ATTEMPTS })],
     ]);
     expect(filterDirtyForPush(rows, links)).toEqual([]);
+  });
+
+  it("drops dirty contacts that are still inside their push backoff window", () => {
+    // Regression: a contact Google keeps rejecting (429 FBS quota) stayed
+    // dirty forever and was re-attempted every run, burning the account's
+    // daily write quota on a call that cannot succeed.
+    const now = Date.parse("2026-07-28T05:00:00.000Z");
+    const rows = [row("quota-stuck", "2026-07-28T04:00:00.000Z", "storage://new.jpg")];
+    const links = new Map<string, PushLinkState>([
+      ["quota-stuck", syncedLink({ push_backoff_until: "2026-07-28T05:30:00.000Z" })],
+    ]);
+    expect(filterDirtyForPush(rows, links, now)).toEqual([]);
+    // ...and comes back once the window closes.
+    expect(filterDirtyForPush(rows, links, Date.parse("2026-07-28T05:31:00.000Z"))).toEqual(rows);
+  });
+
+  it("never backs off an unlinked contact (nothing has failed yet)", () => {
+    const rows = [row("brand-new", "2026-07-28T04:00:00.000Z")];
+    expect(filterDirtyForPush(rows, new Map(), Date.parse("2026-07-28T05:00:00.000Z"))).toEqual(
+      rows,
+    );
   });
 });
