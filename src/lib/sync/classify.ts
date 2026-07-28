@@ -256,10 +256,7 @@ function aiCandidateFolders(parsed: ParsedEmailForClassify, context: AccountCont
   const eligibleIds = new Set(
     context.folders
       .filter(
-        (f) =>
-          f.processing_enabled !== false &&
-          !f.skip_ai &&
-          (f.ai_rule ?? "").trim().length > 0,
+        (f) => f.processing_enabled !== false && !f.skip_ai && (f.ai_rule ?? "").trim().length > 0,
       )
       .map((f) => f.id),
   );
