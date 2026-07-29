@@ -92,6 +92,10 @@ export function FilterLikeThisDrawer({
   const [count, setCount] = useState<number | null>(null);
   const [countLoading, setCountLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Folder auto mark-read scope for the sender/domain being filtered.
+  const [decision, setDecision] = useState<MarkReadDecision | null>(null);
+  const [decisionLoading, setDecisionLoading] = useState(false);
+  const [markRead, setMarkRead] = useState<boolean | null>(null);
 
   // Reset state when reopened or seed changes.
   useEffect(() => {
