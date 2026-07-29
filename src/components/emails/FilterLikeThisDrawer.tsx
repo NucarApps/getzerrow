@@ -111,6 +111,15 @@ export function FilterLikeThisDrawer({
     setOp(f === "subject" ? "starts_with" : "contains");
   }
 
+  // The rule field actually saved: origin_* variants match the forwarded-from
+  // sender and fall back to from_addr for directly delivered mail.
+  const ruleField: "from" | "domain" | "subject" | "origin_from" | "origin_domain" =
+    useOrigin && field === "from"
+      ? "origin_from"
+      : useOrigin && field === "domain"
+        ? "origin_domain"
+        : field;
+
   // Debounced live count.
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -153,15 +162,6 @@ export function FilterLikeThisDrawer({
 
   const canSave =
     !!folderId && value.trim().length > 0 && !saving && (!isInboxMode || field !== "subject");
-
-  // The rule field actually saved: origin_* variants match the forwarded-from
-  // sender and fall back to from_addr for directly delivered mail.
-  const ruleField: "from" | "domain" | "subject" | "origin_from" | "origin_domain" =
-    useOrigin && field === "from"
-      ? "origin_from"
-      : useOrigin && field === "domain"
-        ? "origin_domain"
-        : field;
 
   async function handleSave() {
     if (!folderId || !value.trim() || !accountId) return;
