@@ -37,6 +37,7 @@ export function FilterLikeThisDrawer({
   onOpenChange,
   accountId,
   fromAddr,
+  fromName,
   originAddr,
   isForwarded,
   subject,
@@ -47,6 +48,8 @@ export function FilterLikeThisDrawer({
   onOpenChange: (v: boolean) => void;
   accountId: string | null;
   fromAddr: string | null;
+  /** Display name from the From header, e.g. `"Manheim" via Old User Ken`. */
+  fromName?: string | null;
   /** Real sender recovered from forwarding headers, when the mail was
    * auto-forwarded (e.g. by a former colleague's still-active address). */
   originAddr?: string | null;
@@ -69,8 +72,14 @@ export function FilterLikeThisDrawer({
   // target the forwarder, not the party the user actually cares about. Default
   // to the original sender and let them switch back.
   const forwarded = !!isForwarded && !!originAddr && originAddr !== fromAddr;
+  // Relayed mail where no header named the real sender: we know the visible
+  // address belongs to the relay, so warn before a rule targets everything
+  // that mailbox forwards.
+  const via = useMemo(() => parseViaDisplayName(fromName), [fromName]);
+  const relayOnly = !forwarded && (!!isForwarded || !!via);
   const [useOrigin, setUseOrigin] = useState(forwarded);
   const senderAddr = useOrigin && originAddr ? originAddr : fromAddr;
+
   const domain = useMemo(() => emailDomain(senderAddr), [senderAddr]);
 
   const [field, setField] = useState<Field>("from");
