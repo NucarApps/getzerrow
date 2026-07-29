@@ -481,6 +481,8 @@ const EmailListRow = memo(function EmailListRow({
               onSelect={() =>
                 setFilterPrompt({
                   fromAddr: e.from_addr,
+                  originAddr: e.origin_addr ?? null,
+                  isForwarded: !!e.is_forwarded,
                   subject: e.subject,
                   currentFolderId: e.folder_id ?? null,
                 })
@@ -586,6 +588,8 @@ function InboxPage() {
   const [ruleFromEmailId, setRuleFromEmailId] = useState<string | null>(null);
   const [filterPrompt, setFilterPrompt] = useState<null | {
     fromAddr: string | null;
+    originAddr: string | null;
+    isForwarded: boolean;
     subject: string | null;
     currentFolderId: string | null;
   }>(null);
@@ -1875,6 +1879,8 @@ function InboxPage() {
             onFilterLikeThis={(e) =>
               setFilterPrompt({
                 fromAddr: e.from_addr,
+                originAddr: e.origin_addr ?? null,
+                isForwarded: !!e.is_forwarded,
                 subject: e.subject,
                 currentFolderId: e.folder_id ?? null,
               })
@@ -1895,6 +1901,8 @@ function InboxPage() {
           }}
           accountId={accountId}
           fromAddr={filterPrompt.fromAddr}
+          originAddr={filterPrompt.originAddr}
+          isForwarded={filterPrompt.isForwarded}
           subject={filterPrompt.subject}
           folders={foldersQ.data ?? []}
           currentFolderId={filterPrompt.currentFolderId}
@@ -2417,8 +2425,14 @@ function Reader({
               {senderInitials}
             </span>
             <span>
-              <strong className="text-foreground">{email.from_name || email.from_addr}</strong>
-              {email.from_name && email.from_addr ? (
+              <strong className="text-foreground">
+                {email.is_forwarded && email.origin_addr
+                  ? email.origin_addr
+                  : email.from_name || email.from_addr}
+              </strong>
+              {email.is_forwarded && email.origin_addr ? (
+                <span>{` via ${email.from_name || email.from_addr}`}</span>
+              ) : email.from_name && email.from_addr ? (
                 <span className="hidden md:inline">{` <${email.from_addr}>`}</span>
               ) : null}
             </span>
