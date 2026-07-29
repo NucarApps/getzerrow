@@ -55,6 +55,12 @@ export type EmailForFilter = {
   cc?: string;
   list_id?: string;
   in_reply_to?: string;
+  /** Reply-To address, when the message carried one. */
+  reply_to_addr?: string | null;
+  /** True sender when the message reached us through an auto-forward
+   * (see gmail/origin-sender.ts). Absent/null for direct mail, in which
+   * case the `origin_*` fields fall back to from_addr. */
+  origin_addr?: string | null;
   subject: string;
   body_text: string;
   has_attachment: boolean;
@@ -84,6 +90,16 @@ export function applyFilter(email: EmailForFilter, f: Filter): boolean {
         return (email.body_text || "").toLowerCase();
       case "domain":
         return emailDomain(email.from_addr) ?? "";
+      case "origin_from": {
+        // The real sender: the origin address for forwarded mail, else From.
+        // Falling back keeps one rule working for both direct and relayed mail.
+        const addr = email.origin_addr || email.from_addr || "";
+        return addr.toLowerCase();
+      }
+      case "origin_domain":
+        return emailDomain(email.origin_addr || email.from_addr) ?? "";
+      case "reply_to":
+        return (email.reply_to_addr || "").toLowerCase();
       case "has_attachment":
         return email.has_attachment ? "true" : "false";
       default:

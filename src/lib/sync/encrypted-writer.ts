@@ -32,6 +32,9 @@ export type UpsertEmailInput = {
   cc: string | null;
   list_id: string | null;
   in_reply_to: string | null;
+  reply_to_addr?: string | null;
+  origin_addr?: string | null;
+  is_forwarded?: boolean;
   subject: string | null;
   snippet: string | null;
   body_text: string | null;
@@ -60,6 +63,9 @@ export async function upsertEmailEncrypted(
     p_cc: input.cc,
     p_list_id: input.list_id,
     p_in_reply_to: input.in_reply_to,
+    p_reply_to_addr: input.reply_to_addr ?? null,
+    p_origin_addr: input.origin_addr ?? null,
+    p_is_forwarded: input.is_forwarded ?? false,
     p_subject: input.subject,
     p_snippet: input.snippet,
     p_body_text: input.body_text,

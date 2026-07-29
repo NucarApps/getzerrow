@@ -23,6 +23,12 @@ import type { Folder, Filter, RuleNode } from "../sync/types";
 import { upsertEmailEncrypted, updateEmailEncrypted } from "../sync/encrypted-writer";
 import { toEmailUpsert } from "../sync/email-upsert";
 import { getEmailsDecrypted } from "../sync/encrypted-reader";
+import {
+  SIMPLE_RULE_FIELDS,
+  applySimpleRulePredicate,
+  normalizeRuleValue,
+  type SimpleRuleField,
+} from "./rule-query";
 
 export const getSyncLatencyStats = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -231,14 +237,14 @@ export const addFolderRule = createServerFn({ method: "POST" })
   .inputValidator(
     (d: {
       folder_id: string;
-      field: "from" | "domain" | "subject";
+      field: SimpleRuleField;
       value: string;
       op?: "contains" | "equals" | "starts_with";
     }) =>
       z
         .object({
           folder_id: z.string().uuid(),
-          field: z.enum(["from", "domain", "subject"]),
+          field: z.enum(SIMPLE_RULE_FIELDS),
           value: z.string().min(1).max(998),
           op: z.enum(["contains", "equals", "starts_with"]).optional(),
         })
@@ -249,12 +255,7 @@ export const addFolderRule = createServerFn({ method: "POST" })
     // Domain values are normalized (lowercase, no leading @). Sender addresses are
     // lowercased. Subject text is preserved as the user typed it (case-insensitive
     // compare happens in the filter engine).
-    const value =
-      data.field === "subject"
-        ? data.value.trim()
-        : data.field === "domain"
-          ? data.value.trim().toLowerCase().replace(/^@/, "")
-          : data.value.trim().toLowerCase();
+    const value = normalizeRuleValue(data.field, data.value);
     if (!value) throw new Error("Empty value");
 
     const { data: folder } = await supabaseAdmin
@@ -295,14 +296,14 @@ export const countMatchingForRule = createServerFn({ method: "POST" })
   .inputValidator(
     (d: {
       account_id: string;
-      field: "from" | "domain" | "subject";
+      field: SimpleRuleField;
       op: "contains" | "equals" | "starts_with";
       value: string;
     }) =>
       z
         .object({
           account_id: z.string().uuid(),
-          field: z.enum(["from", "domain", "subject"]),
+          field: z.enum(SIMPLE_RULE_FIELDS),
           op: z.enum(["contains", "equals", "starts_with"]),
           value: z.string().min(1).max(998),
         })
@@ -311,23 +312,13 @@ export const countMatchingForRule = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const raw = data.value.trim();
     if (!raw) return { count: 0 };
-    const v = data.field === "subject" ? raw : raw.toLowerCase().replace(/^@/, "");
-    const esc = escapeLike(v);
-    let q = supabaseAdmin
+    const v = normalizeRuleValue(data.field, raw);
+    const base = supabaseAdmin
       .from("emails")
       .select("id", { count: "exact", head: true })
       .eq("user_id", context.userId)
       .eq("gmail_account_id", data.account_id);
-
-    if (data.field === "subject") {
-      const pat = data.op === "equals" ? esc : data.op === "starts_with" ? `${esc}%` : `%${esc}%`;
-      q = q.ilike("subject", pat);
-    } else if (data.field === "domain") {
-      q = q.ilike("from_addr", `%@${esc}%`);
-    } else {
-      const pat = data.op === "starts_with" ? `${esc}%` : `%${esc}%`;
-      q = q.ilike("from_addr", pat);
-    }
+    const q = applySimpleRulePredicate(base, data.field, data.op, v);
 
     const { count, error } = await q;
     if (error) throw new Error(error.message);
@@ -345,7 +336,7 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
     (d: {
       account_id: string;
       to_folder_id: string;
-      field: "from" | "domain" | "subject";
+      field: SimpleRuleField;
       op: "contains" | "equals" | "starts_with";
       value: string;
       archive?: boolean;
@@ -354,7 +345,7 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
         .object({
           account_id: z.string().uuid(),
           to_folder_id: z.string().uuid(),
-          field: z.enum(["from", "domain", "subject"]),
+          field: z.enum(SIMPLE_RULE_FIELDS),
           op: z.enum(["contains", "equals", "starts_with"]),
           value: z.string().min(1).max(998),
           archive: z.boolean().optional().default(false),
@@ -407,9 +398,13 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
     const reason =
       data.field === "domain"
         ? `Domain rule: ${v} → ${folder.name}`
-        : data.field === "subject"
-          ? `Subject rule (${data.op}): ${v} → ${folder.name}`
-          : `Sender rule: ${v} → ${folder.name}`;
+        : data.field === "origin_domain"
+          ? `Original-sender domain rule: ${v} → ${folder.name}`
+          : data.field === "origin_from"
+            ? `Original-sender rule: ${v} → ${folder.name}`
+            : data.field === "subject"
+              ? `Subject rule (${data.op}): ${v} → ${folder.name}`
+              : `Sender rule: ${v} → ${folder.name}`;
 
     let moved = 0;
     let failed = 0;

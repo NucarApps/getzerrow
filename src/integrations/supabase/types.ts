@@ -1331,15 +1331,18 @@ export type Database = {
           id: string
           in_reply_to: string | null
           is_archived: boolean
+          is_forwarded: boolean
           is_read: boolean
           key_version: number
           list_id: string | null
           matched_filter_ids: string[]
           matched_folder_ids: string[]
+          origin_addr: string | null
           processed_at: string | null
           published_at_ms: number | null
           raw_labels: string[] | null
           received_at: string | null
+          reply_to_addr: string | null
           snippet_enc: string | null
           snoozed_until: string | null
           subject_enc: string | null
@@ -1373,15 +1376,18 @@ export type Database = {
           id?: string
           in_reply_to?: string | null
           is_archived?: boolean
+          is_forwarded?: boolean
           is_read?: boolean
           key_version?: number
           list_id?: string | null
           matched_filter_ids?: string[]
           matched_folder_ids?: string[]
+          origin_addr?: string | null
           processed_at?: string | null
           published_at_ms?: number | null
           raw_labels?: string[] | null
           received_at?: string | null
+          reply_to_addr?: string | null
           snippet_enc?: string | null
           snoozed_until?: string | null
           subject_enc?: string | null
@@ -1415,15 +1421,18 @@ export type Database = {
           id?: string
           in_reply_to?: string | null
           is_archived?: boolean
+          is_forwarded?: boolean
           is_read?: boolean
           key_version?: number
           list_id?: string | null
           matched_filter_ids?: string[]
           matched_folder_ids?: string[]
+          origin_addr?: string | null
           processed_at?: string | null
           published_at_ms?: number | null
           raw_labels?: string[] | null
           received_at?: string | null
+          reply_to_addr?: string | null
           snippet_enc?: string | null
           snoozed_until?: string | null
           subject_enc?: string | null
@@ -4010,13 +4019,16 @@ export type Database = {
           p_has_attachment: boolean
           p_in_reply_to: string
           p_is_archived: boolean
+          p_is_forwarded?: boolean
           p_is_read: boolean
           p_key: string
           p_list_id: string
+          p_origin_addr?: string
           p_processed_at: string
           p_published_at_ms: number
           p_raw_labels: string[]
           p_received_at: string
+          p_reply_to_addr?: string
           p_snippet: string
           p_subject: string
           p_thread_id: string
