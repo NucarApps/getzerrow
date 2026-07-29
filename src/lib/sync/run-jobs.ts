@@ -32,6 +32,7 @@ import {
   type ActionFolder,
   type ProcessTimings,
 } from "./process-message";
+import { resolveAutoMarkRead, rulesForFolder } from "./mark-read-scope";
 import {
   JOB_WORKER_CONCURRENCY,
   LIVE_BATCH_AI_THRESHOLD,
@@ -41,6 +42,7 @@ import {
 function resolveActionFolderFromContext(
   context: AccountContext | undefined,
   folderId: string | null | undefined,
+  email?: { from_addr?: string | null; origin_addr?: string | null },
 ): ActionFolder | null {
   if (!context || !folderId) return null;
   const cached = context.folders.find((f) => f.id === folderId);
@@ -49,7 +51,11 @@ function resolveActionFolderFromContext(
     id: cached.id,
     gmail_label_id: cached.gmail_label_id,
     auto_archive: cached.auto_archive,
-    auto_mark_read: cached.auto_mark_read,
+    auto_mark_read: resolveAutoMarkRead(
+      cached,
+      rulesForFolder(context.markReadRules ?? [], cached.id),
+      email ?? null,
+    ),
     auto_star: cached.auto_star,
     hide_from_inbox: cached.hide_from_inbox,
     forward_to: cached.forward_to,

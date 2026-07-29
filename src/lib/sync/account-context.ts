@@ -15,6 +15,7 @@
 //   filter mutations are rare and the 5s TTL bounds the worst-case
 //   staleness anyway.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { MarkReadRule } from "./mark-read-scope";
 import type { ClassifyFolder } from "../ai.server";
 import type { Filter, Folder, OverrideException } from "./types";
 
@@ -35,6 +36,8 @@ export type AccountContext = {
   /** Lowercased sender email → set of contact_group ids the sender belongs
    * to for this user. Feeds the `sender_in_group` filter op. */
   senderGroups: Map<string, Set<string>>;
+  /** Per-folder sender/domain entries scoping auto mark-read. */
+  markReadRules: MarkReadRule[];
 };
 
 const accountContextCache = new Map<string, { ctx: AccountContext; expires: number }>();
@@ -123,12 +126,20 @@ export async function loadAccountContext(
   // every user's filters (RLS doesn't apply with the admin client) and
   // scales better as the table grows.
   let filterList: Filter[] = [];
+  let markReadRules: MarkReadRule[] = [];
   if (folderIds.length > 0) {
-    const { data: filters } = await supabaseAdmin
-      .from("folder_filters")
-      .select("id, folder_id, field, op, value")
-      .in("folder_id", folderIds);
+    const [{ data: filters }, { data: markRead }] = await Promise.all([
+      supabaseAdmin
+        .from("folder_filters")
+        .select("id, folder_id, field, op, value")
+        .in("folder_id", folderIds),
+      supabaseAdmin
+        .from("folder_mark_read_rules")
+        .select("folder_id, match_type, value")
+        .in("folder_id", folderIds),
+    ]);
     filterList = (filters ?? []) as Filter[];
+    markReadRules = (markRead ?? []) as MarkReadRule[];
   }
   const enrichedFolders = await loadFoldersWithExamples(folderList);
 
@@ -172,6 +183,7 @@ export async function loadAccountContext(
     calendarContacts,
     accountEmail: account?.email_address ?? null,
     senderGroups,
+    markReadRules,
   };
   accountContextCache.set(accountId, { ctx, expires: Date.now() + ACCOUNT_CONTEXT_TTL_MS });
   return ctx;
