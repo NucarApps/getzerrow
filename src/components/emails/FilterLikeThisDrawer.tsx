@@ -267,6 +267,27 @@ export function FilterLikeThisDrawer({
       toast.success(
         r.already ? `Rule already routed to ${folderName}` : `Future matches → ${folderName}`,
       );
+
+      // Only write folder settings when the user actually changed the default,
+      // so filtering never silently flips a folder's mark-read behavior.
+      if (showMarkRead && markRead !== null && decision && markRead !== decision.would_mark_read) {
+        try {
+          await setSenderMarkReadFn({
+            data: { folder_id: folderId, value: value.trim(), mark_read: markRead },
+          });
+          toast.success(
+            markRead
+              ? `${folderName}: this sender will be marked read`
+              : `${folderName}: this sender stays unread`,
+          );
+          qc.invalidateQueries({ queryKey: ["folder-mark-read-rules"] });
+          qc.invalidateQueries({ queryKey: ["folders"] });
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          toast.error(`Rule saved, but the mark-read setting failed: ${msg}`);
+        }
+      }
+
       qc.invalidateQueries({ queryKey: ["folder-filters"] });
       qc.invalidateQueries({ queryKey: ["emails"] });
       qc.invalidateQueries({ queryKey: ["emails-summary"] });
