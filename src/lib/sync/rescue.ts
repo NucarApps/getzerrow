@@ -43,6 +43,8 @@ type RescueRow = {
   cc: string | null;
   list_id: string | null;
   in_reply_to: string | null;
+  reply_to_addr: string | null;
+  origin_addr: string | null;
   subject: string | null;
   snippet: string | null;
   body_text: string | null;
@@ -60,6 +62,8 @@ function toParsed(row: RescueRow): ParsedEmailForClassify {
     cc: row.cc ?? undefined,
     list_id: row.list_id ?? undefined,
     in_reply_to: row.in_reply_to ?? undefined,
+    reply_to_addr: row.reply_to_addr,
+    origin_addr: row.origin_addr,
     subject: row.subject ?? "",
     snippet: row.snippet ?? "",
     body_text: row.body_text ?? "",
@@ -146,7 +150,7 @@ export async function rescueStrandedEmails(opts: { limit?: number } = {}) {
   const { data: baseRows, error } = await supabaseAdmin
     .from("emails")
     .select(
-      "id, user_id, gmail_account_id, gmail_message_id, from_addr, list_id, in_reply_to, has_attachment, received_at, raw_labels, classify_attempts",
+      "id, user_id, gmail_account_id, gmail_message_id, from_addr, origin_addr, reply_to_addr, list_id, in_reply_to, has_attachment, received_at, raw_labels, classify_attempts",
     )
     .is("folder_id", null)
     .in("classified_by", NON_TERMINAL_STATES as unknown as string[])
@@ -182,6 +186,8 @@ export async function rescueStrandedEmails(opts: { limit?: number } = {}) {
       cc: d?.cc ?? null,
       list_id: b.list_id,
       in_reply_to: b.in_reply_to,
+      reply_to_addr: b.reply_to_addr,
+      origin_addr: b.origin_addr,
       subject: d?.subject ?? null,
       snippet: d?.snippet ?? null,
       body_text: d?.body_text ?? null,

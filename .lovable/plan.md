@@ -1,40 +1,55 @@
-## Goal
+## What's happening
 
-Add a per-folder on/off switch that makes a folder inert — no rule matching, no AI classification, no side-effects — without deleting its rules. Flipping it back on resumes exactly where it left off.
+Mail auto-forwarded by an ex-employee's account (kconnor@nucar.com — 78 messages in the last 3 days) arrives with `From: kconnor@nucar.com`, so:
 
-Today `skip_ai` only disables AI; deterministic filters (`filter_tree` / `folder_filters`) still run. There is no single "pause this folder" control.
+- `emails.from_addr` = the forwarder, not Manheim.
+- "Filter messages like this → match by sender" seeds from `from_addr`, so the rule targets the forwarder.
+- `emails` has no `reply_to`, `sender`, `return_path`, or `x-forwarded-for` column (verified against the live schema), and `parseMessage` in `src/lib/gmail.server.ts` only reads From/To/Cc/List-Id/In-Reply-To/Subject. The original sender is present in the Gmail headers today but we discard it.
 
-## Changes
+## Plan
 
-### 1. Schema
-- Add `folders.processing_enabled boolean not null default true`.
-- Backfill existing rows to `true`.
+### 1. Capture the originating-sender headers
 
-### 2. Sync pipeline (`src/lib/sync/`)
-- Extend `FolderForClassify` in `types.ts` with `processing_enabled`.
-- Add `processing_enabled` to the folder select list in `types.ts` (line 39) and every fetch that feeds classification.
-- In `filter-engine.ts` (`matchByFilters`) and `classify.ts` (AI candidate set), skip any folder where `processing_enabled === false` before evaluating rules or AI.
-- Gmail label sync (folders with `gmail_label_id`) also skips when disabled.
+In `parseMessage`, additionally read `Reply-To`, `Sender`, `Return-Path`, `X-Forwarded-For`, `X-Original-From`, and `X-Original-Sender`, and derive:
 
-### 3. Folder editor UI
-- In `FolderEditor.tsx`, add a prominent `Switch` at the top of the folder header labeled "Enable filtering & rules" bound to `processing_enabled`.
-- When off: dim the rules/AI/behavior sections and show a small "Paused — new mail bypasses this folder" hint. Filter tree and AI rule stay editable so the user can prepare rules while paused.
-- Persist through the existing `updateFolder` server fn (already accepts arbitrary patch fields — just add `processing_enabled` to the allowed keys).
+- `reply_to_addr`
+- `origin_addr` — the best guess at the true sender, chosen in this order: `X-Original-From` / `X-Original-Sender` → `Reply-To` (when its domain differs from From) → `X-Forwarded-For` original address → `Return-Path`/`Sender` (when it differs from From) → fall back to `from_addr`.
+- `is_forwarded` — true when `origin_addr` differs from `from_addr`.
 
-### 4. Folder list
-- In the sidebar / folder list, show a small paused indicator next to disabled folders so the state is visible without opening the editor.
+Keep this a pure helper (e.g. `src/lib/gmail/origin-sender.ts`) with unit tests, mirroring the existing pure-logic convention.
 
-### 5. Tests
-- Extend `filter-engine.test.ts`: disabled folder is never returned as a match even when filters would.
-- Extend `classify-ai.test.ts`: disabled folders excluded from AI candidate set (mirrors the existing `skip_ai` test).
+### 2. Store it
 
-## Out of scope
+Migration adding to `public.emails`: `reply_to_addr text`, `origin_addr text`, `origin_name_enc` (encrypted, same pattern as `from_name_enc`), `is_forwarded boolean not null default false`; index on `origin_addr`. Wire through `email-upsert.ts`, `encrypted-writer.ts`/`encrypted-reader.ts`, and the RPCs those call. Existing rows keep `origin_addr = null` and behave exactly as today.
 
-- Bulk enable/disable across folders (can be a follow-up).
-- Retroactively moving already-filed mail out of a paused folder — pause only affects new incoming mail.
-- Scheduled/timed pauses.
+### 3. New rule fields
+
+Add to the filter engine (`applyFilter`): `origin_from`, `origin_domain`, `reply_to`. `origin_*` falls back to `from_addr` when the message wasn't forwarded, so a rule on `origin_domain = manheim.com` catches both direct and forwarded Manheim mail. Add the three options to `FIELD_OPTS` in `folder-rule-group-editor.tsx` and to the field list used by the simple rule builder / simulator.
+
+### 4. UI: pick which sender to match
+
+In `FilterLikeThisDrawer`, when the email is forwarded, show the sender choice as two radio rows instead of one:
+
+```text
+Sender    ( ) kconnor@nucar.com        (forwarded by)
+          (•) sales@manheim.com        (original sender)
+Domain    ( ) nucar.com   (•) manheim.com
+```
+
+Default to the original sender when `is_forwarded`. The chosen row writes an `origin_from` / `origin_domain` rule; picking the forwarder writes the current `from` / `domain` rule. Unforwarded mail keeps today's single-value UI unchanged.
+
+Also surface "via kconnor@nucar.com" as a small line in the email detail header and in `AiDecisionDrawer` so it's obvious why a rule matched.
+
+### 5. Backfill
+
+One-off pass (reuse the existing reprocess path) to re-parse recent messages from the known forwarding accounts and populate `origin_addr` so historical mail becomes matchable by the new rules. Scoped by account + date range, run on request rather than automatically.
 
 ## Technical notes
 
-- Historical mail already filed into the folder stays put; pause is forward-only. This matches the existing "inert by default" contract for rule-less folders.
-- Digest / summary schedules attached to a paused folder keep running against whatever mail is already inside — a separate concern from classification.
+- No change to classification precedence: the AI path and existing `from`/`domain` rules behave identically for non-forwarded mail.
+- Inbox overrides get the same origin-aware treatment so an always-inbox entry on the real sender works for forwarded copies.
+- Tests: origin-header parser unit tests, `filter-engine` cases for the three new fields incl. the fallback-to-`from_addr` behavior, and a drawer test that a forwarded email seeds the original sender.
+
+## Open question
+
+If Manheim's mail is arriving through a mailbox that no longer belongs to anyone, the cleaner long-term fix is to stop the forward at Google Workspace and have Manheim send directly. This plan makes Zerrow handle it either way, but worth flagging.

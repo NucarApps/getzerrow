@@ -1,5 +1,6 @@
 // Gmail API helpers — direct calls to Google with per-user OAuth tokens. Server-only.
 import { getAccessToken } from "./google-oauth.server";
+import { deriveOriginSender } from "./gmail/origin-sender";
 import { toBase64Url } from "./base64url";
 
 const BASE = "https://gmail.googleapis.com/gmail/v1";
@@ -423,6 +424,9 @@ export function parseMessage(msg: ParsableGmailMessage) {
     headers.find((x) => x.name.toLowerCase() === n.toLowerCase())?.value || "";
   const from = h("from");
   const { name: fromName, addr: fromAddr } = parseFromHeader(from);
+  // Auto-forwarded mail carries the forwarder in `From`; recover the real
+  // sender so rules can target it (see gmail/origin-sender.ts).
+  const origin = deriveOriginSender(h);
   const bodyText = extractPart(payload, "text/plain");
   const bodyHtml = extractPart(payload, "text/html");
   const hasAttachment = (() => {
@@ -458,6 +462,10 @@ export function parseMessage(msg: ParsableGmailMessage) {
     cc: h("cc"),
     list_id: h("list-id"),
     in_reply_to: h("in-reply-to"),
+    reply_to_addr: origin.reply_to_addr,
+    origin_addr: origin.origin_addr,
+    origin_name: origin.origin_name,
+    is_forwarded: origin.is_forwarded,
     subject: h("subject"),
     snippet: msg.snippet as string,
     body_text: bodyText,

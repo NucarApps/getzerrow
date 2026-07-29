@@ -22,7 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
-import { AtSign, Globe, Type, Inbox } from "lucide-react";
+import { AtSign, Globe, Type, Inbox, Forward } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 
@@ -37,6 +37,8 @@ export function FilterLikeThisDrawer({
   onOpenChange,
   accountId,
   fromAddr,
+  originAddr,
+  isForwarded,
   subject,
   folders,
   currentFolderId,
@@ -45,6 +47,10 @@ export function FilterLikeThisDrawer({
   onOpenChange: (v: boolean) => void;
   accountId: string | null;
   fromAddr: string | null;
+  /** Real sender recovered from forwarding headers, when the mail was
+   * auto-forwarded (e.g. by a former colleague's still-active address). */
+  originAddr?: string | null;
+  isForwarded?: boolean | null;
   subject: string | null;
   folders: Folder[];
   currentFolderId: string | null;
@@ -59,7 +65,13 @@ export function FilterLikeThisDrawer({
   // Same derivation the filter engine and override matcher use — this drawer
   // WRITES rules/overrides, so a divergent value here creates a rule that can
   // never match the sender it was created from.
-  const domain = useMemo(() => emailDomain(fromAddr), [fromAddr]);
+  // When a message was auto-forwarded, rules built from the visible sender
+  // target the forwarder, not the party the user actually cares about. Default
+  // to the original sender and let them switch back.
+  const forwarded = !!isForwarded && !!originAddr && originAddr !== fromAddr;
+  const [useOrigin, setUseOrigin] = useState(forwarded);
+  const senderAddr = useOrigin && originAddr ? originAddr : fromAddr;
+  const domain = useMemo(() => emailDomain(senderAddr), [senderAddr]);
 
   const [field, setField] = useState<Field>("from");
   const [value, setValue] = useState("");
@@ -74,11 +86,12 @@ export function FilterLikeThisDrawer({
   // Reset state when reopened or seed changes.
   useEffect(() => {
     if (!open) return;
-    const initialField: Field = fromAddr ? "from" : subject ? "subject" : "domain";
+    setUseOrigin(forwarded);
+    const initialField: Field = senderAddr ? "from" : subject ? "subject" : "domain";
     setField(initialField);
     setValue(
       initialField === "from"
-        ? (fromAddr ?? "")
+        ? (senderAddr ?? "")
         : initialField === "domain"
           ? (domain ?? "")
           : (subject ?? ""),
@@ -88,15 +101,24 @@ export function FilterLikeThisDrawer({
     setApplyToPast(false);
     setArchivePast(false);
     setCount(null);
-  }, [open, fromAddr, subject, domain]);
+  }, [open, senderAddr, subject, domain, forwarded]);
 
   // When the user switches field, repopulate the value with the email's value
   // for that field.
   function pickField(f: Field) {
     setField(f);
-    setValue(f === "from" ? (fromAddr ?? "") : f === "domain" ? (domain ?? "") : (subject ?? ""));
+    setValue(f === "from" ? (senderAddr ?? "") : f === "domain" ? (domain ?? "") : (subject ?? ""));
     setOp(f === "subject" ? "starts_with" : "contains");
   }
+
+  // The rule field actually saved: origin_* variants match the forwarded-from
+  // sender and fall back to from_addr for directly delivered mail.
+  const ruleField: "from" | "domain" | "subject" | "origin_from" | "origin_domain" =
+    useOrigin && field === "from"
+      ? "origin_from"
+      : useOrigin && field === "domain"
+        ? "origin_domain"
+        : field;
 
   // Debounced live count.
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -110,7 +132,7 @@ export function FilterLikeThisDrawer({
     debounceRef.current = setTimeout(async () => {
       try {
         const r = await countFn({
-          data: { account_id: accountId, field, op, value: value.trim() },
+          data: { account_id: accountId, field: ruleField, op, value: value.trim() },
         });
         setCount(r.count);
       } catch {
@@ -122,19 +144,21 @@ export function FilterLikeThisDrawer({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [open, accountId, field, op, value, countFn]);
+  }, [open, accountId, ruleField, op, value, countFn]);
 
   const isInboxMode = folderId === INBOX_OVERRIDE;
   // Inbox overrides only support sender or domain matches; auto-switch from subject.
   useEffect(() => {
     if (!isInboxMode) return;
+    // Inbox overrides match the delivered sender, so origin matching is off here.
+    if (useOrigin) setUseOrigin(false);
     if (field === "subject") {
       const nextField: Field = fromAddr ? "from" : domain ? "domain" : "from";
       setField(nextField);
       setValue(nextField === "from" ? (fromAddr ?? "") : (domain ?? ""));
     }
     if (op !== "equals") setOp("equals");
-  }, [isInboxMode, field, op, fromAddr, domain]);
+  }, [isInboxMode, field, op, fromAddr, domain, useOrigin]);
 
   const canSave =
     !!folderId && value.trim().length > 0 && !saving && (!isInboxMode || field !== "subject");
@@ -172,7 +196,7 @@ export function FilterLikeThisDrawer({
       }
 
       const r = await addRuleFn({
-        data: { folder_id: folderId, field, value: value.trim(), op },
+        data: { folder_id: folderId, field: ruleField, value: value.trim(), op },
       });
       const folderName = folders.find((f) => f.id === folderId)?.name ?? "folder";
       toast.success(
@@ -185,7 +209,7 @@ export function FilterLikeThisDrawer({
 
       if (applyToPast) {
         const trimmed = value.trim();
-        const currentField = field;
+        const currentField = ruleField;
         const currentOp = op;
         const archive = archivePast;
         const targetFolderId = folderId;
@@ -234,6 +258,33 @@ export function FilterLikeThisDrawer({
         </SheetHeader>
 
         <div className="mt-4 space-y-5">
+          {forwarded && !isInboxMode && (
+            <div>
+              <Label className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">
+                Which sender
+              </Label>
+              <div className="grid grid-cols-2 gap-1.5">
+                <FieldTab
+                  active={useOrigin}
+                  onClick={() => setUseOrigin(true)}
+                  icon={<AtSign className="h-3.5 w-3.5" />}
+                  label="Original sender"
+                />
+                <FieldTab
+                  active={!useOrigin}
+                  onClick={() => setUseOrigin(false)}
+                  icon={<Forward className="h-3.5 w-3.5" />}
+                  label="Forwarded by"
+                />
+              </div>
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                {useOrigin
+                  ? `Matches mail originally from ${originAddr}, however it is forwarded.`
+                  : `Matches everything forwarded by ${fromAddr}.`}
+              </p>
+            </div>
+          )}
+
           {/* Match by */}
           <div>
             <Label className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">
@@ -245,7 +296,7 @@ export function FilterLikeThisDrawer({
                 onClick={() => pickField("from")}
                 icon={<AtSign className="h-3.5 w-3.5" />}
                 label="Sender"
-                disabled={!fromAddr}
+                disabled={!senderAddr}
               />
               <FieldTab
                 active={field === "domain"}

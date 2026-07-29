@@ -17,6 +17,9 @@ export type ParsedForUpsert = {
   cc?: string | null;
   list_id?: string | null;
   in_reply_to?: string | null;
+  reply_to_addr?: string | null;
+  origin_addr?: string | null;
+  is_forwarded?: boolean;
   subject: string | null;
   snippet: string | null;
   body_text: string | null;
@@ -56,6 +59,9 @@ export function toEmailUpsert(
     cc: p.cc ?? null,
     list_id: p.list_id ?? null,
     in_reply_to: p.in_reply_to ?? null,
+    reply_to_addr: p.reply_to_addr ?? null,
+    origin_addr: p.origin_addr ?? null,
+    is_forwarded: p.is_forwarded ?? false,
     subject: p.subject,
     snippet: p.snippet,
     body_text: p.body_text,

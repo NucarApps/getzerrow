@@ -49,6 +49,8 @@ export type ParsedEmailForClassify = {
   cc?: string;
   list_id?: string;
   in_reply_to?: string;
+  reply_to_addr?: string | null;
+  origin_addr?: string | null;
   subject: string;
   snippet: string;
   body_text: string;
