@@ -19,7 +19,6 @@ import { logError } from "../log.server";
 import { removeLabelsFromCurrent } from "../sync/label-merge";
 import { buildGmailQueries } from "../sync/gmail-query-builder";
 import { classifyIngestedMessage } from "./ingest-classify";
-import { applySimpleRulePredicate } from "./rule-query";
 import type { Folder, Filter, RuleNode } from "../sync/types";
 import { upsertEmailEncrypted, updateEmailEncrypted } from "../sync/encrypted-writer";
 import { toEmailUpsert } from "../sync/email-upsert";
@@ -364,7 +363,6 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
     const raw = data.value.trim();
     if (!raw) return { moved: 0, failed: 0, archived: 0 };
     const v = data.field === "subject" ? raw : raw.toLowerCase().replace(/^@/, "");
-    const esc = escapeLike(v);
 
     // Build a query with the rule predicate applied (without folder/archive scoping).
     // Shared with addFolderRule/countMatchingForRule so "apply to past" selects
