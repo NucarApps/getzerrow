@@ -1907,6 +1907,7 @@ function InboxPage() {
           }}
           accountId={accountId}
           fromAddr={filterPrompt.fromAddr}
+          fromName={filterPrompt.fromName}
           originAddr={filterPrompt.originAddr}
           isForwarded={filterPrompt.isForwarded}
           subject={filterPrompt.subject}
