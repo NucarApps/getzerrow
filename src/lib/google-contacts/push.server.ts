@@ -39,10 +39,14 @@ const NO_LOCAL_PHOTO_ETAG = "no-local-photo";
 // a first-time backlog while still leaving margin below the request-timeout
 // ceiling. When exceeded we break cleanly; the next tick resumes.
 const PUSH_WALL_BUDGET_MS = 55_000;
-// How many contacts to push in parallel. People API calls are I/O bound and
-// each contact does ~2-3 sequential API round-trips; going wider than this
-// runs into per-user rate limits without meaningfully improving throughput.
-export const CONTACT_PUSH_CONCURRENCY = 5;
+// How many contacts to push in parallel. People API calls are I/O bound, but
+// each contact costs a critical read (guard) plus a write, and Google's
+// per-minute per-user quotas are tight — keep this low and pace the batches.
+export const CONTACT_PUSH_CONCURRENCY = 3;
+// Spacing between batches so a large backlog spreads its reads/writes across
+// the minute instead of bursting into a 429.
+const PUSH_BATCH_SPACING_MS = 350;
+
 
 export async function pushToGoogle(
   ids: Ids,
