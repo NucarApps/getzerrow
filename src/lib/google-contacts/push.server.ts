@@ -744,6 +744,10 @@ async function pushContacts(
       break;
     }
     await Promise.all(batch.map(processOne));
+    if (!quotaExhausted && !budgetHit()) {
+      await new Promise((r) => setTimeout(r, PUSH_BATCH_SPACING_MS));
+    }
+
   }
   return count;
 }
