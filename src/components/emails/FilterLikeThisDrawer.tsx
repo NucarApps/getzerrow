@@ -71,6 +71,8 @@ export function FilterLikeThisDrawer({
   const applyPastFn = useServerFn(applyFilterRuleToPast);
   const addOverrideFn = useServerFn(addInboxOverride);
   const stripLabelFn = useServerFn(stripFolderLabelPast);
+  const markReadDecisionFn = useServerFn(getFolderMarkReadDecision);
+  const setSenderMarkReadFn = useServerFn(setSenderMarkRead);
 
   // Same derivation the filter engine and override matcher use — this drawer
   // WRITES rules/overrides, so a divergent value here creates a rule that can
