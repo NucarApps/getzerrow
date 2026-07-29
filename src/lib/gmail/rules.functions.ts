@@ -19,6 +19,7 @@ import { logError } from "../log.server";
 import { removeLabelsFromCurrent } from "../sync/label-merge";
 import { buildGmailQueries } from "../sync/gmail-query-builder";
 import { classifyIngestedMessage } from "./ingest-classify";
+import { applySimpleRulePredicate } from "./rule-query";
 import type { Folder, Filter, RuleNode } from "../sync/types";
 import { upsertEmailEncrypted, updateEmailEncrypted } from "../sync/encrypted-writer";
 import { toEmailUpsert } from "../sync/email-upsert";
@@ -366,19 +367,14 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
     const esc = escapeLike(v);
 
     // Build a query with the rule predicate applied (without folder/archive scoping).
-    const applyRulePredicate = <T extends { ilike(column: string, pattern: string): T }>(
+    // Shared with addFolderRule/countMatchingForRule so "apply to past" selects
+    // exactly the rows the rule will match going forward — including the
+    // origin_* fields, which fall back to from_addr for non-forwarded mail.
+    const applyRulePredicate = <
+      T extends { ilike(column: string, pattern: string): T; or(filter: string): T },
+    >(
       qb: T,
-    ): T => {
-      if (data.field === "subject") {
-        const pat = data.op === "equals" ? esc : data.op === "starts_with" ? `${esc}%` : `%${esc}%`;
-        return qb.ilike("subject", pat);
-      } else if (data.field === "domain") {
-        return qb.ilike("from_addr", `%@${esc}%`);
-      } else {
-        const pat = data.op === "starts_with" ? `${esc}%` : `%${esc}%`;
-        return qb.ilike("from_addr", pat);
-      }
-    };
+    ): T => applySimpleRulePredicate(qb, data.field, data.op, v);
 
     // Move pass: rows matching the rule that aren't already in the target folder.
     const moveQ = applyRulePredicate(
