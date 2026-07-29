@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useServerFn } from "@tanstack/react-start";
+import { useServerFn } from "@tanstack/react-start";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Forward } from "lucide-react";
