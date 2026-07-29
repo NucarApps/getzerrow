@@ -158,6 +158,10 @@ export type EmailListRow = {
   snoozed_until: string | null;
   gmail_message_id: string | null;
   surfaced_to_inbox: boolean;
+  /** True sender when the message arrived through an auto-forward. */
+  origin_addr: string | null;
+  reply_to_addr: string | null;
+  is_forwarded: boolean;
 };
 
 export type EmailListScope = "all" | "all_mail" | "no_rules" | "folder";
