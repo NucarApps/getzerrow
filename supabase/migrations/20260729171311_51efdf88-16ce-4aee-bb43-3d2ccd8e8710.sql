@@ -1,0 +1,5 @@
+REVOKE ALL ON FUNCTION public.upsert_email_encrypted(uuid, uuid, text, text, text, text, text, text, text, text, text, text, text, text, timestamptz, boolean, boolean, boolean, text[], text, timestamptz, bigint, text, text, text, boolean) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.upsert_email_encrypted(uuid, uuid, text, text, text, text, text, text, text, text, text, text, text, text, timestamptz, boolean, boolean, boolean, text[], text, timestamptz, bigint, text, text, text, boolean) TO service_role;
+
+REVOKE ALL ON FUNCTION public.get_emails_list_decrypted(uuid, uuid, text, uuid, timestamptz, integer, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_emails_list_decrypted(uuid, uuid, text, uuid, timestamptz, integer, text) TO service_role;
