@@ -44,7 +44,11 @@ import {
   type FolderActionRow,
 } from "./action-dispatch";
 import { loadThreadEmailsForClassify, threadScopeEnabled } from "./thread-context";
+import { resolveAutoMarkRead, rulesForFolder, type MarkReadRule } from "./mark-read-scope";
 import { notifyInboxMail } from "../push.server";
+
+/** Minimal sender shape used to scope auto mark-read per message. */
+export type SenderLike = { from_addr?: string | null; origin_addr?: string | null };
 
 export type ProcessTimings = { fetch: number; ai: number; db: number };
 
@@ -64,6 +68,7 @@ export type ActionFolder = {
 export function resolveFolderFromContext(
   context: AccountContext | undefined,
   folderId: string,
+  email?: SenderLike,
 ): ActionFolder | null {
   const cached = context?.folders.find((f) => f.id === folderId);
   if (!cached) return null;
@@ -71,7 +76,11 @@ export function resolveFolderFromContext(
     id: cached.id,
     gmail_label_id: cached.gmail_label_id,
     auto_archive: cached.auto_archive,
-    auto_mark_read: cached.auto_mark_read,
+    auto_mark_read: resolveAutoMarkRead(
+      cached,
+      rulesForFolder(context?.markReadRules ?? [], folderId),
+      email ?? null,
+    ),
     auto_star: cached.auto_star,
     hide_from_inbox: cached.hide_from_inbox,
     forward_to: cached.forward_to,
@@ -79,15 +88,32 @@ export function resolveFolderFromContext(
   };
 }
 
-async function fetchActionFolder(folderId: string): Promise<ActionFolder | null> {
-  const { data } = await supabaseAdmin
-    .from("folders")
-    .select(
-      "id, gmail_label_id, auto_archive, auto_mark_read, auto_star, hide_from_inbox, forward_to, snooze_hours",
-    )
-    .eq("id", folderId)
-    .maybeSingle();
-  return data ?? null;
+async function fetchActionFolder(
+  folderId: string,
+  email?: SenderLike,
+): Promise<ActionFolder | null> {
+  const [{ data }, { data: markReadRules }] = await Promise.all([
+    supabaseAdmin
+      .from("folders")
+      .select(
+        "id, gmail_label_id, auto_archive, auto_mark_read, auto_star, hide_from_inbox, forward_to, snooze_hours, mark_read_mode",
+      )
+      .eq("id", folderId)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("folder_mark_read_rules")
+      .select("folder_id, match_type, value")
+      .eq("folder_id", folderId),
+  ]);
+  if (!data) return null;
+  return {
+    ...data,
+    auto_mark_read: resolveAutoMarkRead(
+      data,
+      (markReadRules ?? []) as MarkReadRule[],
+      email ?? null,
+    ),
+  };
 }
 
 /** Gmail label mutations + local flag effects for routing into `folder`.
@@ -410,8 +436,8 @@ export async function processGmailMessage(
       let actionOutcomes: ActionOutcome[] = [];
       if (final.folder_id) {
         const folder =
-          resolveFolderFromContext(context, final.folder_id) ??
-          (await fetchActionFolder(final.folder_id));
+          resolveFolderFromContext(context, final.folder_id, parsed) ??
+          (await fetchActionFolder(final.folder_id, parsed));
         if (folder) {
           const inInboxNow = (parsed.raw_labels ?? []).includes("INBOX");
           actionOutcomes = await applyFolderActions(
@@ -492,8 +518,8 @@ export async function processGmailMessage(
   let rulesFolder: ActionFolder | null = null;
   if (!rules.needs_ai && rules.folder_id) {
     rulesFolder =
-      resolveFolderFromContext(context, rules.folder_id) ??
-      (await fetchActionFolder(rules.folder_id));
+      resolveFolderFromContext(context, rules.folder_id, parsed) ??
+      (await fetchActionFolder(rules.folder_id, parsed));
   }
   const rulesEffects = rulesFolder ? computeFolderEffects(rulesFolder, parsed, inInbox) : null;
 
@@ -640,7 +666,8 @@ export async function processGmailMessage(
       const folder_id = c.folder_id ?? null;
       if (folder_id) {
         const folder =
-          resolveFolderFromContext(context, folder_id) ?? (await fetchActionFolder(folder_id));
+          resolveFolderFromContext(context, folder_id, parsed) ??
+          (await fetchActionFolder(folder_id, parsed));
         if (folder) {
           actionOutcomes = await applyFolderActions(
             accountId,
