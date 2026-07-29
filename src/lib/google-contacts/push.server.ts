@@ -516,10 +516,16 @@ async function pushContacts(
               skipBodyUpdate = true;
             }
           } catch (guardErr) {
-            // If the guard itself fails, fall through to the normal update
-            // (the etag path still protects against silent overwrites).
+            // A 429 on the guard read means we're out of per-minute read
+            // quota. Attempting the write anyway burns write quota, fails,
+            // and digs the hole deeper — rethrow so the outer handler charges
+            // backoff and stops the run.
+            if (guardErr instanceof PeopleApiError && guardErr.status === 429) throw guardErr;
+            // If the guard itself fails otherwise, fall through to the normal
+            // update (the etag path still protects against silent overwrites).
             logError("google_contacts.push.guard_failed", { ...ids, contact_id: c.id }, guardErr);
           }
+
 
           if (!skipBodyUpdate) {
             const updated = await updatePerson(ids.gmailAccountId, link.resource_name, {
