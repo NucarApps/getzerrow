@@ -268,6 +268,19 @@ export function FilterLikeThisDrawer({
         </SheetHeader>
 
         <div className="mt-4 space-y-5">
+          {relayOnly && !isInboxMode && (
+            <div className="rounded-md border border-border bg-muted/40 p-3">
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                {via
+                  ? `This message reached you from ${via.originName}, relayed by ${via.forwarderName} (${fromAddr}).`
+                  : `This message was relayed by ${fromAddr}.`}{" "}
+                A sender rule on {fromAddr} matches everything that address forwards, not just{" "}
+                {via ? via.originName : "this sender"}. Match on the subject instead, or rescan
+                forwarded mail in Settings → Inbox filters to recover the original address.
+              </p>
+            </div>
+          )}
+
           {forwarded && !isInboxMode && (
             <div>
               <Label className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">
@@ -278,13 +291,13 @@ export function FilterLikeThisDrawer({
                   active={useOrigin}
                   onClick={() => setUseOrigin(true)}
                   icon={<AtSign className="h-3.5 w-3.5" />}
-                  label="Original sender"
+                  label={via ? `Original: ${via.originName}` : "Original sender"}
                 />
                 <FieldTab
                   active={!useOrigin}
                   onClick={() => setUseOrigin(false)}
                   icon={<Forward className="h-3.5 w-3.5" />}
-                  label="Forwarded by"
+                  label={via ? `Via ${via.forwarderName}` : "Forwarded by"}
                 />
               </div>
               <p className="mt-1.5 text-[11px] text-muted-foreground">
@@ -294,6 +307,7 @@ export function FilterLikeThisDrawer({
               </p>
             </div>
           )}
+
 
           {/* Match by */}
           <div>
