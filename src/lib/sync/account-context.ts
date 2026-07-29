@@ -37,7 +37,7 @@ export type AccountContext = {
    * to for this user. Feeds the `sender_in_group` filter op. */
   senderGroups: Map<string, Set<string>>;
   /** Per-folder sender/domain entries scoping auto mark-read. */
-  markReadRules: MarkReadRule[];
+  markReadRules?: MarkReadRule[];
 };
 
 const accountContextCache = new Map<string, { ctx: AccountContext; expires: number }>();
