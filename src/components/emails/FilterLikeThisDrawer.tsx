@@ -11,6 +11,10 @@ import {
   stripFolderLabelPast,
 } from "@/lib/gmail.functions";
 import {
+  getFolderMarkReadDecision,
+  setSenderMarkRead,
+} from "@/lib/gmail/mark-read-rules.functions";
+import {
   Sheet,
   SheetContent,
   SheetHeader,
@@ -23,13 +27,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
-import { AtSign, Globe, Type, Inbox, Forward } from "lucide-react";
+import { AtSign, Globe, Type, Inbox, Forward, CheckCheck, MailOpen } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 
 type Folder = { id: string; name: string; color: string };
 type Field = "from" | "domain" | "subject";
 type Op = "contains" | "equals" | "starts_with";
+type MarkReadDecision = {
+  auto_mark_read: boolean;
+  mark_read_mode: "all" | "except" | "only";
+  listed: boolean;
+  would_mark_read: boolean;
+};
 
 const INBOX_OVERRIDE = "__inbox__";
 
@@ -65,6 +75,8 @@ export function FilterLikeThisDrawer({
   const applyPastFn = useServerFn(applyFilterRuleToPast);
   const addOverrideFn = useServerFn(addInboxOverride);
   const stripLabelFn = useServerFn(stripFolderLabelPast);
+  const markReadDecisionFn = useServerFn(getFolderMarkReadDecision);
+  const setSenderMarkReadFn = useServerFn(setSenderMarkRead);
 
   // Same derivation the filter engine and override matcher use — this drawer
   // WRITES rules/overrides, so a divergent value here creates a rule that can
@@ -92,6 +104,10 @@ export function FilterLikeThisDrawer({
   const [count, setCount] = useState<number | null>(null);
   const [countLoading, setCountLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Folder auto mark-read scope for the sender/domain being filtered.
+  const [decision, setDecision] = useState<MarkReadDecision | null>(null);
+  const [decisionLoading, setDecisionLoading] = useState(false);
+  const [markRead, setMarkRead] = useState<boolean | null>(null);
 
   // Reset state when reopened or seed changes.
   useEffect(() => {
@@ -170,6 +186,45 @@ export function FilterLikeThisDrawer({
     if (op !== "equals") setOp("equals");
   }, [isInboxMode, field, op, fromAddr, domain, useOrigin]);
 
+  // Auto mark-read scoping is a folder setting keyed by sender/domain, so it
+  // only applies to folder targets with a sender or domain rule.
+  const targetFolderName = folders.find((f) => f.id === folderId)?.name ?? "this folder";
+  const showMarkRead = !!folderId && !isInboxMode && field !== "subject" && !!value.trim();
+
+  useEffect(() => {
+    if (!open || !showMarkRead || !folderId) {
+      setDecision(null);
+      setMarkRead(null);
+      return;
+    }
+    let cancelled = false;
+    setDecisionLoading(true);
+    const h = setTimeout(async () => {
+      try {
+        const r = await markReadDecisionFn({
+          data: { folder_id: folderId, value: value.trim() },
+        });
+        if (cancelled) return;
+        setDecision(r);
+        // Default to what the folder already does, so an untouched control is
+        // a no-op rather than a silent settings change.
+        setMarkRead(r.would_mark_read);
+      } catch {
+        if (!cancelled) {
+          setDecision(null);
+          setMarkRead(null);
+        }
+      } finally {
+        if (!cancelled) setDecisionLoading(false);
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(h);
+    };
+  }, [open, showMarkRead, folderId, value, markReadDecisionFn]);
+
+
   const canSave =
     !!folderId && value.trim().length > 0 && !saving && (!isInboxMode || field !== "subject");
 
@@ -212,6 +267,27 @@ export function FilterLikeThisDrawer({
       toast.success(
         r.already ? `Rule already routed to ${folderName}` : `Future matches → ${folderName}`,
       );
+
+      // Only write folder settings when the user actually changed the default,
+      // so filtering never silently flips a folder's mark-read behavior.
+      if (showMarkRead && markRead !== null && decision && markRead !== decision.would_mark_read) {
+        try {
+          await setSenderMarkReadFn({
+            data: { folder_id: folderId, value: value.trim(), mark_read: markRead },
+          });
+          toast.success(
+            markRead
+              ? `${folderName}: this sender will be marked read`
+              : `${folderName}: this sender stays unread`,
+          );
+          qc.invalidateQueries({ queryKey: ["folder-mark-read-rules"] });
+          qc.invalidateQueries({ queryKey: ["folders"] });
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          toast.error(`Rule saved, but the mark-read setting failed: ${msg}`);
+        }
+      }
+
       qc.invalidateQueries({ queryKey: ["folder-filters"] });
       qc.invalidateQueries({ queryKey: ["emails"] });
       qc.invalidateQueries({ queryKey: ["emails-summary"] });
@@ -456,6 +532,46 @@ export function FilterLikeThisDrawer({
               })}
             </div>
           </div>
+
+          {/* Auto mark-read scope — folder targets only, sender/domain rules only */}
+          {showMarkRead && (
+            <div>
+              <Label className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">
+                Mark as read
+              </Label>
+              {decisionLoading || markRead === null ? (
+                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Spinner className="h-3 w-3" /> Checking folder settings…
+                </span>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <FieldTab
+                      active={markRead}
+                      onClick={() => setMarkRead(true)}
+                      icon={<CheckCheck className="h-3.5 w-3.5" />}
+                      label="Mark read"
+                    />
+                    <FieldTab
+                      active={!markRead}
+                      onClick={() => setMarkRead(false)}
+                      icon={<MailOpen className="h-3.5 w-3.5" />}
+                      label="Leave unread"
+                    />
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    {markRead
+                      ? `Mail from ${value.trim() || "this sender"} filed in ${targetFolderName} will be marked read automatically.`
+                      : `Mail from ${value.trim() || "this sender"} filed in ${targetFolderName} stays unread.`}
+                    {markRead !== decision?.would_mark_read
+                      ? " This updates the folder's auto mark-read settings."
+                      : ""}
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+
 
           {/* Apply to */}
           <div>
