@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { resolveAutoMarkRead, rulesForFolder, type MarkReadRule } from "./mark-read-scope";
+import {
+  resolveAutoMarkRead,
+  rulesForFolder,
+  nextMarkReadScope,
+  type MarkReadRule,
+} from "./mark-read-scope";
 
 const folderId = "f1";
 const rules: MarkReadRule[] = [
