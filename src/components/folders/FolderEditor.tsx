@@ -68,6 +68,7 @@ import { HistoryPanel } from "./editor/folder-history-panel";
 import { SummariesPanel } from "./editor/folder-summaries-panel";
 import { RuleGroupEditor } from "./editor/folder-rule-group-editor";
 import { ScanGmailSection } from "./editor/folder-scan-gmail-section";
+import { MarkReadScopeSection, type MarkReadMode } from "./editor/mark-read-scope-section";
 import type { Folder, Filter, GLabel } from "./editor/types";
 export type { RuleNode, Folder, Filter, GLabel } from "./editor/types";
 
@@ -267,6 +268,21 @@ export function FolderEditor({
   }
 
   // Auto-save a single toggle column immediately, then optionally retroactively apply it.
+  async function updateMarkReadMode(mode: MarkReadMode) {
+    const prev = local;
+    setLocal({ ...local, mark_read_mode: mode });
+    const { error } = await supabase
+      .from("folders")
+      .update({ mark_read_mode: mode })
+      .eq("id", folder.id);
+    if (error) {
+      setLocal(prev);
+      toast.error(error.message);
+      return;
+    }
+    qc.invalidateQueries({ queryKey: ["folders"] });
+  }
+
   async function toggleBehavior(
     column:
       | "auto_mark_read"
@@ -1078,6 +1094,14 @@ export function FolderEditor({
               />
             </label>
           </div>
+
+          {local.auto_mark_read && (
+            <MarkReadScopeSection
+              folderId={folder.id}
+              mode={(local.mark_read_mode ?? "all") as MarkReadMode}
+              onModeChange={updateMarkReadMode}
+            />
+          )}
 
           <div className="mt-6">
             <button
