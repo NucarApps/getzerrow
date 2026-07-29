@@ -30,6 +30,12 @@ import { toast } from "sonner";
 type Folder = { id: string; name: string; color: string };
 type Field = "from" | "domain" | "subject";
 type Op = "contains" | "equals" | "starts_with";
+type MarkReadDecision = {
+  auto_mark_read: boolean;
+  mark_read_mode: "all" | "except" | "only";
+  listed: boolean;
+  would_mark_read: boolean;
+};
 
 const INBOX_OVERRIDE = "__inbox__";
 
