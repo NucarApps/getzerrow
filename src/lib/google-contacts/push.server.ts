@@ -39,10 +39,14 @@ const NO_LOCAL_PHOTO_ETAG = "no-local-photo";
 // a first-time backlog while still leaving margin below the request-timeout
 // ceiling. When exceeded we break cleanly; the next tick resumes.
 const PUSH_WALL_BUDGET_MS = 55_000;
-// How many contacts to push in parallel. People API calls are I/O bound and
-// each contact does ~2-3 sequential API round-trips; going wider than this
-// runs into per-user rate limits without meaningfully improving throughput.
-export const CONTACT_PUSH_CONCURRENCY = 5;
+// How many contacts to push in parallel. People API calls are I/O bound, but
+// each contact costs a critical read (guard) plus a write, and Google's
+// per-minute per-user quotas are tight — keep this low and pace the batches.
+export const CONTACT_PUSH_CONCURRENCY = 3;
+// Spacing between batches so a large backlog spreads its reads/writes across
+// the minute instead of bursting into a 429.
+const PUSH_BATCH_SPACING_MS = 350;
+
 
 export async function pushToGoogle(
   ids: Ids,
@@ -516,10 +520,16 @@ async function pushContacts(
               skipBodyUpdate = true;
             }
           } catch (guardErr) {
-            // If the guard itself fails, fall through to the normal update
-            // (the etag path still protects against silent overwrites).
+            // A 429 on the guard read means we're out of per-minute read
+            // quota. Attempting the write anyway burns write quota, fails,
+            // and digs the hole deeper — rethrow so the outer handler charges
+            // backoff and stops the run.
+            if (guardErr instanceof PeopleApiError && guardErr.status === 429) throw guardErr;
+            // If the guard itself fails otherwise, fall through to the normal
+            // update (the etag path still protects against silent overwrites).
             logError("google_contacts.push.guard_failed", { ...ids, contact_id: c.id }, guardErr);
           }
+
 
           if (!skipBodyUpdate) {
             const updated = await updatePerson(ids.gmailAccountId, link.resource_name, {
@@ -734,6 +744,10 @@ async function pushContacts(
       break;
     }
     await Promise.all(batch.map(processOne));
+    if (!quotaExhausted && !budgetHit()) {
+      await new Promise((r) => setTimeout(r, PUSH_BATCH_SPACING_MS));
+    }
+
   }
   return count;
 }
