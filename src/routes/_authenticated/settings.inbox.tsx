@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AccountPicker } from "@/components/settings/AccountPicker";
 import { InboxOverrides } from "@/components/settings/InboxOverrides";
+import { ForwardedMailBackfill } from "@/components/settings/ForwardedMailBackfill";
 import { useScopedAccount } from "@/lib/use-scoped-account";
 
 export const Route = createFileRoute("/_authenticated/settings/inbox")({
@@ -17,6 +18,8 @@ function InboxSettings() {
     <div className="space-y-4">
       <AccountPicker value={activeAccountId} onChange={onAccountChange} label="Inbox" />
       <InboxOverrides accountId={activeAccountId} accountEmail={scopedEmail} />
+      <ForwardedMailBackfill />
     </div>
   );
 }
+
