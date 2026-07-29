@@ -484,6 +484,7 @@ const EmailListRow = memo(function EmailListRow({
               onSelect={() =>
                 setFilterPrompt({
                   fromAddr: e.from_addr,
+                  fromName: e.from_name ?? null,
                   originAddr: e.origin_addr ?? null,
                   isForwarded: !!e.is_forwarded,
                   subject: e.subject,
