@@ -19,9 +19,12 @@ export type OriginSender = {
   origin_addr: string | null;
   /** Display name that goes with `origin_addr`, when the header carried one. */
   origin_name: string | null;
-  /** True when `origin_addr` is set and differs from the From address. */
+  /** Display name of the relaying mailbox/group, for "X via Y" mail. */
+  forwarder_name: string | null;
+  /** True when the message reached the mailbox through a relay/forward. */
   is_forwarded: boolean;
 };
+
 
 /** Minimal address extractor. Kept local (rather than importing the Gmail
  * parser) so this module stays pure and free of server-only imports. */
