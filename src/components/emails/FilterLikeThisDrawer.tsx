@@ -174,6 +174,45 @@ export function FilterLikeThisDrawer({
     if (op !== "equals") setOp("equals");
   }, [isInboxMode, field, op, fromAddr, domain, useOrigin]);
 
+  // Auto mark-read scoping is a folder setting keyed by sender/domain, so it
+  // only applies to folder targets with a sender or domain rule.
+  const targetFolderName = folders.find((f) => f.id === folderId)?.name ?? "this folder";
+  const showMarkRead = !!folderId && !isInboxMode && field !== "subject" && !!value.trim();
+
+  useEffect(() => {
+    if (!open || !showMarkRead || !folderId) {
+      setDecision(null);
+      setMarkRead(null);
+      return;
+    }
+    let cancelled = false;
+    setDecisionLoading(true);
+    const h = setTimeout(async () => {
+      try {
+        const r = await markReadDecisionFn({
+          data: { folder_id: folderId, value: value.trim() },
+        });
+        if (cancelled) return;
+        setDecision(r);
+        // Default to what the folder already does, so an untouched control is
+        // a no-op rather than a silent settings change.
+        setMarkRead(r.would_mark_read);
+      } catch {
+        if (!cancelled) {
+          setDecision(null);
+          setMarkRead(null);
+        }
+      } finally {
+        if (!cancelled) setDecisionLoading(false);
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(h);
+    };
+  }, [open, showMarkRead, folderId, value, markReadDecisionFn]);
+
+
   const canSave =
     !!folderId && value.trim().length > 0 && !saving && (!isInboxMode || field !== "subject");
 
