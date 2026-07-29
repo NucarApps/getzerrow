@@ -84,3 +84,89 @@ describe("resolveAutoMarkRead", () => {
     expect(resolveAutoMarkRead(folder, mine, null)).toBe(true);
   });
 });
+
+describe("nextMarkReadScope", () => {
+  const off = { auto_mark_read: false, mark_read_mode: "all" as const, listed: false };
+  const all = { auto_mark_read: true, mark_read_mode: "all" as const, listed: false };
+  const except = { auto_mark_read: true, mark_read_mode: "except" as const, listed: true };
+  const only = { auto_mark_read: true, mark_read_mode: "only" as const, listed: false };
+
+  it("turns auto mark-read on scoped to just this sender", () => {
+    expect(nextMarkReadScope(off, true)).toEqual({
+      auto_mark_read: true,
+      mark_read_mode: "only",
+      listed: true,
+    });
+  });
+
+  it("leaves a mark-read-off folder untouched when the user wants unread", () => {
+    expect(nextMarkReadScope(off, false)).toEqual({
+      auto_mark_read: false,
+      mark_read_mode: "all",
+      listed: false,
+    });
+  });
+
+  it("keeps 'all' as-is when the user wants mark read", () => {
+    expect(nextMarkReadScope(all, true)).toEqual({
+      auto_mark_read: true,
+      mark_read_mode: "all",
+      listed: false,
+    });
+  });
+
+  it("switches 'all' to 'except' when the user wants unread", () => {
+    expect(nextMarkReadScope(all, false)).toEqual({
+      auto_mark_read: true,
+      mark_read_mode: "except",
+      listed: true,
+    });
+  });
+
+  it("drops the exemption under 'except' when the user wants mark read", () => {
+    expect(nextMarkReadScope(except, true)).toEqual({
+      auto_mark_read: true,
+      mark_read_mode: "except",
+      listed: false,
+    });
+  });
+
+  it("keeps the exemption under 'except' when the user wants unread", () => {
+    expect(nextMarkReadScope(except, false)).toEqual({
+      auto_mark_read: true,
+      mark_read_mode: "except",
+      listed: true,
+    });
+  });
+
+  it("adds the sender under 'only' when the user wants mark read", () => {
+    expect(nextMarkReadScope(only, true)).toEqual({
+      auto_mark_read: true,
+      mark_read_mode: "only",
+      listed: true,
+    });
+  });
+
+  it("removes the sender under 'only' when the user wants unread", () => {
+    expect(nextMarkReadScope({ ...only, listed: true }, false)).toEqual({
+      auto_mark_read: true,
+      mark_read_mode: "only",
+      listed: false,
+    });
+  });
+
+  it("round-trips through resolveAutoMarkRead for each mode", () => {
+    for (const start of [off, all, except, only]) {
+      for (const choice of [true, false]) {
+        const next = nextMarkReadScope(start, choice);
+        const rules = next.listed
+          ? [{ folder_id: "f", match_type: "email" as const, value: "a@x.com" }]
+          : [];
+        const applied = resolveAutoMarkRead(next, rules, "a@x.com");
+        // "off + leave unread" is the one no-op: nothing to assert beyond it staying off.
+        if (!next.auto_mark_read) expect(applied).toBe(false);
+        else expect(applied).toBe(choice);
+      }
+    }
+  });
+});
