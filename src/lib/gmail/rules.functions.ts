@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { escapeLike } from "../escape-like";
 import { getOwnedAccount, restoreEmailToInbox } from "../gmail-helpers.server";
 import { performMove } from "../move-email.server";
 import { runMessageJobs, retryMessageJob, invalidateAccountContext } from "../sync.server";
