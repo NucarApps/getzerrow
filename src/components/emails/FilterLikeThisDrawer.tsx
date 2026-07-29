@@ -457,6 +457,46 @@ export function FilterLikeThisDrawer({
             </div>
           </div>
 
+          {/* Auto mark-read scope — folder targets only, sender/domain rules only */}
+          {showMarkRead && (
+            <div>
+              <Label className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">
+                Mark as read
+              </Label>
+              {decisionLoading || markRead === null ? (
+                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Spinner className="h-3 w-3" /> Checking folder settings…
+                </span>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <FieldTab
+                      active={markRead}
+                      onClick={() => setMarkRead(true)}
+                      icon={<CheckCheck className="h-3.5 w-3.5" />}
+                      label="Mark read"
+                    />
+                    <FieldTab
+                      active={!markRead}
+                      onClick={() => setMarkRead(false)}
+                      icon={<MailOpen className="h-3.5 w-3.5" />}
+                      label="Leave unread"
+                    />
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    {markRead
+                      ? `Mail from ${value.trim() || "this sender"} filed in ${targetFolderName} will be marked read automatically.`
+                      : `Mail from ${value.trim() || "this sender"} filed in ${targetFolderName} stays unread.`}
+                    {markRead !== decision?.would_mark_read
+                      ? " This updates the folder's auto mark-read settings."
+                      : ""}
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+
+
           {/* Apply to */}
           <div>
             <Label className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">
