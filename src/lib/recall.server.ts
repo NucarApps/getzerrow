@@ -141,7 +141,7 @@ export async function createBot(input: CreateBotInput): Promise<RecallBot> {
       {
         type: "webhook",
         url: `https://getzerrow.com/api/public/recall-realtime?t=${encodeURIComponent(realtimeToken)}`,
-        events: ["transcript.data", "participant_events.chat_message_sent"],
+        events: ["transcript.data", "participant_events.chat_message"],
       },
     ];
   }
