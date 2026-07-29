@@ -236,6 +236,7 @@ type EmailListRowProps = {
   setSelectedIds: React.Dispatch<React.SetStateAction<Set<string>>>;
   setFilterPrompt: (v: {
     fromAddr: string | null;
+    fromName: string | null;
     originAddr: string | null;
     isForwarded: boolean;
     subject: string | null;
