@@ -1830,6 +1830,44 @@ export type Database = {
           },
         ]
       }
+      folder_mark_read_rules: {
+        Row: {
+          created_at: string
+          folder_id: string
+          id: string
+          match_type: string
+          updated_at: string
+          user_id: string
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          folder_id: string
+          id?: string
+          match_type: string
+          updated_at?: string
+          user_id: string
+          value: string
+        }
+        Update: {
+          created_at?: string
+          folder_id?: string
+          id?: string
+          match_type?: string
+          updated_at?: string
+          user_id?: string
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "folder_mark_read_rules_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       folder_retry_alerts: {
         Row: {
           fired_at: string
@@ -2071,6 +2109,7 @@ export type Database = {
           is_cold_email: boolean
           last_learned_at: string | null
           learned_profile: string | null
+          mark_read_mode: string
           min_ai_confidence: number
           name: string
           overrides_inbox_override: boolean
@@ -2105,6 +2144,7 @@ export type Database = {
           is_cold_email?: boolean
           last_learned_at?: string | null
           learned_profile?: string | null
+          mark_read_mode?: string
           min_ai_confidence?: number
           name: string
           overrides_inbox_override?: boolean
@@ -2139,6 +2179,7 @@ export type Database = {
           is_cold_email?: boolean
           last_learned_at?: string | null
           learned_profile?: string | null
+          mark_read_mode?: string
           min_ai_confidence?: number
           name?: string
           overrides_inbox_override?: boolean

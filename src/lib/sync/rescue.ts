@@ -111,7 +111,7 @@ async function finalize(
   });
   if (outcome.folder_id) {
     void bumpEmailsSinceLearn(outcome.folder_id);
-    const folder = resolveFolderFromContext(ctx, outcome.folder_id);
+    const folder = resolveFolderFromContext(ctx, outcome.folder_id, row);
     if (folder) {
       const inInbox = (row.raw_labels ?? []).includes("INBOX");
       await applyFolderActions(

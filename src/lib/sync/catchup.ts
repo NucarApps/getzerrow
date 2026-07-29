@@ -139,7 +139,7 @@ export function buildCatchupRow(
   let read = parsed.is_read;
   let snoozedUntil: string | null = null;
   if (rules.folder_id) {
-    const folder = resolveFolderFromContext(ctx, rules.folder_id);
+    const folder = resolveFolderFromContext(ctx, rules.folder_id, parsed);
     if (folder) {
       // Reuse processGmailMessage's effect computation so effectiveArchive
       // and snooze math stay identical between the two write paths.
@@ -259,7 +259,7 @@ export async function bulkCatchupClaim(
     } else {
       rulesMatchedJobIds.push(job.id);
       if (built.folder_id) {
-        const folder = resolveFolderFromContext(ctx, built.folder_id);
+        const folder = resolveFolderFromContext(ctx, built.folder_id, parsed);
         if (folder) {
           folderSideEffects.push({
             job,

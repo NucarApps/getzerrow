@@ -20,6 +20,10 @@ export type Folder = {
   last_learned_at: string | null;
   auto_archive: boolean;
   auto_mark_read: boolean;
+  /** Scope for auto mark-read: everything, everything except the folder's
+   *  sender/domain list, or only that list. Optional so cached contexts and
+   *  fixtures default to "all". */
+  mark_read_mode?: "all" | "except" | "only";
   auto_star: boolean;
   hide_from_inbox: boolean;
   skip_ai: boolean;
