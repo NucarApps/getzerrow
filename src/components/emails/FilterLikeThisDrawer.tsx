@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { emailDomain } from "@/lib/company-domains";
+import { parseViaDisplayName } from "@/lib/gmail/origin-sender";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import {
