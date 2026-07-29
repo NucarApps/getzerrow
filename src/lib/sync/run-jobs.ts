@@ -587,7 +587,7 @@ export async function runMessageJobs(
                   return;
                 }
                 if (passes && r?.folder_id) {
-                  const folder = resolveActionFolderFromContext(ctx, r.folder_id);
+                  const folder = resolveActionFolderFromContext(ctx, r.folder_id, c.parsed);
                   await applyClassifiedFolderActions(c.job, c.emailRowId, c.parsed, folder);
                 }
                 await updateEmailEncrypted({
@@ -666,7 +666,7 @@ export async function runMessageJobs(
                     return;
                   }
                   if (single.folder_id) {
-                    const folder = resolveActionFolderFromContext(ctx, single.folder_id);
+                    const folder = resolveActionFolderFromContext(ctx, single.folder_id, c.parsed);
                     await applyClassifiedFolderActions(c.job, c.emailRowId, c.parsed, folder);
                   }
 
