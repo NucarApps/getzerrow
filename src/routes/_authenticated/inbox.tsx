@@ -592,6 +592,7 @@ function InboxPage() {
   const [ruleFromEmailId, setRuleFromEmailId] = useState<string | null>(null);
   const [filterPrompt, setFilterPrompt] = useState<null | {
     fromAddr: string | null;
+    fromName: string | null;
     originAddr: string | null;
     isForwarded: boolean;
     subject: string | null;
