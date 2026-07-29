@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { emailDomain } from "@/lib/company-domains";
+import { parseViaDisplayName } from "@/lib/gmail/origin-sender";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -37,6 +38,7 @@ export function FilterLikeThisDrawer({
   onOpenChange,
   accountId,
   fromAddr,
+  fromName,
   originAddr,
   isForwarded,
   subject,
@@ -47,6 +49,8 @@ export function FilterLikeThisDrawer({
   onOpenChange: (v: boolean) => void;
   accountId: string | null;
   fromAddr: string | null;
+  /** Display name from the From header, e.g. `"Manheim" via Old User Ken`. */
+  fromName?: string | null;
   /** Real sender recovered from forwarding headers, when the mail was
    * auto-forwarded (e.g. by a former colleague's still-active address). */
   originAddr?: string | null;
@@ -69,8 +73,14 @@ export function FilterLikeThisDrawer({
   // target the forwarder, not the party the user actually cares about. Default
   // to the original sender and let them switch back.
   const forwarded = !!isForwarded && !!originAddr && originAddr !== fromAddr;
+  // Relayed mail where no header named the real sender: we know the visible
+  // address belongs to the relay, so warn before a rule targets everything
+  // that mailbox forwards.
+  const via = useMemo(() => parseViaDisplayName(fromName), [fromName]);
+  const relayOnly = !forwarded && (!!isForwarded || !!via);
   const [useOrigin, setUseOrigin] = useState(forwarded);
   const senderAddr = useOrigin && originAddr ? originAddr : fromAddr;
+
   const domain = useMemo(() => emailDomain(senderAddr), [senderAddr]);
 
   const [field, setField] = useState<Field>("from");
@@ -258,6 +268,19 @@ export function FilterLikeThisDrawer({
         </SheetHeader>
 
         <div className="mt-4 space-y-5">
+          {relayOnly && !isInboxMode && (
+            <div className="rounded-md border border-border bg-muted/40 p-3">
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                {via
+                  ? `This message reached you from ${via.originName}, relayed by ${via.forwarderName} (${fromAddr}).`
+                  : `This message was relayed by ${fromAddr}.`}{" "}
+                A sender rule on {fromAddr} matches everything that address forwards, not just{" "}
+                {via ? via.originName : "this sender"}. Match on the subject instead, or rescan
+                forwarded mail in Settings → Inbox filters to recover the original address.
+              </p>
+            </div>
+          )}
+
           {forwarded && !isInboxMode && (
             <div>
               <Label className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">
@@ -268,13 +291,13 @@ export function FilterLikeThisDrawer({
                   active={useOrigin}
                   onClick={() => setUseOrigin(true)}
                   icon={<AtSign className="h-3.5 w-3.5" />}
-                  label="Original sender"
+                  label={via ? `Original: ${via.originName}` : "Original sender"}
                 />
                 <FieldTab
                   active={!useOrigin}
                   onClick={() => setUseOrigin(false)}
                   icon={<Forward className="h-3.5 w-3.5" />}
-                  label="Forwarded by"
+                  label={via ? `Via ${via.forwarderName}` : "Forwarded by"}
                 />
               </div>
               <p className="mt-1.5 text-[11px] text-muted-foreground">
@@ -284,6 +307,7 @@ export function FilterLikeThisDrawer({
               </p>
             </div>
           )}
+
 
           {/* Match by */}
           <div>

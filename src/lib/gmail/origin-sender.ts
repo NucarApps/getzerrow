@@ -19,9 +19,12 @@ export type OriginSender = {
   origin_addr: string | null;
   /** Display name that goes with `origin_addr`, when the header carried one. */
   origin_name: string | null;
-  /** True when `origin_addr` is set and differs from the From address. */
+  /** Display name of the relaying mailbox/group, for "X via Y" mail. */
+  forwarder_name: string | null;
+  /** True when the message reached the mailbox through a relay/forward. */
   is_forwarded: boolean;
 };
+
 
 /** Minimal address extractor. Kept local (rather than importing the Gmail
  * parser) so this module stays pure and free of server-only imports. */
@@ -47,25 +50,52 @@ function addrOf(raw: string): { addr: string; name: string } {
 
 
 /**
+ * Split a Google-style relay display name: `"Manheim" via Old User Ken Connor`
+ * becomes `{ originName: "Manheim", forwarderName: "Old User Ken Connor" }`.
+ *
+ * Google Groups and Workspace routing rewrite `From` for DMARC, so the only
+ * trace of the real sender in the visible header is this display name.
+ */
+export function parseViaDisplayName(
+  displayName: string | null | undefined,
+): { originName: string; forwarderName: string } | null {
+  const raw = (displayName ?? "").trim().replace(/^"(.*)"$/s, "$1").trim();
+  if (!raw) return null;
+  const m = raw.match(/^(.*\S)\s+via\s+(\S.*)$/i);
+  if (!m) return null;
+  const originName = m[1].replace(/^"(.*)"$/s, "$1").trim();
+  const forwarderName = m[2].replace(/^"(.*)"$/s, "$1").trim();
+  if (!originName || !forwarderName) return null;
+  return { originName, forwarderName };
+}
+
+/**
  * Derive the originating sender from a message's headers.
  *
  * Precedence, highest first:
- *  1. `X-Original-From` / `X-Original-Sender` — explicit relay annotations.
- *  2. `Reply-To`, when its domain differs from the From domain (the classic
+ *  1. `X-Google-Original-From` — Gmail's DMARC rewrite of a relayed message.
+ *     This is the shape Google Groups and Workspace routing produce, where
+ *     `From` becomes `"Vendor" via Old User <exemployee@company.com>`.
+ *  2. `X-Original-From` / `X-Original-Sender` — explicit relay annotations.
+ *  3. `Reply-To`, when its domain differs from the From domain (the classic
  *     "forwarded by a mailbox, replies go to the real sender" shape).
- *  3. `X-Forwarded-For` — first address in the list.
- *  4. `Sender` / `Return-Path`, when they differ from From.
- *  5. Nothing — the From address stands on its own.
+ *  4. `X-Forwarded-For` — last address in the list.
+ *  5. `Sender` / `Return-Path`, when they differ from From.
+ *  6. Nothing addressable. When the message is still clearly relayed (a
+ *     `List-Id` plus an "X via Y" display name), it is flagged as forwarded
+ *     with the names we could recover, so the UI never pretends the relaying
+ *     mailbox wrote the mail.
  */
 export function deriveOriginSender(h: HeaderLookup): OriginSender {
-  const from = addrOf(h("from"));
+  const fromRaw = h("from");
+  const from = addrOf(fromRaw);
   const replyToRaw = h("reply-to");
   const replyTo = replyToRaw ? addrOf(replyToRaw) : null;
   const fromDomain = from.addr ? emailDomain(from.addr) : null;
 
   const candidates: Array<{ addr: string; name: string }> = [];
 
-  for (const name of ["x-original-from", "x-original-sender"]) {
+  for (const name of ["x-google-original-from", "x-original-from", "x-original-sender"]) {
     const v = h(name);
     if (v) candidates.push(addrOf(v));
   }
@@ -97,13 +127,21 @@ export function deriveOriginSender(h: HeaderLookup): OriginSender {
     (c) => c.addr && c.addr !== from.addr && emailDomain(c.addr) !== fromDomain,
   );
 
+  // Relay detection from the visible header, independent of any address we
+  // recovered: mail that arrived through a group/alias carries a List-Id and
+  // Google's "X via Y" display name.
+  const via = parseViaDisplayName(from.name);
+  const relayed = !!via && (!!h("list-id") || !!h("x-google-original-from") || !!h("sender"));
+
   return {
     reply_to_addr: replyTo?.addr || null,
     origin_addr: origin?.addr ?? null,
-    origin_name: origin?.name || null,
-    is_forwarded: !!origin?.addr,
+    origin_name: origin?.name || via?.originName || null,
+    forwarder_name: via?.forwarderName || null,
+    is_forwarded: !!origin?.addr || relayed,
   };
 }
+
 
 /** The sender a rule should match on: the true origin when the message was
  * forwarded, otherwise the From address. Keeps `origin_*` rules working for

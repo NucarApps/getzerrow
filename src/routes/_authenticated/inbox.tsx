@@ -236,6 +236,7 @@ type EmailListRowProps = {
   setSelectedIds: React.Dispatch<React.SetStateAction<Set<string>>>;
   setFilterPrompt: (v: {
     fromAddr: string | null;
+    fromName: string | null;
     originAddr: string | null;
     isForwarded: boolean;
     subject: string | null;
@@ -483,6 +484,7 @@ const EmailListRow = memo(function EmailListRow({
               onSelect={() =>
                 setFilterPrompt({
                   fromAddr: e.from_addr,
+                  fromName: e.from_name ?? null,
                   originAddr: e.origin_addr ?? null,
                   isForwarded: !!e.is_forwarded,
                   subject: e.subject,
@@ -590,6 +592,7 @@ function InboxPage() {
   const [ruleFromEmailId, setRuleFromEmailId] = useState<string | null>(null);
   const [filterPrompt, setFilterPrompt] = useState<null | {
     fromAddr: string | null;
+    fromName: string | null;
     originAddr: string | null;
     isForwarded: boolean;
     subject: string | null;
@@ -1881,6 +1884,7 @@ function InboxPage() {
             onFilterLikeThis={(e) =>
               setFilterPrompt({
                 fromAddr: e.from_addr,
+                fromName: e.from_name ?? null,
                 originAddr: e.origin_addr ?? null,
                 isForwarded: !!e.is_forwarded,
                 subject: e.subject,
@@ -1903,6 +1907,7 @@ function InboxPage() {
           }}
           accountId={accountId}
           fromAddr={filterPrompt.fromAddr}
+          fromName={filterPrompt.fromName}
           originAddr={filterPrompt.originAddr}
           isForwarded={filterPrompt.isForwarded}
           subject={filterPrompt.subject}
