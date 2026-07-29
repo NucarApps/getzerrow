@@ -1,42 +1,31 @@
-## Goal
+## What's happening
 
-Today "Auto mark-read" on a folder is all-or-nothing: every email routed into the folder gets marked read. You want to keep some senders or domains unread while everything else is auto-read (or the reverse — only auto-read a few senders/domains).
+The message in your screenshot ("Manheim" via Old User Ken Connor) is stored with:
 
-## What you'll get
+- `from_addr = kconnor@nucar.com`
+- `list_id = <kconnor.nucar.com>` (a Google Group / relay)
+- `reply_to_addr = null`, `origin_addr = null`, `is_forwarded = false`
 
-In the folder editor, under Automation, "Auto mark-read" gains a mode when it's on:
+So the forwarder-aware code we added is working end to end — the filter drawer shows `kconnor@nucar.com` simply because no original sender was recovered for this message. Across the last 7 days only 2 of 4,974 messages got an origin sender, so the header precedence is missing the shape Google uses for these relayed/group messages.
 
-- **Everything** (current behavior)
-- **Everything except…** — keeps listed senders/domains unread
-- **Only these…** — auto-reads only listed senders/domains, everything else stays unread
+Most likely cause (not yet confirmed): Gmail rewrites `From` for DMARC on group/relayed mail and puts the real sender in `X-Google-Original-From`, a header our precedence list doesn't check. Step 1 verifies this against the real message before we change logic.
 
-Below the mode is a small list editor where you add entries, each either a full address (`jared@kenect.com`) or a domain (`kenect.com`). Mixing both in one list is fine, so "mark all read except two people and one domain" is one list.
+## Plan
 
-Behavior notes:
-- Matching uses the same sender the rules use, including the original sender of auto-forwarded mail, so a forwarded message is judged by who really sent it.
-- The scope applies to newly routed mail and to catch-up/backfill processing, consistently.
-- Only mark-read is scoped in this change; auto-archive, star, and hide-from-inbox keep their current all-or-nothing behavior. Same pattern can be extended to them later if you want.
+1. **Confirm the headers.** Add a temporary admin-only server function that fetches one Gmail message by ID (`format=full`) and returns only header names/values for the message in question, so we can see exactly which header carries "Manheim". No content is logged or stored.
 
-## Technical plan
+2. **Extend origin-sender precedence** in `src/lib/gmail/origin-sender.ts` based on what step 1 shows. Expected additions:
+   - `X-Google-Original-From` (Gmail's DMARC rewrite) at the top of the list.
+   - Google Groups relay detection: when `List-Id` is present and `From` display name ends in "… via …", treat the message as forwarded and take the origin from the group headers (`X-Original-Sender`, `X-Google-Original-From`, `Sender`).
+   - Last-resort fallback: when a message is clearly relayed (List-Id present, display name contains "via") but no header names an address, still mark `is_forwarded = true` and keep the recovered display name so the UI can say "via Old User Ken Connor" instead of silently pretending Ken sent it.
+   - New unit tests covering the exact Manheim/Nucar header shape plus the existing cases (no regressions to same-domain Reply-To handling).
 
-**Database (one migration)**
-- `folders.mark_read_mode text not null default 'all'` with a check constraint on `('all','except','only')`.
-- New table `public.folder_mark_read_rules` (`id`, `user_id`, `folder_id` FK → folders on delete cascade, `match_type` in `('email','domain')`, `value text`, timestamps, unique on `(folder_id, match_type, value)`), plus GRANTs to `authenticated`/`service_role`, RLS enabled, owner-scoped policy on `auth.uid() = user_id`, and an `updated_at` trigger.
+3. **Backfill existing mail.** Add a bounded, resumable admin action that refetches recent messages from Gmail (chunked, respecting the existing wall-clock budget and rate-limit handling) and updates only `reply_to_addr`, `origin_addr`, `is_forwarded` on rows where `origin_addr is null`. Default scope: last 90 days, run in batches with progress shown in the admin view. No reclassification is triggered by the backfill.
 
-**Pure logic**
-- New `src/lib/sync/mark-read-scope.ts`: `resolveAutoMarkRead(folder, rules, sender)` returning a boolean, where `sender` is the effective sender (`origin_addr ?? from_addr`). Domain matching reuses `emailDomain`. Unit tests cover all three modes, mixed email+domain lists, forwarded mail, and empty lists (`except` with no entries = mark all, `only` with no entries = mark none).
+4. **Filter drawer polish.** With origin recovered, "Filter messages like this" already defaults to the original sender. Improve the case where the origin is only known by name: show the forwarder explicitly and label the toggle "Match original sender (Manheim)" vs "Match forwarder (kconnor@nucar.com)", and keep the existing-match count in sync with whichever option is selected.
 
-**Wiring (single choke point)**
-- `ActionFolder` in `src/lib/sync/process-message.ts` keeps its `auto_mark_read: boolean`, but the two builders (`resolveFolderFromContext` and `fetchActionFolder`) now resolve it through `resolveAutoMarkRead` using the message's sender. `computeFolderEffects`, `mergeFlagActions` (synthetic `mark_read`), the insert's `isReadFlag`, and `src/lib/sync/catchup.ts` then need no changes — they all read that one field.
-- `AccountContext` (`src/lib/sync/account-context.ts`) loads `mark_read_mode` and the folder's rule rows alongside folders/filters, so the hot path stays cache-backed; folder-rule writes call the existing account-context invalidation.
-- `src/lib/sync/run-jobs.ts` and `src/lib/sync/simulate-rule.functions.ts` pass the sender through the same resolver so the rule simulator preview matches real behavior.
+## Technical notes
 
-**Server functions**
-- Add `listFolderMarkReadRules`, `addFolderMarkReadRule`, `removeFolderMarkReadRule` to the folder-management server functions (auth middleware, folder ownership check, value normalization: trim, lowercase, strip a leading `@`), each invalidating the account context.
-
-**UI**
-- `src/components/folders/FolderEditor.tsx`: when Auto mark-read is on, render the three-way mode selector and the entry list (add input + chips with remove), styled like the existing inbox-overrides list. Entry type (email vs domain) is inferred from whether the value contains `@`.
-- `src/components/folders/editor/types.ts` and `src/lib/sync/types.ts` gain `mark_read_mode`; the folder select strings are updated to fetch it.
-
-**Verification**
-- New unit tests for `mark-read-scope.ts`, plus updates to existing process-message/catchup fixtures for the new folder field; full typecheck and test run before finishing.
+- Files touched: `src/lib/gmail/origin-sender.ts` (+ tests), `src/lib/gmail.server.ts` (pass `list-id`-aware context into the derivation), a new backfill module under `src/lib/sync/`, the admin route for triggering it, and `src/components/emails/FilterLikeThisDrawer.tsx`.
+- No schema changes: `reply_to_addr`, `origin_addr`, `is_forwarded` already exist on `emails`, and the encrypted upsert RPC already writes them.
+- The temporary header-inspection function is removed once the precedence fix is verified.
