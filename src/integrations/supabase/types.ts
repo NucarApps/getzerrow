@@ -3661,12 +3661,15 @@ export type Database = {
           has_attachment: boolean
           id: string
           is_archived: boolean
+          is_forwarded: boolean
           is_read: boolean
           matched_filter_ids: string[]
           matched_folder_ids: string[]
+          origin_addr: string
           processed_at: string
           raw_labels: string[]
           received_at: string
+          reply_to_addr: string
           snippet: string
           snoozed_until: string
           subject: string
