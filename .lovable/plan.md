@@ -1,32 +1,26 @@
-## Goal
+# iOS Contacts Sync — Technical Spec PDF
 
-When you filter a message into a folder from the inbox, also choose whether mail matching that rule gets marked read automatically — and have that choice persist in the folder's "Auto mark-read" settings, so the folder editor and the drawer always agree.
+Produce a downloadable PDF that documents exactly how Zerrow syncs contacts to iOS (CardDAV), plus the Google Contacts side where it interacts. Documentation only — no app code changes.
 
-## Behavior
+## Deliverable
 
-After you pick a target folder in the drawer, a new "Mark as read" control appears with two options:
+`ios-contacts-sync-spec.pdf` in your files, styled with Zerrow's dark/brand look, roughly 8-12 pages, generated from the actual code in the repo (endpoints, tables, settings, decision rules) so it stays accurate rather than generic.
 
-- Mark matching mail as read
-- Leave it unread
+## Contents
 
-The control starts on whatever the folder would do today for this sender, so leaving it alone changes nothing. It is hidden when the target is "Keep in inbox" (inbox overrides have no folder settings), and hidden when the rule matches on subject only (folder mark-read scope is sender/domain based).
+1. Overview and diagram — iPhone (native Contacts) ↔ CardDAV endpoint ↔ Zerrow database ↔ Google Contacts.
+2. Endpoint and protocol — single splat route `/api/public/carddav/*`, supported methods (OPTIONS, PROPFIND, REPORT, GET/HEAD, PUT, DELETE), RFC 6578 sync-collection support, 12 MB body cap.
+3. Authentication — Basic auth with per-device app passwords, hashed at rest, create/revoke flow, why the public prefix is safe.
+4. iPhone setup — how a device is added, address book layout, what the user sees.
+5. Data mapping — vCard field mapping for names, phones (normalization, extensions), emails, company/title, notes (AI summary block vs. user notes separation), CATEGORIES for groups.
+6. Groups — nested group model, flat presentation on iOS, group naming styles (group / group - company), auto company subgroups, live preview in settings.
+7. Photos — personal vs. company-logo priority setting, upload from iPhone saved as personal photo, the photo-echo protection that stops company logos being saved back as personal avatars, hash/etag logic.
+8. Change handling — ETags, resync nonce, non-destructive field patching on PUT, revision history/undo, tombstones for deletes.
+9. Google Contacts interaction — two-way sync, Zerrow as source of truth, photo push/pull, rate-limit and quota handling.
+10. Settings reference — every CardDAV-related toggle and what it changes.
+11. Failure modes and troubleshooting — auth failures, stale sync tokens, quota errors, forced resync.
+12. Security and privacy — token hashing, RLS scoping, private photo bucket with signed URLs.
 
-Saving applies the rule as it does now, plus the mark-read choice, using the folder's existing scope model (Everything / Everything except… / Only these senders…):
+## Technical notes
 
-| Folder today | You chose "mark read" | You chose "leave unread" |
-| --- | --- | --- |
-| Auto mark-read off | Turn it on, switch to "Only these senders", add this sender/domain | No change |
-| Everything | No change | Switch to "Everything except", add this sender/domain |
-| Everything except | Remove this sender/domain from the exception list | Add this sender/domain |
-| Only these senders | Add this sender/domain | Remove this sender/domain |
-
-A short line under the control explains the effect in plain words, e.g. "Mail from kenect.com in Reports will be marked read automatically." A separate toast confirms the folder setting change so it is never silent.
-
-## Technical details
-
-- New server functions in `src/lib/gmail/mark-read-rules.functions.ts`:
-  - `getFolderMarkReadDecision({ folder_id, value })` — returns `{ auto_mark_read, mark_read_mode, would_mark_read }`, reusing `resolveAutoMarkRead` from `src/lib/sync/mark-read-scope.ts` so the drawer's preview and the sync pipeline can't diverge.
-  - `setSenderMarkRead({ folder_id, value, mark_read })` — applies the transition table above in one owned-folder-scoped write (folder update plus rule insert/delete), then calls `invalidateAccountContext` like the existing rule mutations.
-- `FilterLikeThisDrawer.tsx`: fetch the decision when `folderId` and the sender value are set; render the two-option control (same `FieldTab` styling as the existing tabs); call `setSenderMarkRead` after the rule save succeeds, only when the choice differs from the current decision. Invalidate `["folder-mark-read-rules"]` and `["folders"]` so the folder editor picks it up.
-- The value written is the same normalized sender/domain the rule uses, including the origin-sender variant when "Original sender" is selected, so forwarded mail is scoped by the real sender.
-- Tests: extend `src/lib/sync/mark-read-scope.test.ts` with a pure `nextMarkReadScope(current, choice)` helper covering all eight transitions, and keep the server function as a thin wrapper around it.
+Generated with a Python/reportlab script in `/tmp` (not added to the repo). Every page will be rendered to images and visually inspected for overflow, clipping, and contrast before delivery.
