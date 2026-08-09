@@ -357,9 +357,13 @@ export async function loadOlderFromLabel(
   if (!folderRow) throw new Error("Folder not found");
   const folder = folderRow;
   if (folder.user_id !== userId) throw new Error("Not authorized");
+  if (folder.processing_enabled === false) {
+    return { ingested: 0, hasMore: false, reason: "no_label" as const };
+  }
   if (!folder.gmail_label_id) {
     return { ingested: 0, hasMore: false, reason: "no_label" as const };
   }
+
 
   // Prefer the stored pageToken when it lines up with the caller's
   // cursor. Otherwise fall back to a Gmail `before:` query anchored
