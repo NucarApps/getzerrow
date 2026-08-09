@@ -60,6 +60,9 @@ function resolveActionFolderFromContext(
     hide_from_inbox: cached.hide_from_inbox,
     forward_to: cached.forward_to,
     snooze_hours: cached.snooze_hours,
+    // A paused folder is a read-only mirror of its Gmail label: carry the flag
+    // through so applyFolderActions/computeFolderEffects skip every side effect.
+    processing_enabled: cached.processing_enabled,
   };
 }
 
