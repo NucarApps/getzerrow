@@ -564,24 +564,26 @@ export function FolderEditor({
         </DropdownMenu>
       </div>
 
-      {/* Master pause switch: when off, no rules, no AI, no side-effects
-          run for this folder. Rules stay saved. */}
+      {/* Master pause switch: when off, no rules, no AI, and no side-effects
+          run for this folder. Mail Gmail itself labeled is still reflected
+          here (read-only). Rules stay saved. */}
       <label
         className={`mt-3 flex items-center justify-between rounded-md border p-3 text-sm ${
           local.processing_enabled === false
             ? "border-amber-500/50 bg-amber-500/5"
             : "border-border"
         }`}
-        title="Turn off to pause all filtering, AI classification, and side-effects for this folder without deleting its rules."
+        title="Turn off to pause filtering, AI classification, and all side-effects (archive, mark read, star, hide, forward, snooze) without deleting this folder's rules. Mail Gmail already labeled still shows up here."
       >
         <div>
           <div className="font-medium">Filtering &amp; rules</div>
           <div className="text-xs text-muted-foreground">
             {local.processing_enabled === false
-              ? "Paused — new mail bypasses this folder. Rules are kept."
+              ? "Paused — no rules, AI, or side-effects. Mail Gmail already labeled still shows here. Rules are kept."
               : "Enabled — new mail is evaluated against this folder's rules and AI."}
           </div>
         </div>
+
         <Switch
           checked={local.processing_enabled !== false}
           onCheckedChange={(v) => toggleBehavior("processing_enabled", v, null)}
