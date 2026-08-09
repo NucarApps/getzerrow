@@ -192,7 +192,11 @@ export async function applyFolderActions(
   inInbox: boolean,
   opts: { persistFlags: boolean; userId?: string },
 ): Promise<ActionOutcome[]> {
+  // Paused folder: reflection only. No Gmail writes, no flag patches, no
+  // explicit folder actions, no forward, no snooze.
+  if (folderProcessingPaused(folder)) return [];
   const { data: actionRows } = await supabaseAdmin
+
     .from("folder_actions")
     .select(
       "id, action_type, label_id, move_to_folder_id, delay_minutes, webhook_url, to_addr, digest_bucket",
