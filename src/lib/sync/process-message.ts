@@ -130,12 +130,21 @@ async function fetchActionFolder(
 
 /** Gmail label mutations + local flag effects for routing into `folder`.
  * Single source of truth so the insert path and the post-hoc patch path
- * can't diverge. */
+ * can't diverge. A paused folder yields an empty plan: mail may still be
+ * reflected into it (Gmail already labeled it), but nothing is mutated. */
 export function computeFolderEffects(
   folder: ActionFolder,
   parsed: { raw_labels: string[] | null },
   inInbox: boolean,
 ) {
+  if (folderProcessingPaused(folder)) {
+    return {
+      effectiveArchive: false,
+      addLabels: [] as string[],
+      removeLabels: [] as string[],
+      snoozedUntil: null as string | null,
+    };
+  }
   // hide_from_inbox behaves like auto_archive for the inbox view.
   const effectiveArchive = folder.auto_archive || folder.hide_from_inbox;
   const addLabels: string[] = [];
@@ -151,6 +160,7 @@ export function computeFolderEffects(
       : null;
   return { effectiveArchive, addLabels, removeLabels, snoozedUntil };
 }
+
 
 /** Apply the folder's actions to an email routed into it: explicit
  * folder_actions rows plus the legacy flags mapped to synthetic actions
