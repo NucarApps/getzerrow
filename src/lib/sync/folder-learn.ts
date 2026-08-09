@@ -197,7 +197,10 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
   if (!folderRow) throw new Error("Folder not found");
   const folder = folderRow;
   if (folder.user_id !== userId) throw new Error("Not authorized");
+  if (folder.processing_enabled === false)
+    throw new Error("Folder is paused — resume filtering & rules to scan its Gmail label");
   if (!folder.gmail_label_id) throw new Error("Folder is not linked to a Gmail label");
+
   const accountId = folder.gmail_account_id;
 
   const MAX_MESSAGES = 200;
