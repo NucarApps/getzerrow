@@ -107,8 +107,9 @@ async function fetchActionFolder(
     supabaseAdmin
       .from("folders")
       .select(
-        "id, gmail_label_id, auto_archive, auto_mark_read, auto_star, hide_from_inbox, forward_to, snooze_hours, mark_read_mode",
+        "id, gmail_label_id, auto_archive, auto_mark_read, auto_star, hide_from_inbox, forward_to, snooze_hours, mark_read_mode, processing_enabled",
       )
+
       .eq("id", folderId)
       .maybeSingle(),
     supabaseAdmin
