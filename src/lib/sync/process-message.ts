@@ -63,7 +63,16 @@ export type ActionFolder = {
   hide_from_inbox: boolean;
   forward_to: string | null;
   snooze_hours: number;
+  /** Pause switch. When false the folder still reflects mail Gmail itself
+   * labeled, but applies NO side effects (archive/mark-read/star/hide/
+   * forward/snooze/folder actions). Absent means active. */
+  processing_enabled?: boolean;
 };
+
+/** A paused folder is a passive label reflection only — no side effects. */
+export function folderProcessingPaused(folder: { processing_enabled?: boolean }): boolean {
+  return folder.processing_enabled === false;
+}
 
 export function resolveFolderFromContext(
   context: AccountContext | undefined,
@@ -85,8 +94,10 @@ export function resolveFolderFromContext(
     hide_from_inbox: cached.hide_from_inbox,
     forward_to: cached.forward_to,
     snooze_hours: cached.snooze_hours,
+    processing_enabled: cached.processing_enabled,
   };
 }
+
 
 async function fetchActionFolder(
   folderId: string,
@@ -96,8 +107,9 @@ async function fetchActionFolder(
     supabaseAdmin
       .from("folders")
       .select(
-        "id, gmail_label_id, auto_archive, auto_mark_read, auto_star, hide_from_inbox, forward_to, snooze_hours, mark_read_mode",
+        "id, gmail_label_id, auto_archive, auto_mark_read, auto_star, hide_from_inbox, forward_to, snooze_hours, mark_read_mode, processing_enabled",
       )
+
       .eq("id", folderId)
       .maybeSingle(),
     supabaseAdmin
@@ -118,12 +130,21 @@ async function fetchActionFolder(
 
 /** Gmail label mutations + local flag effects for routing into `folder`.
  * Single source of truth so the insert path and the post-hoc patch path
- * can't diverge. */
+ * can't diverge. A paused folder yields an empty plan: mail may still be
+ * reflected into it (Gmail already labeled it), but nothing is mutated. */
 export function computeFolderEffects(
   folder: ActionFolder,
   parsed: { raw_labels: string[] | null },
   inInbox: boolean,
 ) {
+  if (folderProcessingPaused(folder)) {
+    return {
+      effectiveArchive: false,
+      addLabels: [] as string[],
+      removeLabels: [] as string[],
+      snoozedUntil: null as string | null,
+    };
+  }
   // hide_from_inbox behaves like auto_archive for the inbox view.
   const effectiveArchive = folder.auto_archive || folder.hide_from_inbox;
   const addLabels: string[] = [];
@@ -139,6 +160,7 @@ export function computeFolderEffects(
       : null;
   return { effectiveArchive, addLabels, removeLabels, snoozedUntil };
 }
+
 
 /** Apply the folder's actions to an email routed into it: explicit
  * folder_actions rows plus the legacy flags mapped to synthetic actions
@@ -170,7 +192,11 @@ export async function applyFolderActions(
   inInbox: boolean,
   opts: { persistFlags: boolean; userId?: string },
 ): Promise<ActionOutcome[]> {
+  // Paused folder: reflection only. No Gmail writes, no flag patches, no
+  // explicit folder actions, no forward, no snooze.
+  if (folderProcessingPaused(folder)) return [];
   const { data: actionRows } = await supabaseAdmin
+
     .from("folder_actions")
     .select(
       "id, action_type, label_id, move_to_folder_id, delay_minutes, webhook_url, to_addr, digest_bucket",

@@ -197,7 +197,10 @@ export async function learnFromLinkedLabel(folderId: string, userId: string) {
   if (!folderRow) throw new Error("Folder not found");
   const folder = folderRow;
   if (folder.user_id !== userId) throw new Error("Not authorized");
+  if (folder.processing_enabled === false)
+    throw new Error("Folder is paused — resume filtering & rules to scan its Gmail label");
   if (!folder.gmail_label_id) throw new Error("Folder is not linked to a Gmail label");
+
   const accountId = folder.gmail_account_id;
 
   const MAX_MESSAGES = 200;
@@ -347,16 +350,21 @@ export async function loadOlderFromLabel(
   const { data: folderRow } = await supabaseAdmin
     .from("folders")
     .select(
-      "id, user_id, name, gmail_label_id, gmail_account_id, gmail_backfill_page_token, gmail_backfill_oldest_received_at",
+      "id, user_id, name, gmail_label_id, gmail_account_id, gmail_backfill_page_token, gmail_backfill_oldest_received_at, processing_enabled",
     )
+
     .eq("id", folderId)
     .single();
   if (!folderRow) throw new Error("Folder not found");
   const folder = folderRow;
   if (folder.user_id !== userId) throw new Error("Not authorized");
+  if (folder.processing_enabled === false) {
+    return { ingested: 0, hasMore: false, reason: "no_label" as const };
+  }
   if (!folder.gmail_label_id) {
     return { ingested: 0, hasMore: false, reason: "no_label" as const };
   }
+
 
   // Prefer the stored pageToken when it lines up with the caller's
   // cursor. Otherwise fall back to a Gmail `before:` query anchored

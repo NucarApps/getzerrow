@@ -149,8 +149,14 @@ async function syncSinceHistoryLocked(
             added: ev.labelIds,
             removed: [],
           });
-          const matched = ev.labelIds.map((l) => labelToFolder.get(l)).filter(Boolean) as Folder[];
+          // Paused folders are excluded: their label is still mirrored onto
+          // the email row (applyLabelChange below), but they must not learn
+          // from — or act on — mail Gmail labeled while paused.
+          const matched = (
+            ev.labelIds.map((l) => labelToFolder.get(l)).filter(Boolean) as Folder[]
+          ).filter((f) => f.processing_enabled !== false);
           if (matched.length === 0) continue;
+
           // IMPORTANT: do NOT call getMessageMetadata here. A noisy mailbox
           // produces hundreds of labelsAdded events per push; one Gmail
           // round-trip per event burns the 250-req/min/user quota in

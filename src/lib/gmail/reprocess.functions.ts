@@ -218,8 +218,11 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
         const allFolders = (foldersRaw ?? []) as Folder[];
         const labelToFolder = new Map<string, string>();
         for (const f of allFolders) {
-          if (f.gmail_label_id) labelToFolder.set(f.gmail_label_id, f.id);
+          // Paused folders don't claim mail via their linked Gmail label here.
+          if (f.gmail_label_id && f.processing_enabled !== false)
+            labelToFolder.set(f.gmail_label_id, f.id);
         }
+
 
         // Load folder_filters for this user so newly-ingested messages
         // honor existing domain / sender / subject rules instead of

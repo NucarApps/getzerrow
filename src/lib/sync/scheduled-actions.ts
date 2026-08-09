@@ -128,6 +128,16 @@ async function runOne(job: ClaimedJob): Promise<RunOutcome> {
     .maybeSingle();
   if (!fa) return { ok: false, error: "action configuration deleted", terminal: true };
   if (!fa.enabled) return { ok: true }; // disabled since enqueue — quiet no-op
+  if (fa.folder_id) {
+    const { data: folder } = await admin()
+      .from("folders")
+      .select("processing_enabled")
+      .eq("id", fa.folder_id)
+      .maybeSingle();
+    // Folder paused since enqueue — quiet no-op, same as a disabled action.
+    if (folder && folder.processing_enabled === false) return { ok: true };
+  }
+
 
   const { rows, error: emailErr } = await getEmailsDecrypted([job.email_id]);
   if (emailErr) return { ok: false, error: emailErr };
