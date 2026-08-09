@@ -891,8 +891,11 @@ export const scanGmailForFolder = createServerFn({ method: "POST" })
     const allFolders = (foldersRaw ?? []) as Folder[];
     const labelToFolder = new Map<string, string>();
     for (const f of allFolders) {
-      if (f.gmail_label_id) labelToFolder.set(f.gmail_label_id, f.id);
+      // Paused folders don't claim mail via their linked Gmail label here.
+      if (f.gmail_label_id && f.processing_enabled !== false)
+        labelToFolder.set(f.gmail_label_id, f.id);
     }
+
     const folderIds = allFolders.map((f) => f.id);
     let allFilters: Filter[] = [];
     if (folderIds.length > 0) {
