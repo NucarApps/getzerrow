@@ -350,8 +350,9 @@ export async function loadOlderFromLabel(
   const { data: folderRow } = await supabaseAdmin
     .from("folders")
     .select(
-      "id, user_id, name, gmail_label_id, gmail_account_id, gmail_backfill_page_token, gmail_backfill_oldest_received_at",
+      "id, user_id, name, gmail_label_id, gmail_account_id, gmail_backfill_page_token, gmail_backfill_oldest_received_at, processing_enabled",
     )
+
     .eq("id", folderId)
     .single();
   if (!folderRow) throw new Error("Folder not found");
