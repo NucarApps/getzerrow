@@ -62,3 +62,48 @@ describe("computeFolderEffects", () => {
     expect(eff.addLabels).toContain("Label_1");
   });
 });
+
+// Guardrail: every place an ActionFolder is built from a cached account
+// context must carry processing_enabled through. Dropping the field makes the
+// pause guard read "flag absent" and silently re-applies side effects for a
+// paused folder, which is exactly the bug this suite exists to prevent.
+describe("ActionFolder mappers propagate the pause flag", () => {
+  const mapperFiles = ["process-message.ts", "run-jobs.ts"] as const;
+
+  for (const file of mapperFiles) {
+    it(`${file} passes processing_enabled from the cached folder`, async () => {
+      const { readFile } = await import("node:fs/promises");
+      const src = await readFile(new URL(file, import.meta.url), "utf8");
+      expect(src).toContain("processing_enabled: cached.processing_enabled");
+    });
+  }
+});
+
+describe("resolveFolderFromContext", () => {
+  it("keeps a paused folder inert end-to-end (mirror only, no effects)", async () => {
+    const { resolveFolderFromContext } = await import("./process-message");
+    const cached = {
+      id: "f1",
+      gmail_label_id: "Label_1",
+      auto_archive: true,
+      auto_mark_read: true,
+      auto_star: true,
+      hide_from_inbox: true,
+      forward_to: null,
+      snooze_hours: 4,
+      processing_enabled: false,
+    };
+    // Minimal AccountContext shape: only folders/markReadRules are read here.
+    const ctx = { folders: [cached], markReadRules: [] } as unknown as Parameters<
+      typeof resolveFolderFromContext
+    >[0];
+    const folder = resolveFolderFromContext(ctx, "f1", { from_addr: "a@b.com" });
+    expect(folder).not.toBeNull();
+    expect(folderProcessingPaused(folder!)).toBe(true);
+    const eff = computeFolderEffects(folder!, parsed, true);
+    expect(eff.addLabels).toEqual([]);
+    expect(eff.removeLabels).toEqual([]);
+    expect(eff.effectiveArchive).toBe(false);
+    expect(eff.snoozedUntil).toBeNull();
+  });
+});
