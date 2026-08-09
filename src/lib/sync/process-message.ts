@@ -63,7 +63,16 @@ export type ActionFolder = {
   hide_from_inbox: boolean;
   forward_to: string | null;
   snooze_hours: number;
+  /** Pause switch. When false the folder still reflects mail Gmail itself
+   * labeled, but applies NO side effects (archive/mark-read/star/hide/
+   * forward/snooze/folder actions). Absent means active. */
+  processing_enabled?: boolean;
 };
+
+/** A paused folder is a passive label reflection only — no side effects. */
+export function folderProcessingPaused(folder: { processing_enabled?: boolean }): boolean {
+  return folder.processing_enabled === false;
+}
 
 export function resolveFolderFromContext(
   context: AccountContext | undefined,
@@ -85,8 +94,10 @@ export function resolveFolderFromContext(
     hide_from_inbox: cached.hide_from_inbox,
     forward_to: cached.forward_to,
     snooze_hours: cached.snooze_hours,
+    processing_enabled: cached.processing_enabled,
   };
 }
+
 
 async function fetchActionFolder(
   folderId: string,
