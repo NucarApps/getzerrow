@@ -161,6 +161,17 @@ export function computeFolderEffects(
   return { effectiveArchive, addLabels, removeLabels, snoozedUntil };
 }
 
+export type FolderEffects = ReturnType<typeof computeFolderEffects>;
+
+export function computeInsertReadFlag(
+  parsed: { is_read: boolean },
+  rulesEffects: Pick<FolderEffects, "removeLabels"> | null,
+  needsAi: boolean,
+): boolean {
+  if (needsAi) return parsed.is_read;
+  return parsed.is_read || (rulesEffects?.removeLabels.includes("UNREAD") ?? false);
+}
+
 
 /** Apply the folder's actions to an email routed into it: explicit
  * folder_actions rows plus the legacy flags mapped to synthetic actions
@@ -553,9 +564,7 @@ export async function processGmailMessage(
   const isArchived = rules.needs_ai
     ? !inInbox
     : !inInbox || (rulesEffects?.effectiveArchive ?? false);
-  const isReadFlag = rules.needs_ai
-    ? parsed.is_read
-    : parsed.is_read || (rulesFolder?.auto_mark_read ?? false);
+  const isReadFlag = computeInsertReadFlag(parsed, rulesEffects, rules.needs_ai);
 
   // Insert via the encrypted-write RPC (sensitive columns are encrypted at
   // rest). It forces folder_id=null and can't carry classification

@@ -5,6 +5,7 @@
 import { describe, it, expect } from "vitest";
 import {
   computeFolderEffects,
+  computeInsertReadFlag,
   folderProcessingPaused,
   type ActionFolder,
 } from "./process-message";
@@ -60,6 +61,23 @@ describe("computeFolderEffects", () => {
   it("still applies effects when the flag is absent (unmigrated row)", () => {
     const eff = computeFolderEffects(actionFolder(), parsed, true);
     expect(eff.addLabels).toContain("Label_1");
+  });
+});
+
+describe("computeInsertReadFlag", () => {
+  it("marks inserted rows read when active auto mark-read removes UNREAD", () => {
+    const eff = computeFolderEffects(actionFolder({ processing_enabled: true }), parsed, true);
+    expect(computeInsertReadFlag({ is_read: false }, eff, false)).toBe(true);
+  });
+
+  it("keeps unread Gmail-labeled mail unread when the destination folder is paused", () => {
+    const eff = computeFolderEffects(actionFolder({ processing_enabled: false }), parsed, true);
+    expect(computeInsertReadFlag({ is_read: false }, eff, false)).toBe(false);
+  });
+
+  it("preserves Gmail read state while AI is still pending", () => {
+    const eff = computeFolderEffects(actionFolder({ processing_enabled: true }), parsed, true);
+    expect(computeInsertReadFlag({ is_read: false }, eff, true)).toBe(false);
   });
 });
 
