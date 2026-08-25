@@ -6,7 +6,7 @@ import { useScopedAccount } from "@/lib/use-scoped-account";
 
 export const Route = createFileRoute("/_authenticated/settings/inbox")({
   head: () => ({
-    meta: [{ title: "Inbox filters — Settings — Zerrow" }, { name: "robots", content: "noindex" }],
+    meta: [{ title: "Inbox filters — Settings — Atzro" }, { name: "robots", content: "noindex" }],
   }),
   component: InboxSettings,
 });

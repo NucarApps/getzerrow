@@ -69,7 +69,7 @@ import {
 export const Route = createFileRoute("/_authenticated/contacts/")({
   head: () => ({
     meta: [
-      { title: "Contacts — Zerrow" },
+      { title: "Contacts — Atzro" },
       { name: "description", content: "People you've emailed with, enriched from signatures." },
     ],
   }),
@@ -253,7 +253,7 @@ function ContactsPage() {
   // manual create, company edits elsewhere). sessionStorage means it re-runs
   // on each fresh tab load without hammering on every route change.
   useEffect(() => {
-    const KEY = "zerrow.auto-groups.backfilled.session";
+    const KEY = "atzro.auto-groups.backfilled.session";
     if (typeof window === "undefined") return;
     if (window.sessionStorage.getItem(KEY)) return;
 
@@ -680,7 +680,7 @@ function ContactsPage() {
   const [mergeDismissed, setMergeDismissed] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
     try {
-      const raw = window.localStorage.getItem("zerrow.mergeDismissed");
+      const raw = window.localStorage.getItem("atzro.mergeDismissed");
       return new Set(raw ? (JSON.parse(raw) as string[]) : []);
     } catch {
       return new Set();
@@ -699,7 +699,7 @@ function ContactsPage() {
       next.add(normalizedName);
       if (typeof window !== "undefined") {
         try {
-          window.localStorage.setItem("zerrow.mergeDismissed", JSON.stringify(Array.from(next)));
+          window.localStorage.setItem("atzro.mergeDismissed", JSON.stringify(Array.from(next)));
         } catch {
           // ignore quota errors
         }

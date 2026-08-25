@@ -63,24 +63,24 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
-      { name: "apple-mobile-web-app-title", content: "Zerrow" },
-      { title: "Zerrow — AI inbox for Gmail" },
+      { name: "apple-mobile-web-app-title", content: "Atzro" },
+      { title: "Atzro — AI inbox for Gmail" },
       {
         name: "description",
         content:
-          "Zerrow auto-categorizes your Gmail inbox using folders and AI rules in real time.",
+          "Atzro auto-categorizes your Gmail inbox using folders and AI rules in real time.",
       },
-      { property: "og:title", content: "Zerrow — AI inbox for Gmail" },
-      { name: "twitter:title", content: "Zerrow — AI inbox for Gmail" },
+      { property: "og:title", content: "Atzro — AI inbox for Gmail" },
+      { name: "twitter:title", content: "Atzro — AI inbox for Gmail" },
       {
         property: "og:description",
         content:
-          "Zerrow auto-categorizes your Gmail inbox using folders and AI rules in real time.",
+          "Atzro auto-categorizes your Gmail inbox using folders and AI rules in real time.",
       },
       {
         name: "twitter:description",
         content:
-          "Zerrow auto-categorizes your Gmail inbox using folders and AI rules in real time.",
+          "Atzro auto-categorizes your Gmail inbox using folders and AI rules in real time.",
       },
       {
         property: "og:image",
@@ -94,7 +94,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { name: "twitter:card", content: "summary_large_image" },
       { property: "og:type", content: "website" },
-      { property: "og:site_name", content: "Zerrow" },
+      { property: "og:site_name", content: "Atzro" },
       {
         name: "google-site-verification",
         content: "-cadKCFRhndtRoPwkTNWDFLSOOFTYSikQQX9T-y4M84",
@@ -108,15 +108,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           "@graph": [
             {
               "@type": "Organization",
-              name: "Zerrow",
+              name: "Atzro",
               url: "https://getzerrow.com",
               logo: "https://getzerrow.com/favicon-512.png",
               description:
-                "Zerrow auto-categorizes your Gmail inbox using folders and AI rules in real time.",
+                "Atzro auto-categorizes your Gmail inbox using folders and AI rules in real time.",
             },
             {
               "@type": "WebSite",
-              name: "Zerrow",
+              name: "Atzro",
               url: "https://getzerrow.com",
             },
           ],

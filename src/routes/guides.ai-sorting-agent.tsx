@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 
 const TITLE = "How to use an AI agent to sort your emails (2026 guide)";
 const DESCRIPTION =
-  "Learn how to use an AI agent to sort your Gmail automatically — from setting up folders to letting Zerrow triage your inbox so only what needs a human shows up.";
+  "Learn how to use an AI agent to sort your Gmail automatically — from setting up folders to letting Atzro triage your inbox so only what needs a human shows up.";
 const URL = "https://getzerrow.com/guides/ai-sorting-agent";
 
 export const Route = createFileRoute("/guides/ai-sorting-agent")({
@@ -64,7 +64,7 @@ export const Route = createFileRoute("/guides/ai-sorting-agent")({
               name: "How do I use an AI agent to sort my Gmail?",
               acceptedAnswer: {
                 "@type": "Answer",
-                text: "Connect Gmail to a tool like Zerrow, define the folders you actually use, and let the agent classify and route every new message in real time. You review one clean inbox instead of triaging everything by hand.",
+                text: "Connect Gmail to a tool like Atzro, define the folders you actually use, and let the agent classify and route every new message in real time. You review one clean inbox instead of triaging everything by hand.",
               },
             },
             {
@@ -100,7 +100,7 @@ function AiSortingAgentGuide() {
       >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link to="/" className="text-2xl font-bold tracking-tight" style={sora}>
-            Zerrow<span style={{ color: INK_SOFT }}>.</span>
+            Atzro<span style={{ color: INK_SOFT }}>.</span>
           </Link>
           <Link
             to="/login"
@@ -141,7 +141,7 @@ function AiSortingAgentGuide() {
           </Section>
 
           <Section title="1. Connect your Gmail account">
-            Start by connecting Gmail so the agent can see incoming mail and act on it. With Zerrow
+            Start by connecting Gmail so the agent can see incoming mail and act on it. With Atzro
             this is a one-step sign-in: authorize access and the agent begins watching your inbox in
             real time, filing new mail as it arrives.
           </Section>
@@ -183,7 +183,7 @@ function AiSortingAgentGuide() {
             Put an agent to work on your inbox
           </h2>
           <p className="mt-3" style={{ color: INK_SOFT }}>
-            Zerrow reads every email and files it into the folders you actually use, so only what
+            Atzro reads every email and files it into the folders you actually use, so only what
             needs a human reaches you. Connect Gmail and try it free.
           </p>
           <Link

@@ -104,8 +104,8 @@ export function BackfillBanner() {
           {active && (
             <div className="mt-0.5 text-[11px] text-muted-foreground">
               {showSlowHint
-                ? "Large mailbox — this can take a few minutes. You can keep using Zerrow; new emails are still coming in live."
-                : "You can keep using Zerrow — new emails are still coming in live."}
+                ? "Large mailbox — this can take a few minutes. You can keep using Atzro; new emails are still coming in live."
+                : "You can keep using Atzro — new emails are still coming in live."}
             </div>
           )}
         </div>

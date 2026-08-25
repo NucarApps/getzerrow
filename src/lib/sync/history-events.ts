@@ -15,7 +15,7 @@
 //   assumed to be still-queued new mail) — so the archive signal was
 //   dropped, and the message was pointlessly re-enqueued as a "new mail"
 //   job which no-ops for healthy existing rows. Net effect: archiving in
-//   Gmail never reached Zerrow until a reconcile sweep happened to visit
+//   Gmail never reached Atzro until a reconcile sweep happened to visit
 //   that row.
 //
 // CORRECT SEMANTICS

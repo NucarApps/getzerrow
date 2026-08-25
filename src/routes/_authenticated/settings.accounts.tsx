@@ -21,7 +21,7 @@ import { Plus, Trash2, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react
 
 export const Route = createFileRoute("/_authenticated/settings/accounts")({
   head: () => ({
-    meta: [{ title: "Accounts — Settings — Zerrow" }, { name: "robots", content: "noindex" }],
+    meta: [{ title: "Accounts — Settings — Atzro" }, { name: "robots", content: "noindex" }],
   }),
   component: AccountsSettings,
 });

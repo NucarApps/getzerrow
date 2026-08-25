@@ -5,27 +5,27 @@ import { useServerFn } from "@tanstack/react-start";
 import { connectGmailFromSession } from "@/lib/gmail.functions";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import zerrowLogo from "@/assets/zerrow-logo-v2.png";
+import { AtzroLogo } from "@/components/AtzroLogo";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
-      { title: "Sign in — Zerrow" },
+      { title: "Sign in — Atzro" },
       {
         name: "description",
         content:
-          "Sign in to Zerrow and connect your Gmail account in one step to start sorting your inbox with AI.",
+          "Sign in to Atzro and connect your Gmail account in one step to start sorting your inbox with AI.",
       },
-      { property: "og:title", content: "Sign in to Zerrow" },
+      { property: "og:title", content: "Sign in to Atzro" },
       {
         property: "og:description",
-        content: "Connect your Gmail account and let Zerrow sort your inbox with AI.",
+        content: "Connect your Gmail account and let Atzro sort your inbox with AI.",
       },
       { property: "og:url", content: "https://getzerrow.com/login" },
-      { name: "twitter:title", content: "Sign in to Zerrow" },
+      { name: "twitter:title", content: "Sign in to Atzro" },
       {
         name: "twitter:description",
-        content: "Connect your Gmail account and let Zerrow sort your inbox with AI.",
+        content: "Connect your Gmail account and let Atzro sort your inbox with AI.",
       },
     ],
     links: [{ rel: "canonical", href: "https://getzerrow.com/login" }],
@@ -123,8 +123,8 @@ function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm">
         <div className="mb-10 flex flex-col items-center text-center">
-          <img src={zerrowLogo} alt="Zerrow" className="mb-3 h-28 w-auto" />
-          <h1 className="font-display text-2xl text-foreground">Sign in to Zerrow</h1>
+          <AtzroLogo className="mb-3 h-20 text-4xl" />
+          <h1 className="font-display text-2xl text-foreground">Sign in to Atzro</h1>
           <p className="mt-2 text-sm text-muted-foreground">An inbox that sorts itself.</p>
         </div>
         <div className="rounded-xl border border-border bg-card p-6">

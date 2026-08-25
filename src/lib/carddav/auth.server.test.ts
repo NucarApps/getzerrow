@@ -50,7 +50,7 @@ describe("carddavAuthChallengeResponse", () => {
   it("is a 401 with the Basic challenge header CardDAV clients require", () => {
     const res = carddavAuthChallengeResponse();
     expect(res.status).toBe(401);
-    expect(res.headers.get("WWW-Authenticate")).toBe('Basic realm="Zerrow CardDAV"');
+    expect(res.headers.get("WWW-Authenticate")).toBe('Basic realm="Atzro CardDAV"');
   });
 });
 

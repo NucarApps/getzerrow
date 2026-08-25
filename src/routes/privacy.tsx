@@ -3,14 +3,14 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/privacy")({
   head: () => ({
     meta: [
-      { title: "Privacy Policy — Zerrow" },
+      { title: "Privacy Policy — Atzro" },
       {
         name: "description",
         content:
-          "How Zerrow collects, uses, and protects your data — including Google user data — with encryption and strict access controls.",
+          "How Atzro collects, uses, and protects your data — including Google user data — with encryption and strict access controls.",
       },
-      { property: "og:title", content: "Privacy Policy — Zerrow" },
-      { property: "og:description", content: "How Zerrow collects, uses, and protects your data." },
+      { property: "og:title", content: "Privacy Policy — Atzro" },
+      { property: "og:description", content: "How Atzro collects, uses, and protects your data." },
       { property: "og:url", content: "https://getzerrow.com/privacy" },
     ],
     links: [{ rel: "canonical", href: "https://getzerrow.com/privacy" }],
@@ -35,7 +35,7 @@ function PrivacyPage() {
       >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link to="/" className="text-2xl font-bold tracking-tight" style={sora}>
-            Zerrow<span style={{ color: INK_SOFT }}>.</span>
+            Atzro<span style={{ color: INK_SOFT }}>.</span>
           </Link>
           <Link
             to="/login"
@@ -63,7 +63,7 @@ function PrivacyPage() {
 
         <div className="mt-12 space-y-10 text-base leading-relaxed" style={{ color: INK_SOFT }}>
           <Section title="What we collect">
-            When you connect Gmail, Zerrow accesses message metadata, headers, and content for the
+            When you connect Gmail, Atzro accesses message metadata, headers, and content for the
             purpose of classifying, summarizing, and filing your email. We also store your Google
             account identifier, email address, and the folder rules you define.
           </Section>
@@ -78,7 +78,7 @@ function PrivacyPage() {
             encryption to protect your information, both in transit and at rest:
             <ul className="mt-3 list-disc space-y-2 pl-6">
               <li>
-                All traffic between your browser, Gmail, and Zerrow is encrypted in transit using
+                All traffic between your browser, Gmail, and Atzro is encrypted in transit using
                 TLS 1.2 or higher.
               </li>
               <li>
@@ -111,7 +111,7 @@ function PrivacyPage() {
             </ul>
           </Section>
           <Section title="Limited Use of Google user data">
-            Zerrow's use and transfer to any other app of information received from Google APIs
+            Atzro's use and transfer to any other app of information received from Google APIs
             adheres to the{" "}
             <a
               href="https://developers.google.com/terms/api-services-user-data-policy"
@@ -125,7 +125,7 @@ function PrivacyPage() {
             <ul className="mt-3 list-disc space-y-2 pl-6">
               <li>
                 We use Google user data only to provide and improve the user-facing features of
-                Zerrow (classifying, filing, summarizing, and drafting replies to your email).
+                Atzro (classifying, filing, summarizing, and drafting replies to your email).
               </li>
               <li>We do not sell Google user data and we do not use it for advertising.</li>
               <li>
@@ -147,7 +147,7 @@ function PrivacyPage() {
             </ul>
           </Section>
           <Section title="Sharing">
-            We share data only with the infrastructure providers required to run Zerrow: hosting on
+            We share data only with the infrastructure providers required to run Atzro: hosting on
             Cloudflare, database and authentication on Supabase (via Lovable Cloud), and AI
             classification via the Lovable AI Gateway. Each provider is bound by their own data
             processing terms. We do not sell your data and we do not use it for advertising.
@@ -156,7 +156,7 @@ function PrivacyPage() {
             You can disconnect Gmail at any time from Settings. Disconnecting revokes your Google
             OAuth tokens at Google, stops further syncing, and removes that mailbox's synced
             messages, search index, reply drafts, calendar contacts, queued jobs, and the encrypted
-            token record from our database. You can also delete your entire Zerrow account from
+            token record from our database. You can also delete your entire Atzro account from
             Settings — this revokes Google access on every connected mailbox and immediately removes
             your synced messages, queued jobs, folders, filters, contacts, search index,
             push-notification logs, and sign-in record from our systems.
@@ -167,7 +167,7 @@ function PrivacyPage() {
             contacting support. If you are in the EU or UK, you have additional rights under GDPR
             including objection and portability.
           </Section>
-          <Section title="Contact">Questions about this policy? Email privacy@zerrow.app.</Section>
+          <Section title="Contact">Questions about this policy? Email privacy@atzro.app.</Section>
         </div>
 
         <div className="mt-16">

@@ -369,7 +369,7 @@ export function useInvaderGame(): UseInvaderGameResult {
     if (settingsRef.current.dailyMode) {
       const seed = todaySeedString();
       dailySeedRef.current = seed;
-      rngRef.current = createRng(hashString(`zerrow-invader-${seed}`));
+      rngRef.current = createRng(hashString(`atzro-invader-${seed}`));
     } else {
       dailySeedRef.current = null;
       rngRef.current = createRng((Date.now() ^ (Math.random() * 0xffffffff)) >>> 0);

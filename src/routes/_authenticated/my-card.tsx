@@ -17,7 +17,7 @@ import { ThemePicker } from "@/components/cards/themes";
 import { CardAnalytics } from "@/components/cards/CardAnalytics";
 
 export const Route = createFileRoute("/_authenticated/my-card")({
-  head: () => ({ meta: [{ title: "My Card — Zerrow" }] }),
+  head: () => ({ meta: [{ title: "My Card — Atzro" }] }),
   component: MyCardPage,
 });
 

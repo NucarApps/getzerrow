@@ -103,7 +103,7 @@ export function GroupSuggestionsDrawer({ open, onOpenChange }: Props) {
             AI group suggestions
           </SheetTitle>
           <SheetDescription>
-            Zerrow reviews your contacts and proposes groups (and subgroups) you can accept with one
+            Atzro reviews your contacts and proposes groups (and subgroups) you can accept with one
             click. Nothing is applied without your confirmation.
           </SheetDescription>
         </SheetHeader>
@@ -135,7 +135,7 @@ export function GroupSuggestionsDrawer({ open, onOpenChange }: Props) {
 
         {showEmpty && (
           <div className="mt-8 rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-            No suggestions yet. Click <strong>Run AI scan</strong> to have Zerrow analyze your
+            No suggestions yet. Click <strong>Run AI scan</strong> to have Atzro analyze your
             contacts and propose groups.
           </div>
         )}

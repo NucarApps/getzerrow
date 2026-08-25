@@ -31,7 +31,7 @@ import { AlertCircle, ChevronDown, ChevronRight, RefreshCw } from "lucide-react"
 
 export const Route = createFileRoute("/_authenticated/settings/rule-activity")({
   head: () => ({
-    meta: [{ title: "Rule activity — Settings — Zerrow" }, { name: "robots", content: "noindex" }],
+    meta: [{ title: "Rule activity — Settings — Atzro" }, { name: "robots", content: "noindex" }],
   }),
   component: RuleActivitySettings,
 });

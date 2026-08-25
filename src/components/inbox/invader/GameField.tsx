@@ -1,5 +1,5 @@
 import { memo, useEffect, useReducer, useState } from "react";
-import shipUrl from "@/assets/zerrow-ship.png";
+import shipUrl from "@/assets/atzro-ship.png";
 import {
   BUNKER_CELL,
   BUNKER_COLS,
@@ -301,7 +301,7 @@ function GameFieldImpl({ getLive, subscribe, containerRef, phase, lives, isMovin
               fill="#ff5a2e"
               opacity={0.18}
             />
-            <rect x={b.x - 0.26} y={b.y - 1.2} width="0.52" height="2.4" rx="0.26" fill="#ff6b3d" />
+            <rect x={b.x - 0.26} y={b.y - 1.2} width="0.52" height="2.4" rx="0.26" fill="#8b5cf6" />
           </g>
         ))}
 

@@ -5,10 +5,10 @@ import { PageTitle } from "@/components/PageTitle";
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({
     meta: [
-      { title: "Settings — Zerrow" },
+      { title: "Settings — Atzro" },
       {
         name: "description",
-        content: "Manage your Zerrow account, connected Gmail accounts, and preferences.",
+        content: "Manage your Atzro account, connected Gmail accounts, and preferences.",
       },
       { name: "robots", content: "noindex" },
     ],

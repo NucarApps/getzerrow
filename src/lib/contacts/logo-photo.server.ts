@@ -33,7 +33,7 @@ export async function fetchCompanyLogoBytes(
   return null;
 }
 
-/** Fetch the specific company logo the user picked in Zerrow
+/** Fetch the specific company logo the user picked in Atzro
  * (`company_logo_choices` row for `domain`), falling back to the multi-provider
  * walk when there's no pick. This is what CardDAV and Google Contacts push to
  * iPhone / Google People so every contact under, e.g., Nissan gets the exact
@@ -254,7 +254,7 @@ export function logoDomainForContact(row: {
 
 /** Resolve the actual photo bytes that should be pushed to external contact
  *  stores. A contact portrait wins; otherwise members inherit the linked
- *  company's uploaded logo, then the chosen/domain logo Zerrow displays. */
+ *  company's uploaded logo, then the chosen/domain logo Atzro displays. */
 export async function resolveEffectiveContactPhotoForSync(
   userId: string,
   contactId: string,

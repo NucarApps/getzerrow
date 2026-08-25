@@ -198,14 +198,14 @@ d("gmail-dlq-replay returns both DLQ and forward summaries", () => {
 
 d("gmail-webhook accepts a signed test envelope", () => {
   it("synthetic test ping returns 200 ok", async () => {
-    // The webhook's x-zerrow-test header is gated by CRON_SECRET — proves
+    // The webhook's x-atzro-test header is gated by CRON_SECRET — proves
     // the auth path on the webhook is wired without requiring a valid OIDC
     // signer.
     const res = await fetch(`${BASE}/api/public/gmail-webhook`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-zerrow-test": "1",
+        "x-atzro-test": "1",
         authorization: `Bearer ${SECRET}`,
       },
       body: JSON.stringify({
@@ -220,13 +220,13 @@ d("gmail-webhook accepts a signed test envelope", () => {
   });
 
   it("synthetic test ping WITHOUT cron secret is rejected", async () => {
-    // Without the secret, x-zerrow-test must NOT allow the request through —
+    // Without the secret, x-atzro-test must NOT allow the request through —
     // otherwise anyone could trigger syncs for any known email address.
     const res = await fetch(`${BASE}/api/public/gmail-webhook`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-zerrow-test": "1",
+        "x-atzro-test": "1",
       },
       body: JSON.stringify({ message: { messageId: "no-auth" } }),
     });

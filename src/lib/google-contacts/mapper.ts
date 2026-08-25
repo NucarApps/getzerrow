@@ -1,4 +1,4 @@
-// Pure mapping between Zerrow's internal contact shape and Google People API
+// Pure mapping between Atzro's internal contact shape and Google People API
 // `Person` resources. No I/O, no Supabase — safe to unit test in isolation.
 
 import { buildMergedNote, stripSummaryFromNote } from "@/lib/carddav/vcard";
@@ -47,7 +47,7 @@ export type Person = {
   photos?: PersonPhoto[];
 };
 
-/** Local Zerrow contact projection used by the sync layer. */
+/** Local Atzro contact projection used by the sync layer. */
 export type LocalContact = {
   id: string;
   email: string | null;
@@ -98,7 +98,7 @@ export function joinName(name: PersonName | undefined): string | null {
 }
 
 /**
- * Build a People API Person payload from a Zerrow contact plus its phones and
+ * Build a People API Person payload from a Atzro contact plus its phones and
  * group memberships. Only fields we manage are included — leaves everything
  * else on Google's side untouched.
  */
@@ -219,7 +219,7 @@ export const UPDATE_PERSON_FIELDS =
 export const READ_PERSON_FIELDS =
   "names,emailAddresses,phoneNumbers,organizations,biographies,addresses,urls,memberships,photos,metadata";
 
-/** Parse Google's Person into the writable subset of a Zerrow contact. */
+/** Parse Google's Person into the writable subset of a Atzro contact. */
 export function personToContact(person: Person): {
   email: string | null;
   emails: LocalEmail[];
@@ -318,7 +318,7 @@ export function personToContact(person: Person): {
   };
 }
 
-/** Google contactGroup → Zerrow group name (system groups have formatted names). */
+/** Google contactGroup → Atzro group name (system groups have formatted names). */
 export function labelToGroupName(g: {
   name?: string;
   formattedName?: string;

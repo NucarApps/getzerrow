@@ -119,27 +119,27 @@ describe("notes round-trip", () => {
   });
 
   it("does not emit legacy placeholder emails back to iOS", () => {
-    // Historically we synthesized `carddav+<uuid>@local.zerrow` when iOS
+    // Historically we synthesized `carddav+<uuid>@local.atzro` when iOS
     // omitted EMAIL. That fallback is gone but stale rows can linger — the
     // serializer must not echo them or iPhone displays the placeholder as
     // the real address.
     const c = buildContact({
-      email: `carddav+${"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}@local.zerrow`,
+      email: `carddav+${"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}@local.atzro`,
     });
     const vcard = contactToVCard(c);
     expect(vcard).not.toContain("EMAIL");
-    expect(vcard).not.toContain("local.zerrow");
+    expect(vcard).not.toContain("local.atzro");
   });
 });
 
 describe("AI summary in NOTE", () => {
   it("merges summary and user notes with summary first", () => {
     const merged = buildMergedNote("She runs ops at Acme.", "Met at conf.");
-    expect(merged).toContain("🤖 Zerrow summary");
+    expect(merged).toContain("🤖 Atzro summary");
     expect(merged).toContain("She runs ops at Acme.");
     expect(merged).toContain("— My notes —");
     expect(merged).toContain("Met at conf.");
-    expect(merged!.indexOf("Zerrow summary")).toBeLessThan(merged!.indexOf("— My notes —"));
+    expect(merged!.indexOf("Atzro summary")).toBeLessThan(merged!.indexOf("— My notes —"));
   });
 
   it("returns user notes only when there is no summary", () => {

@@ -1,4 +1,4 @@
-// Mobile API — decrypted mail feed for the Zerrow iOS companion app.
+// Mobile API — decrypted mail feed for the Atzro iOS companion app.
 // POST /api/mobile/emails/feed
 //   { kind: "list", scope?, folder_id?, cursor?, limit? } → { ok, emails }
 //   { kind: "detail", email_id } → { ok, email }

@@ -301,7 +301,7 @@ function PublicCard() {
         <p className="mt-6 text-center text-xs text-muted-foreground">
           Powered by{" "}
           <a href="/" className="underline hover:text-foreground">
-            Zerrow
+            Atzro
           </a>
         </p>
       </div>

@@ -127,7 +127,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 /** Marker headings that fence the AI-generated relationship summary inside the
  * merged NOTE field synced to iOS and Google Contacts. Kept simple and stable
  * so `stripSummaryFromNote` can reliably peel the AI block back off inbound. */
-export const SUMMARY_HEADING = "🤖 Zerrow summary";
+export const SUMMARY_HEADING = "🤖 Atzro summary";
 export const USER_NOTES_HEADING = "— My notes —";
 
 /** Fold the AI relationship summary and the user's own notes into a single
@@ -193,7 +193,7 @@ export function contactToVCard(
   const out: string[] = [];
   out.push("BEGIN:VCARD");
   out.push("VERSION:3.0");
-  out.push(line("PRODID", "-//Zerrow//CardDAV 1.0//EN"));
+  out.push(line("PRODID", "-//Atzro//CardDAV 1.0//EN"));
   out.push(line("UID", contact.id));
   out.push(line("FN", esc(displayName)));
   out.push(line("N", `${esc(family)};${esc(given)};;;`));
@@ -206,7 +206,7 @@ export function contactToVCard(
   // Emit all EMAIL entries from contact_emails (fall back to the single
   // legacy contact.email column when no rows exist). Legacy placeholder
   // addresses are filtered so iOS stops caching them.
-  const isPlaceholderEmail = (v: string): boolean => /^carddav\+[0-9a-f-]+@local\.zerrow$/i.test(v);
+  const isPlaceholderEmail = (v: string): boolean => /^carddav\+[0-9a-f-]+@local\.atzro$/i.test(v);
   const emittedEmailKeys = new Set<string>();
   const emailList: EmailRow[] = emails.length
     ? emails
@@ -722,7 +722,7 @@ export function parseVCard(text: string): ParsedVCard | null {
 // ---------------------------------------------------------------------------
 // GROUP vCARDS — Apple's Contacts app publishes groups as separate vCards
 // with X-ADDRESSBOOKSERVER-KIND:group + X-ADDRESSBOOKSERVER-MEMBER lines.
-// We serve these alongside contact vCards so iOS mirrors Zerrow groups.
+// We serve these alongside contact vCards so iOS mirrors Atzro groups.
 
 export type GroupCardInput = {
   uid: string;
@@ -737,7 +737,7 @@ export function buildGroupVCard(g: GroupCardInput): string {
   const out: string[] = [];
   out.push("BEGIN:VCARD");
   out.push("VERSION:3.0");
-  out.push(line("PRODID", "-//Zerrow//CardDAV Group 1.0//EN"));
+  out.push(line("PRODID", "-//Atzro//CardDAV Group 1.0//EN"));
   out.push(line("UID", g.uid));
   out.push(line("FN", esc(g.name)));
   out.push(line("N", `${esc(g.name)};;;;`));

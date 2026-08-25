@@ -19,13 +19,13 @@ describe("parseSyncCollection", () => {
   it("reads an existing sync-token and nresults limit", () => {
     const body =
       '<D:sync-collection xmlns:D="DAV:">' +
-      "<D:sync-token>urn:zerrow:carddav:u1:1234:5</D:sync-token>" +
+      "<D:sync-token>urn:atzro:carddav:u1:1234:5</D:sync-token>" +
       "<D:sync-level>1</D:sync-level>" +
       "<D:limit><D:nresults>50</D:nresults></D:limit>" +
       "<D:prop><D:getetag/></D:prop>" +
       "</D:sync-collection>";
     const parsed = parseSyncCollection(body);
-    expect(parsed.syncToken).toBe("urn:zerrow:carddav:u1:1234:5");
+    expect(parsed.syncToken).toBe("urn:atzro:carddav:u1:1234:5");
     expect(parsed.syncLevel).toBe("1");
     expect(parsed.limit).toBe(50);
   });

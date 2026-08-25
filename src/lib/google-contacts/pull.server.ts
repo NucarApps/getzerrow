@@ -1,4 +1,4 @@
-// Pull: incremental fetch of Google People/contactGroups into Zerrow.
+// Pull: incremental fetch of Google People/contactGroups into Atzro.
 // Uses the sync-token flow; falls back to a full resync on EXPIRED_SYNC_TOKEN.
 // All local writes go through the existing encrypted-writer / plain tables —
 // nothing here re-implements CRUD.
@@ -119,7 +119,7 @@ export type PullBreakdown = {
   failed: number;
 };
 
-/** Apply pulled people/groups to local Zerrow state. Returns the count applied. */
+/** Apply pulled people/groups to local Atzro state. Returns the count applied. */
 export async function pullFromGoogle(
   ids: Ids,
   progress?: ProgressReporter,
@@ -205,7 +205,7 @@ async function applyGroupChanges(
 
     const existing = byResource.get(g.resourceName);
     if (existing) {
-      // Zerrow is the source of truth for labels. Keep the remote etag fresh
+      // Atzro is the source of truth for labels. Keep the remote etag fresh
       // so the next push can rename Google back to the local label, but do
       // not let stale Google label names overwrite local group names.
       await supabaseAdmin
@@ -302,7 +302,7 @@ async function applyPersonChanges(
   );
   // Membership diffs may only touch groups Google actually mirrors, and
   // auto-company subgroups are fully owned by the reconciler — a pull must
-  // neither strip Zerrow-only memberships nor write manual rows into
+  // neither strip Atzro-only memberships nor write manual rows into
   // managed subgroups.
   const googleLinkedGroupIds = new Set(groupByResource.values());
   const { data: autoGenRows } = await supabaseAdmin
@@ -351,7 +351,7 @@ async function applyPersonChanges(
     let mergedByPhone = false;
     if (!contactId) {
       // If the Google person has an email, prefer merging into any existing
-      // Zerrow contact with the same email (email is the natural key when
+      // Atzro contact with the same email (email is the natural key when
       // present). Otherwise fall back to phone / name+phone / name+company
       // matches against emailless contacts.
       if (parsed.email) {

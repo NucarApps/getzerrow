@@ -430,7 +430,7 @@ async function applyLabelChange(
 ) {
   // Trashed OR marked-as-spam in Gmail → drop the local row. Both leave
   // the message invisible in Gmail's inbox/all-mail, so keeping it in
-  // Zerrow just shows stale mail the user already dealt with.
+  // Atzro just shows stale mail the user already dealt with.
   if (added.includes("TRASH") || added.includes("SPAM")) {
     await supabaseAdmin
       .from("emails")
@@ -458,7 +458,7 @@ async function applyLabelChange(
   const patch: Record<string, unknown> = { ...computeLabelPatch(currentLabels, added, removed) };
 
   // Mirror folder_id with Gmail label state. When the user removes a folder's
-  // Gmail label, the email should drop out of that folder in Zerrow; when
+  // Gmail label, the email should drop out of that folder in Atzro; when
   // they add one, it should jump into the matching folder.
   if (labelToFolder && labelToFolder.size > 0) {
     const addedFolder = added.map((l) => labelToFolder.get(l)).find(Boolean);

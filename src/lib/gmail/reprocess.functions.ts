@@ -644,7 +644,7 @@ export const reconcileInboxFromGmail = createServerFn({ method: "POST" })
 
     // ── Incoming pass ──────────────────────────────────────────────────
     // Messages that ARE in Gmail's inbox right now but are NOT visible in
-    // Zerrow's inbox — either archived locally / missing the INBOX label
+    // Atzro's inbox — either archived locally / missing the INBOX label
     // (e.g. un-snoozed, or manually moved back to the inbox in Gmail), or
     // never ingested at all. Without this, the history `labelsAdded: INBOX`
     // event being missed leaves them stuck out of the inbox forever.

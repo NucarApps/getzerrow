@@ -1,4 +1,4 @@
-// Push: propagate local Zerrow contact + group changes to Google People API.
+// Push: propagate local Atzro contact + group changes to Google People API.
 // Runs AFTER pull so we always have fresh etags. Etag conflicts are logged
 // and skipped — the next pull → push cycle will reconcile them.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -136,7 +136,7 @@ export function formatGoogleLabelName(
 }
 
 /** Google's default "Contacts" screen only shows members of the myContacts
- *  system group. Zerrow pushes contacts into user labels but must also add
+ *  system group. Atzro pushes contacts into user labels but must also add
  *  them here or they land in "Other contacts" and appear missing. */
 export const MY_CONTACTS_RESOURCE = "contactGroups/myContacts";
 
@@ -368,7 +368,7 @@ async function pushContacts(
   if (!contacts.length) return 0;
   await progress?.set("pushing_contacts", 0, contacts.length);
 
-  // Per-user preference: fold Zerrow's AI relationship summary into the NOTE
+  // Per-user preference: fold Atzro's AI relationship summary into the NOTE
   // pushed to Google (mirrors the CardDAV path so iOS + Google Contacts show
   // the same block). Default on.
   const { data: settingsRow } = await supabaseAdmin
@@ -818,7 +818,7 @@ export async function pushGroupMemberships(ids: Ids, progress?: ProgressReporter
 
     try {
       const remote = await getContactGroupWithMembers(ids.gmailAccountId, gl.resource_name);
-      // Only reconcile members Zerrow actually knows about. A remote member
+      // Only reconcile members Atzro actually knows about. A remote member
       // with no google_contact_links row (not yet pulled/linked — e.g. a
       // partially-synced large account) is invisible to `desired`, and
       // removing it would strip legitimate Google-side label memberships

@@ -51,7 +51,7 @@ import { useEmailRealtime } from "@/lib/use-email-realtime";
 import { useContactsRealtime } from "@/lib/use-contacts-realtime";
 import { BackfillBanner } from "@/components/inbox/BackfillBanner";
 import { ReconnectBanner } from "@/components/inbox/ReconnectBanner";
-import zerrowLogo from "@/assets/zerrow-logo-v2.png";
+import { AtzroLogo } from "@/components/AtzroLogo";
 import { useFoldersFullQuery, useGmailLabelsQuery } from "@/hooks/use-folder-queries";
 
 const SPECIAL_VIEWS = ["all", "all_mail", "no_rules"];
@@ -165,7 +165,7 @@ function AuthedLayoutInner({
           >
             <Menu className="h-5 w-5" />
           </button>
-          <img src={zerrowLogo} alt="Zerrow" className="h-12 w-auto" />
+          <AtzroLogo className="h-8 text-2xl" />
           <div className="ml-auto min-w-0 max-w-[60%]">
             <AccountSwitcher
               accounts={accounts}
@@ -369,7 +369,7 @@ function ViewRow({
 /** Mobile bottom app tray (hidden ≥ md) — the dock counterpart of the
  * desktop icon rail. Holds only the app destinations; views/folders and
  * Reports/Admin stay in the hamburger drawer. Matches the rail's states:
- * muted icons, orange top indicator when active, unread dot on Inbox. */
+ * muted icons, brand top indicator when active, unread dot on Inbox. */
 function MobileDock() {
   const { counts, navigate, pathname, pick } = useSidebarData();
   const go = (to: string) => navigate({ to });
@@ -485,8 +485,8 @@ function DesktopRails() {
         <button
           type="button"
           onClick={() => pick("all")}
-          title="Zerrow"
-          aria-label="Zerrow — Inbox"
+          title="Atzro"
+          aria-label="Atzro — Inbox"
           className="mb-3 grid h-8 w-8 place-items-center rounded-sm bg-primary font-mono text-sm font-bold text-primary-foreground"
         >
           Z
@@ -683,7 +683,7 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
     <div className="flex h-full flex-col p-4">
       <div className="mb-4 px-2">
         <div className="flex items-center gap-2">
-          <img src={zerrowLogo} alt="Zerrow" className="h-14 w-auto" />
+          <AtzroLogo className="h-9 text-[26px]" />
         </div>
       </div>
 

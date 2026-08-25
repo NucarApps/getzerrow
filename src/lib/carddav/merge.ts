@@ -43,7 +43,7 @@ function normalizeEmail(value: string | null | undefined): string | null {
 }
 
 function isLegacyPlaceholderEmail(value: string): boolean {
-  return /^carddav\+[0-9a-f-]+@local\.zerrow$/i.test(value);
+  return /^carddav\+[0-9a-f-]+@local\.atzro$/i.test(value);
 }
 
 /**

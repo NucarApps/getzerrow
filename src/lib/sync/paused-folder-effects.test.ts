@@ -1,6 +1,6 @@
 // A paused folder (processing_enabled=false) is a read-only reflection of
 // its linked Gmail label: mail Gmail already labeled still shows up in it,
-// but Zerrow applies NO side effects — no Gmail label writes, no archive,
+// but Atzro applies NO side effects — no Gmail label writes, no archive,
 // no mark-read, no star, no snooze.
 import { describe, it, expect } from "vitest";
 import {

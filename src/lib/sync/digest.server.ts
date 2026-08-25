@@ -181,13 +181,13 @@ async function sendDigestsForUser(
     }
 
     const label = bucket === "weekly" ? "weekly" : "daily";
-    const subject = `Your Zerrow ${label} digest — ${emails.length} email${emails.length === 1 ? "" : "s"}`;
+    const subject = `Your Atzro ${label} digest — ${emails.length} email${emails.length === 1 ? "" : "s"}`;
     const body = [
       overview,
       overview ? "" : null,
       listing,
       "",
-      "— Zerrow · sent by your folder digest rules",
+      "— Atzro · sent by your folder digest rules",
     ]
       .filter((v): v is string => v !== null)
       .join("\n");

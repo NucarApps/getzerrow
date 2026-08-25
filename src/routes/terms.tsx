@@ -3,16 +3,16 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/terms")({
   head: () => ({
     meta: [
-      { title: "Terms & Conditions — Zerrow" },
+      { title: "Terms & Conditions — Atzro" },
       {
         name: "description",
         content:
-          "Read the terms and conditions that govern your use of Zerrow, the AI inbox that automatically sorts your Gmail into the folders you actually use.",
+          "Read the terms and conditions that govern your use of Atzro, the AI inbox that automatically sorts your Gmail into the folders you actually use.",
       },
-      { property: "og:title", content: "Terms & Conditions — Zerrow" },
+      { property: "og:title", content: "Terms & Conditions — Atzro" },
       {
         property: "og:description",
-        content: "The terms that govern your use of Zerrow, the AI inbox that sorts itself.",
+        content: "The terms that govern your use of Atzro, the AI inbox that sorts itself.",
       },
       { property: "og:url", content: "https://getzerrow.com/terms" },
     ],
@@ -38,7 +38,7 @@ function TermsPage() {
       >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link to="/" className="text-2xl font-bold tracking-tight" style={sora}>
-            Zerrow<span style={{ color: INK_SOFT }}>.</span>
+            Atzro<span style={{ color: INK_SOFT }}>.</span>
           </Link>
           <Link
             to="/login"
@@ -67,18 +67,18 @@ function TermsPage() {
         <div className="mt-12 space-y-10 text-base leading-relaxed" style={{ color: INK_SOFT }}>
           <Section title="Acceptance">
             By creating an account or connecting Gmail, you agree to these terms. If you do not
-            agree, do not use Zerrow.
+            agree, do not use Atzro.
           </Section>
           <Section title="The service">
-            Zerrow is an AI-assisted email organizer for Gmail. It reads incoming messages and files
+            Atzro is an AI-assisted email organizer for Gmail. It reads incoming messages and files
             them into folders you define. Features may change as the product evolves.
           </Section>
           <Section title="Your account">
             You are responsible for the activity on your account and for keeping your Google
-            credentials secure. You must be at least 16 years old to use Zerrow.
+            credentials secure. You must be at least 16 years old to use Atzro.
           </Section>
           <Section title="Acceptable use">
-            Don't use Zerrow to break the law, abuse Gmail's API quotas, reverse engineer the
+            Don't use Atzro to break the law, abuse Gmail's API quotas, reverse engineer the
             service, or attempt to access other users' data.
           </Section>
           <Section title="AI output">
@@ -87,18 +87,18 @@ function TermsPage() {
             email you send.
           </Section>
           <Section title="Termination">
-            You can stop using Zerrow at any time by disconnecting Gmail and deleting your account
+            You can stop using Atzro at any time by disconnecting Gmail and deleting your account
             from Settings. We may suspend or terminate accounts that violate these terms.
           </Section>
           <Section title="Liability">
-            Zerrow is provided "as is" without warranty. To the maximum extent permitted by law, we
+            Atzro is provided "as is" without warranty. To the maximum extent permitted by law, we
             are not liable for indirect or consequential damages arising from use of the service.
           </Section>
           <Section title="Changes">
             We may update these terms from time to time. Material changes will be announced in-app.
             Continued use after a change means you accept the new terms.
           </Section>
-          <Section title="Contact">Questions? Email support@zerrow.app.</Section>
+          <Section title="Contact">Questions? Email support@atzro.app.</Section>
         </div>
 
         <div className="mt-16">

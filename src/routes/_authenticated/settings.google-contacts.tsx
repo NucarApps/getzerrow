@@ -46,7 +46,7 @@ type SyncMode = "off" | "pull_only" | "two_way";
 export const Route = createFileRoute("/_authenticated/settings/google-contacts")({
   head: () => ({
     meta: [
-      { title: "Google contacts sync — Settings — Zerrow" },
+      { title: "Google contacts sync — Settings — Atzro" },
       { name: "robots", content: "noindex" },
     ],
   }),
@@ -269,7 +269,7 @@ function AccountRow({
                 variant="outline"
                 onClick={() => backfillMut.mutate()}
                 disabled={!enabled || backfillMut.isPending}
-                title="Scan every linked contact and additively import any emails/phones that exist in Google but not in Zerrow"
+                title="Scan every linked contact and additively import any emails/phones that exist in Google but not in Atzro"
               >
                 <RefreshCw
                   className={`mr-1.5 h-3.5 w-3.5 ${backfillMut.isPending ? "animate-spin" : ""}`}
@@ -310,13 +310,13 @@ function AccountRow({
             id={`mode-pull-${account.id}`}
             value="pull_only"
             title="Pull only (import from Google)"
-            description="Import contacts and groups from Google into Zerrow so you can merge duplicates and clean up. Local changes are not pushed back."
+            description="Import contacts and groups from Google into Atzro so you can merge duplicates and clean up. Local changes are not pushed back."
           />
           <ModeOption
             id={`mode-two-${account.id}`}
             value="two_way"
             title="Two-way sync"
-            description="Use Zerrow as the source of truth for contacts, photos, and label memberships while still importing new Google contacts."
+            description="Use Atzro as the source of truth for contacts, photos, and label memberships while still importing new Google contacts."
           />
         </RadioGroup>
 
@@ -480,7 +480,7 @@ function PullBreakdown({ state }: { state: SyncStateShape }) {
         {pushed > 0 ? ` · Pushed ${pushed}` : ""}
       </p>
       {skipped > 0 && (
-        <p title="Google contacts without an email address aren't stored in Zerrow yet.">
+        <p title="Google contacts without an email address aren't stored in Atzro yet.">
           Skipped (no email, name, or phone): {skipped}
         </p>
       )}
@@ -563,7 +563,7 @@ function GoogleContactsSettings() {
         <h2 className="font-display text-2xl">Google contacts sync</h2>
         <p className="mt-2 text-sm text-muted-foreground">
           Start with <strong>Pull only</strong> to import your Google contacts and groups into
-          Zerrow so you can merge duplicates and clean things up. When you're ready, switch to{" "}
+          Atzro so you can merge duplicates and clean things up. When you're ready, switch to{" "}
           <strong>Two-way</strong> to also push local changes, adds, and deletes back to Google.
         </p>
         <p className="mt-2 text-xs text-muted-foreground">
@@ -573,7 +573,7 @@ function GoogleContactsSettings() {
         <p className="mt-2 text-xs text-muted-foreground">
           Google Contacts doesn't support nested labels — subgroups sync as
           <span className="font-mono"> Parent - Child</span> (e.g.{" "}
-          <span className="font-mono">Factory - VW</span>). All Zerrow contacts are added to
+          <span className="font-mono">Factory - VW</span>). All Atzro contacts are added to
           Google's default Contacts list.
         </p>
       </Card>

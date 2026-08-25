@@ -1,19 +1,22 @@
 // Recall.ai real-time endpoint. Receives transcript + chat events and reacts
-// to "Hey Zerrow" / "@Zerrow" wake phrases by answering in the meeting chat.
+// to "Hey Atzro" / "@Atzro" wake phrases by answering in the meeting chat.
 //
 // Configured via createBot() to POST here with `?t=<RECALL_REALTIME_TOKEN>`.
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import {
-  askZerrowInMeeting,
+  askAtzroInMeeting,
   appendTranscriptSegments,
   ensureTranscriptBuffer,
   type TranscriptSeg,
-} from "@/lib/meetings/hey-zerrow.server";
+} from "@/lib/meetings/hey-atzro.server";
 import { constantTimeEqual } from "@/lib/constant-time.server";
 import { logError, logInfo, newRunId } from "@/lib/log.server";
 
-const WAKE_RE = /(?:^|[\s,.:;!?])(?:@zerrow|hey\s+zerrow)[\s,:;-]+(.+)/i;
+// "zerrow" stays a silent alias for the pre-rebrand wake phrase so meetings
+// already in flight (and habit) keep working after the rename to Atzro.
+const WAKE_RE =
+  /(?:^|[\s,.:;!?])(?:@atzro|@zerrow|hey\s+atzro|hey\s+zerrow)[\s,:;-]+(.+)/i;
 
 // Untrusted real-time event from Recall — validate the shape rather than cast.
 // Unknown keys are stripped so Recall can extend the payload without breaking us.
@@ -46,7 +49,7 @@ function extractQuestion(text: string): string | null {
   const m = text.match(WAKE_RE);
   if (!m) return null;
   const q = m[1].trim();
-  // Require at least 3 words to reduce false triggers on stray "hey zerrow".
+  // Require at least 3 words to reduce false triggers on stray "hey atzro".
   if (q.split(/\s+/).length < 3) return null;
   return q.slice(0, 500);
 }
@@ -105,7 +108,7 @@ export const Route = createFileRoute("/api/public/recall-realtime")({
 
             const question = extractQuestion(text);
             if (question) {
-              await askZerrowInMeeting({
+              await askAtzroInMeeting({
                 botId,
                 question,
                 source: "voice",
@@ -120,7 +123,7 @@ export const Route = createFileRoute("/api/public/recall-realtime")({
 
             const question = extractQuestion(text);
             if (question) {
-              await askZerrowInMeeting({
+              await askAtzroInMeeting({
                 botId,
                 question,
                 source: "chat",

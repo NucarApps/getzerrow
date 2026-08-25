@@ -908,7 +908,7 @@ export function FolderEditor({
                   variant="ghost"
                   onClick={syncLabel}
                   disabled={syncingLabel || !folder.gmail_label_id}
-                  title="Apply this folder's Gmail label to all emails Zerrow has routed here"
+                  title="Apply this folder's Gmail label to all emails Atzro has routed here"
                 >
                   {syncingLabel ? "Syncing…" : "Sync to Gmail"}
                 </Button>

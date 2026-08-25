@@ -9,7 +9,7 @@ import { BarChart3, Mail, Inbox, Clock, Calendar, Paperclip, TrendingUp } from "
 export const Route = createFileRoute("/_authenticated/reports")({
   head: () => ({
     meta: [
-      { title: "Inbox Report — Zerrow" },
+      { title: "Inbox Report — Atzro" },
       {
         name: "description",
         content: "Stats about your inbox: top domains, busiest hours, daily volume.",

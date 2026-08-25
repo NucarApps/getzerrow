@@ -70,7 +70,7 @@ import { buildDescendantsById, buildGroupTree, eligibleParents } from "@/lib/con
 export const Route = createFileRoute("/_authenticated/contacts/labels")({
   head: () => ({
     meta: [
-      { title: "Labels — Zerrow" },
+      { title: "Labels — Atzro" },
       { name: "description", content: "Organize your contact labels and subgroups." },
     ],
   }),

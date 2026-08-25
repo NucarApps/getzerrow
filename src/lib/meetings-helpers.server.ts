@@ -44,7 +44,7 @@ export { EMAIL_RE } from "./contacts/email-address";
 export const DOMAIN_RE = /^(?:[a-z0-9-]+\.)+[a-z]{2,}$/;
 
 export const DEFAULT_CHAT_MESSAGE =
-  "Hi! I'm the Zerrow notetaker. I'm here to record and summarize this meeting.";
+  "Hi! I'm the Atzro notetaker. I'm here to record and summarize this meeting.";
 
 // Google's five special event categories. "default" (a normal meeting) is
 // always shown/recordable and never appears in this list.

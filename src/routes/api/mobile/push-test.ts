@@ -18,7 +18,7 @@ export const Route = createFileRoute("/api/mobile/push-test")({
 
         const { sendPushToUser } = await import("@/lib/push.server");
         await sendPushToUser(userId, {
-          title: "Zerrow",
+          title: "Atzro",
           body: "Push notifications are working.",
           data: { type: "test" },
         });

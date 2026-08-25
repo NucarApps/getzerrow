@@ -1,4 +1,4 @@
-// Tests for pushToGoogle: the write path from Zerrow contacts/groups to the
+// Tests for pushToGoogle: the write path from Atzro contacts/groups to the
 // Google People API. The mapper and the dirty check stay REAL; the People API
 // client is stubbed per-function while `PeopleApiError` is kept as the REAL
 // class (via importOriginal) so the SUT's instanceof checks keep working.
@@ -6,7 +6,7 @@
 // Contracts protected here:
 //   - dirty gating: a linked contact that is not dirty must generate ZERO
 //     People API traffic (the cron runs every few minutes);
-//   - the clobber guard: when Google holds emails Zerrow doesn't know, the
+//   - the clobber guard: when Google holds emails Atzro doesn't know, the
 //     push is aborted, the link flips back to "trust remote", and the
 //     missing addresses are imported additively — never overwritten;
 //   - etag-conflict resilience: one conflicted contact must not stall the
@@ -759,7 +759,7 @@ describe("pushGroupMemberships remote-member guard", () => {
     ).find((c) => c[1] === "contactGroups/g1");
   }
 
-  it("never removes a remote member Zerrow hasn't linked yet", async () => {
+  it("never removes a remote member Atzro hasn't linked yet", async () => {
     // Google has an unknown member (people/stranger) plus our linked-but-
     // non-member CT2. Only CT2 (known, not desired) may be removed; the
     // stranger must be left untouched or every push cycle would strip it.
