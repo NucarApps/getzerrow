@@ -35,7 +35,10 @@ export async function persistDecision(
     matched_filter_ids: decision.matched_filter_ids,
     matched_folder_ids: decision.matched_folder_ids,
   });
-  if (decision.trace) await persistDecisionTrace(emailId, decision.trace);
+  // A v2 trace wins when the amended engine decided: it explains the same
+  // decision in more detail, and the readers narrow by `version`.
+  if (decision.rules_trace) await persistRulesTrace(emailId, decision.rules_trace);
+  else if (decision.trace) await persistDecisionTrace(emailId, decision.trace);
   return res;
 }
 
