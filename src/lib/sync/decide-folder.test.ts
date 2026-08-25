@@ -111,7 +111,7 @@ describe("decideFolder precedence", () => {
     });
     const r = decideFolder(parsed, ctx, { trigger: "label_change", labeledFolderId: "f-inv" });
     expect(r.folder_id).toBeNull();
-    expect(r.trace?.candidates.find((c) => c.folder_id === "f-inv")?.verdict).toBe("excluded");
+    expect(r.trace?.candidates.find((c) => c.folder_id === "f-inv")?.verdict).toBe("vetoed");
   });
 
   it("rung 3: an always-inbox override wins over a filter match", () => {
