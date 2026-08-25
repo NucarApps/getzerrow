@@ -12,6 +12,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { logError } from "@/lib/log.server";
 import type { ClassificationResult } from "./classify";
+import type { Collision, RulesTrace } from "@/lib/rules/types";
 import type { DecisionTrace } from "./decide-folder";
 import { updateEmailEncrypted } from "./encrypted-writer";
 
