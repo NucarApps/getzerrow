@@ -1316,6 +1316,7 @@ export type Database = {
           classified_by: string | null
           classify_attempts: number
           created_at: string
+          decision_confirmed_at: string | null
           decision_trace: Json | null
           folder_id: string | null
           forward_attempts: number
@@ -1339,6 +1340,7 @@ export type Database = {
           matched_filter_ids: string[]
           matched_folder_ids: string[]
           origin_addr: string | null
+          placed_by_user: boolean
           processed_at: string | null
           published_at_ms: number | null
           raw_labels: string[] | null
@@ -1362,6 +1364,7 @@ export type Database = {
           classified_by?: string | null
           classify_attempts?: number
           created_at?: string
+          decision_confirmed_at?: string | null
           decision_trace?: Json | null
           folder_id?: string | null
           forward_attempts?: number
@@ -1385,6 +1388,7 @@ export type Database = {
           matched_filter_ids?: string[]
           matched_folder_ids?: string[]
           origin_addr?: string | null
+          placed_by_user?: boolean
           processed_at?: string | null
           published_at_ms?: number | null
           raw_labels?: string[] | null
@@ -1408,6 +1412,7 @@ export type Database = {
           classified_by?: string | null
           classify_attempts?: number
           created_at?: string
+          decision_confirmed_at?: string | null
           decision_trace?: Json | null
           folder_id?: string | null
           forward_attempts?: number
@@ -1431,6 +1436,7 @@ export type Database = {
           matched_filter_ids?: string[]
           matched_folder_ids?: string[]
           origin_addr?: string | null
+          placed_by_user?: boolean
           processed_at?: string | null
           published_at_ms?: number | null
           raw_labels?: string[] | null
@@ -1805,6 +1811,7 @@ export type Database = {
           folder_id: string
           id: string
           op: string
+          specificity_level: number | null
           value: string
         }
         Insert: {
@@ -1813,6 +1820,7 @@ export type Database = {
           folder_id: string
           id?: string
           op: string
+          specificity_level?: number | null
           value: string
         }
         Update: {
@@ -1821,6 +1829,7 @@ export type Database = {
           folder_id?: string
           id?: string
           op?: string
+          specificity_level?: number | null
           value?: string
         }
         Relationships: [
@@ -2099,6 +2108,7 @@ export type Database = {
           auto_star: boolean
           color: string
           created_at: string
+          description: string | null
           emails_since_learn: number
           filter_logic: string
           filter_tree: Json | null
@@ -2134,6 +2144,7 @@ export type Database = {
           auto_star?: boolean
           color?: string
           created_at?: string
+          description?: string | null
           emails_since_learn?: number
           filter_logic?: string
           filter_tree?: Json | null
@@ -2169,6 +2180,7 @@ export type Database = {
           auto_star?: boolean
           color?: string
           created_at?: string
+          description?: string | null
           emails_since_learn?: number
           filter_logic?: string
           filter_tree?: Json | null
@@ -3207,6 +3219,59 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "reply_drafts_email_id_fkey"
+            columns: ["email_id"]
+            isOneToOne: false
+            referencedRelation: "emails"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rule_collision_events: {
+        Row: {
+          created_at: string
+          email_id: string | null
+          folder_ids: string[]
+          id: string
+          level: number
+          loser_rule_ids: string[]
+          reason: string | null
+          resolved_at: string | null
+          updated_at: string
+          user_id: string
+          winner_folder_id: string | null
+          winner_rule_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          email_id?: string | null
+          folder_ids?: string[]
+          id?: string
+          level: number
+          loser_rule_ids?: string[]
+          reason?: string | null
+          resolved_at?: string | null
+          updated_at?: string
+          user_id: string
+          winner_folder_id?: string | null
+          winner_rule_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          email_id?: string | null
+          folder_ids?: string[]
+          id?: string
+          level?: number
+          loser_rule_ids?: string[]
+          reason?: string | null
+          resolved_at?: string | null
+          updated_at?: string
+          user_id?: string
+          winner_folder_id?: string | null
+          winner_rule_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rule_collision_events_email_id_fkey"
             columns: ["email_id"]
             isOneToOne: false
             referencedRelation: "emails"
