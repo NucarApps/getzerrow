@@ -346,6 +346,47 @@ export function FolderEditor({
     setNewF({ field: "from", op: "contains", value: "" });
     qc.invalidateQueries({ queryKey: ["folder-filters", folder.id] });
   }
+  /** Persist a rule from the guided editor. One match group becomes an
+   * AND list of filter rows; several groups become an OR-of-ANDs tree,
+   * which is the shape the engine reads either way. */
+  async function saveGuidedRule(groups: Condition[][]) {
+    if (groups.length === 0) return;
+    if (groups.length === 1) {
+      const rows = groups[0]!.map((c) => ({
+        folder_id: folder.id,
+        field: c.field,
+        op: c.op,
+        value: c.value,
+      }));
+      const { error } = await supabase.from("folder_filters").insert(rows);
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      if (rows.length > 1) setLocal({ ...local, filter_logic: "all" });
+      qc.invalidateQueries({ queryKey: ["folder-filters", folder.id] });
+    } else {
+      setLocal({
+        ...local,
+        filter_tree: {
+          type: "group",
+          op: "or",
+          children: groups.map((g) => ({
+            type: "group" as const,
+            op: "and" as const,
+            children: g.map((c) => ({
+              type: "cond" as const,
+              field: c.field,
+              op: c.op,
+              value: c.value,
+            })),
+          })),
+        },
+      });
+    }
+    toast.success("Rule added — save the folder to apply it");
+  }
+
   async function removeFilter(id: string) {
     await supabase.from("folder_filters").delete().eq("id", id);
     qc.invalidateQueries({ queryKey: ["folder-filters", folder.id] });
