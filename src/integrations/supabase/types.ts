@@ -1316,6 +1316,7 @@ export type Database = {
           classified_by: string | null
           classify_attempts: number
           created_at: string
+          decision_trace: Json | null
           folder_id: string | null
           forward_attempts: number
           forward_last_error: string | null
@@ -1361,6 +1362,7 @@ export type Database = {
           classified_by?: string | null
           classify_attempts?: number
           created_at?: string
+          decision_trace?: Json | null
           folder_id?: string | null
           forward_attempts?: number
           forward_last_error?: string | null
@@ -1406,6 +1408,7 @@ export type Database = {
           classified_by?: string | null
           classify_attempts?: number
           created_at?: string
+          decision_trace?: Json | null
           folder_id?: string | null
           forward_attempts?: number
           forward_last_error?: string | null

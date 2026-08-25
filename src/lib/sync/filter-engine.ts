@@ -302,6 +302,32 @@ export type FolderMatch =
     }
   | { kind: "excluded"; folder_id: string; folder_name: string; exclude: Filter };
 
+/** Why one folder did or didn't take an email, for the decision trace.
+ * Config-only (folder names + rule field/op/value) — never email content,
+ * so a trace is safe to store unencrypted and render in the UI. */
+export type CandidateVerdict =
+  | "matched"
+  | "vetoed"
+  | "paused"
+  | "no_rules"
+  | "invalid_tree"
+  | "no_match";
+
+export type CandidateTrace = {
+  folder_id: string;
+  folder_name: string;
+  priority: number;
+  verdict: CandidateVerdict;
+  /** Leaf/filter conditions that fired for this folder (matched only). */
+  matched: Array<{ field: string; op: string; value: string }>;
+  /** The exclude rule that disqualified the folder (vetoed only). */
+  veto?: { field: string; op: string; value: string };
+  /** True when only a prior message in the thread satisfied the rules. */
+  via_thread?: boolean;
+};
+
+export type ExplainedMatch = { match: FolderMatch | null; candidates: CandidateTrace[] };
+
 /** Walks the configured folders + filters and returns the best match
  * for `email`, an `excluded` reason if any folder excluded it via a
  * not_contains/not_equals rule, or null if nothing matched. */
@@ -329,6 +355,19 @@ export function matchByFiltersOnThread(
   folders: Folder[],
   filters: Filter[],
 ): FolderMatch | null {
+  return matchByFiltersExplained(email, threadEmails, folders, filters).match;
+}
+
+/** matchByFiltersOnThread plus a per-folder verdict list. The decision
+ * trace needs to explain the folders that LOST — vetoed, paused, ruleless,
+ * or beaten on priority — and those are computed here anyway; the plain
+ * wrapper above throws them away for hot-path callers that don't care. */
+export function matchByFiltersExplained(
+  email: EmailForFilter,
+  threadEmails: EmailForFilter[],
+  folders: Folder[],
+  filters: Filter[],
+): ExplainedMatch {
   const byFolder = new Map<string, Filter[]>();
   for (const f of filters) {
     if (!byFolder.has(f.folder_id)) byFolder.set(f.folder_id, []);
@@ -340,16 +379,32 @@ export function matchByFiltersOnThread(
     allMatches: Filter[];
     treeUsed: boolean;
     viaThread: boolean;
+    leaves: Array<{ field: string; op: string; value: string }>;
   }> = [];
   const excludedFolders: Array<{ folder: Folder; exclude: Filter }> = [];
+  const candidates: CandidateTrace[] = [];
+  const note = (folder: Folder, verdict: CandidateVerdict, extra?: Partial<CandidateTrace>) => {
+    candidates.push({
+      folder_id: folder.id,
+      folder_name: folder.name,
+      priority: folder.priority,
+      verdict,
+      matched: [],
+      ...extra,
+    });
+  };
+
   for (const folder of folders) {
     // Paused folder — user disabled filtering & rules. Skip entirely so no
     // rule matches, no side-effects, no candidacy for downstream AI.
-    if (folder.processing_enabled === false) continue;
+    if (folder.processing_enabled === false) {
+      note(folder, "paused");
+      continue;
+    }
     const fs = byFolder.get(folder.id) || [];
     const excludes = fs.filter((f) => EXCLUDE_OPS.has(f.op));
     const includes = fs.filter((f) => !EXCLUDE_OPS.has(f.op));
-    const candidates =
+    const candidateMsgs =
       folder.run_on_threads === true && threadEmails.length > 0
         ? [email, ...threadEmails]
         : [email];
@@ -360,7 +415,10 @@ export function matchByFiltersOnThread(
     // out-of-bounds/malformed tree makes the folder inert (no fallback to
     // the flat filters, which the tree superseded and may be stale).
     const tree = folder.filter_tree;
-    if (tree && !validateRuleNode(tree).ok) continue;
+    if (tree && !validateRuleNode(tree).ok) {
+      note(folder, "invalid_tree");
+      continue;
+    }
     const hasTree =
       !!tree && (tree.type === "cond" || (tree.type === "group" && countConds(tree) > 0));
 
@@ -370,12 +428,15 @@ export function matchByFiltersOnThread(
     let matchIndex = -1;
     let includeHits: Filter[] = [];
     if (hasTree) {
-      matchIndex = candidates.findIndex((c) => evalNode(c, tree!));
+      matchIndex = candidateMsgs.findIndex((c) => evalNode(c, tree!));
     } else {
-      if (includes.length === 0) continue;
+      if (includes.length === 0) {
+        note(folder, "no_rules");
+        continue;
+      }
       const logic = folder.filter_logic === "all" ? "all" : "any";
-      for (let i = 0; i < candidates.length; i++) {
-        const hits = includes.filter((f) => applyFilter(candidates[i], f));
+      for (let i = 0; i < candidateMsgs.length; i++) {
+        const hits = includes.filter((f) => applyFilter(candidateMsgs[i], f));
         const passes = logic === "all" ? hits.length === includes.length : hits.length > 0;
         if (passes) {
           matchIndex = i;
@@ -384,7 +445,10 @@ export function matchByFiltersOnThread(
         }
       }
     }
-    if (matchIndex < 0) continue;
+    if (matchIndex < 0) {
+      note(folder, "no_match");
+      continue;
+    }
 
     // An exclude filter VETOes the folder when its positive condition holds:
     //   not_contains X → veto if the field contains X
@@ -393,15 +457,23 @@ export function matchByFiltersOnThread(
     const excludeHit = excludes.find((f) => filterVetoes(email, f));
     if (excludeHit) {
       excludedFolders.push({ folder, exclude: excludeHit });
+      note(folder, "vetoed", {
+        veto: { field: excludeHit.field, op: excludeHit.op, value: excludeHit.value },
+      });
       continue;
     }
+    const leaves = hasTree
+      ? collectMatchingLeaves(candidateMsgs[matchIndex], tree!)
+      : includeHits.map((f) => ({ field: f.field, op: f.op, value: f.value }));
     matched.push({
       folder,
       filter: hasTree ? null : (includeHits[0] ?? null),
       allMatches: hasTree ? [] : includeHits,
       treeUsed: hasTree,
       viaThread: matchIndex > 0,
+      leaves,
     });
+    note(folder, "matched", { matched: leaves, via_thread: matchIndex > 0 });
   }
   if (matched.length > 0) {
     // Sort: highest priority first, then folder name asc for stable tiebreak.
@@ -409,13 +481,16 @@ export function matchByFiltersOnThread(
       (a, b) => b.folder.priority - a.folder.priority || a.folder.name.localeCompare(b.folder.name),
     );
     return {
-      kind: "match",
-      folder_id: matched[0].folder.id,
-      filter: matched[0].filter,
-      matched_filters: matched[0].allMatches,
-      all_matched_folder_ids: matched.map((m) => m.folder.id),
-      tree_used: matched[0].treeUsed,
-      matched_via_thread: matched[0].viaThread,
+      match: {
+        kind: "match",
+        folder_id: matched[0].folder.id,
+        filter: matched[0].filter,
+        matched_filters: matched[0].allMatches,
+        all_matched_folder_ids: matched.map((m) => m.folder.id),
+        tree_used: matched[0].treeUsed,
+        matched_via_thread: matched[0].viaThread,
+      },
+      candidates,
     };
   }
   if (excludedFolders.length > 0) {
@@ -423,14 +498,18 @@ export function matchByFiltersOnThread(
       (a, b) => b.folder.priority - a.folder.priority || a.folder.name.localeCompare(b.folder.name),
     );
     return {
-      kind: "excluded",
-      folder_id: excludedFolders[0].folder.id,
-      folder_name: excludedFolders[0].folder.name,
-      exclude: excludedFolders[0].exclude,
+      match: {
+        kind: "excluded",
+        folder_id: excludedFolders[0].folder.id,
+        folder_name: excludedFolders[0].folder.name,
+        exclude: excludedFolders[0].exclude,
+      },
+      candidates,
     };
   }
-  return null;
+  return { match: null, candidates };
 }
+
 
 export function labelOf(folders: Folder[], id: string): string {
   return folders.find((f) => f.id === id)?.name ?? "folder";
