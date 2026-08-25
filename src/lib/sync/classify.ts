@@ -9,6 +9,7 @@
 // existing callers and tests read the same, and so there is exactly one
 // implementation of precedence in the codebase.
 import { classifyEmail, shouldSurfaceToInbox } from "../ai.server";
+import type { RulesTrace } from "../rules/types";
 import type { AccountContext } from "./account-context";
 import { loadAccountContext } from "./account-context";
 import {
@@ -20,6 +21,7 @@ import {
   type DecisionTrigger,
   type FolderDecision,
 } from "./decide-folder";
+import { runEngineStage } from "./engine-stage";
 import { type EmailForFilter } from "./filter-engine";
 
 export type ClassificationResult = {
@@ -34,6 +36,10 @@ export type ClassificationResult = {
    * that fired, every veto. Config only, no email content. Absent on
    * results built by older code paths. */
   trace?: DecisionTrace;
+  /** The amended engine's v2 trace, present only when the engine decided
+   * (RULES_ENGINE_V2=on). apply-decision stores this in preference to the
+   * v1 trace above. */
+  rules_trace?: RulesTrace;
 };
 
 export type ParsedEmailForClassify = {
