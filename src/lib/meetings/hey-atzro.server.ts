@@ -1,4 +1,4 @@
-// "Hey Zerrow" in-meeting Q&A. Answers questions in the meeting chat, grounded
+// "Hey Atzro" in-meeting Q&A. Answers questions in the meeting chat, grounded
 // strictly in the live transcript buffer for the current bot. Server-only.
 import { generateText } from "ai";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -21,7 +21,7 @@ type BufferRow = {
 
 export type AskTriggerSource = "voice" | "chat";
 
-export async function askZerrowInMeeting(input: {
+export async function askAtzroInMeeting(input: {
   botId: string;
   question: string;
   source: AskTriggerSource;
@@ -67,7 +67,7 @@ export async function askZerrowInMeeting(input: {
         {
           role: "system",
           content: [
-            "You are Zerrow, an assistant listening to the current meeting.",
+            "You are Atzro, an assistant listening to the current meeting.",
             `Answer briefly (at most ${MAX_ANSWER_WORDS} words) using ONLY the transcript below.`,
             "If the transcript does not contain the answer, say so plainly.",
             "Do not invent facts, participants, or decisions.",
@@ -86,7 +86,7 @@ export async function askZerrowInMeeting(input: {
     logError("hey_zerrow_llm_failed", { botId, err: error });
   }
 
-  const reply = `Zerrow: ${answer}`.slice(0, 1000);
+  const reply = `Atzro: ${answer}`.slice(0, 1000);
   try {
     await sendBotChatMessage(botId, reply);
   } catch (e) {

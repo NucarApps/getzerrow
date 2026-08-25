@@ -1,36 +1,26 @@
-// Email classification — the decision tree that decides which folder
-// (if any) an incoming message belongs to.
+// Email classification — the async half of the routing decision.
 //
-// ROUTING ORDER (first match wins)
-//   1. Inbox override (email/domain blocklist) + per-override exception
-//      — the user's "never put this in my inbox" rule.
-//   2. Gmail label match — message already carries a label that maps to
-//      one of our folders.
-//   3. Folder filter tree / simple any-all filters — user-defined rules.
-//   4. AI classifier — fallback when nothing else fires, gated by each
-//      folder's min_ai_confidence and skip_ai flag.
+// The deterministic ladder (override → Gmail label → filters → calendar
+// guard) lives in ./decide-folder.ts as one pure function shared by every
+// path that files mail. This module owns only the rungs that need the AI
+// gateway: the AI fallback and the per-folder "surface to inbox" rule.
 //
-// OVERRIDES
-//   A folder with overrides_inbox_override=true beats a matching inbox
-//   override — that's how "always route CEO emails to Priority even if
-//   their domain is on my blocklist" works.
-//
-// PURITY
-//   This module is mostly pure but does call out to ai.server.classifyEmail
-//   when no rule matches. Callers can suppress that with skipAi=true (used
-//   by backfill batch processing).
+// classifyByRules is kept as a thin, named wrapper over decideFolder so
+// existing callers and tests read the same, and so there is exactly one
+// implementation of precedence in the codebase.
 import { classifyEmail, shouldSurfaceToInbox } from "../ai.server";
 import type { AccountContext } from "./account-context";
 import { loadAccountContext } from "./account-context";
 import {
-  applyFilter,
-  matchByFiltersOnThread,
-  labelOf,
-  emailVetoedForFolder,
-  type EmailForFilter,
-} from "./filter-engine";
-import type { OverrideException } from "./types";
-import { emailDomain } from "../company-domains";
+  aiCandidateIds,
+  decideFolder,
+  withAiStep,
+  withSurfaceStep,
+  type DecisionTrace,
+  type DecisionTrigger,
+  type FolderDecision,
+} from "./decide-folder";
+import { type EmailForFilter } from "./filter-engine";
 
 export type ClassificationResult = {
   folder_id: string | null;
@@ -40,6 +30,10 @@ export type ClassificationResult = {
   classification_reason: string | null;
   matched_filter_ids: string[];
   matched_folder_ids: string[];
+  /** Why this decision was made — every folder considered, every rule
+   * that fired, every veto. Config only, no email content. Absent on
+   * results built by older code paths. */
+  trace?: DecisionTrace;
 };
 
 export type ParsedEmailForClassify = {
@@ -60,27 +54,18 @@ export type ParsedEmailForClassify = {
   received_at: string;
   raw_labels: string[] | null;
   /** Contact-group ids the sender belongs to (populated from
-   * AccountContext.senderGroups by classifyByRules). Optional so
+   * AccountContext.senderGroups by decideFolder). Optional so
    * callers building ad-hoc parsed emails don't have to compute it. */
   sender_group_ids?: string[];
 };
 
-export type RulesClassification = ClassificationResult & {
-  /** True when no rule fired AND there are AI-eligible folders — i.e.
-   * the result is provisional and classifyByAi should run. False means
-   * the rules result is final (matched, excluded, or nothing for AI to
-   * do). */
-  needs_ai: boolean;
-  /** True when rules routed this mail into a folder that carries a
-   * non-empty surface_ai_rule — the async surface pass must decide
-   * whether to keep the email visible in the inbox. */
-  needs_surface_check: boolean;
-};
+export type RulesClassification = FolderDecision;
 
-/** Synchronous rules-only classification: inbox override (+ exceptions)
- * → Gmail label match → folder filter tree / simple filters. Never
- * calls the AI gateway — fast enough (10–50ms) to run before the email
- * row is inserted. */
+/** Deterministic classification: the full precedence ladder from
+ * ./decide-folder.ts, minus the two rungs that need the AI gateway. Never
+ * calls out — fast enough (10–50ms) to run before the email row is
+ * inserted. `trigger` defaults to "arrival"; every caller that files mail
+ * through a different door should name its own. */
 export function classifyByRules(
   parsed: ParsedEmailForClassify,
   context: AccountContext,
@@ -90,182 +75,25 @@ export function classifyByRules(
      * folders with run_on_threads=true. Callers without thread context
      * omit it and every folder behaves message-scoped (task 6 gating). */
     threadEmails?: EmailForFilter[];
+    trigger?: DecisionTrigger;
   } = {},
 ): RulesClassification {
-  const folderList = context.folders;
-  const filterList = context.filters;
-  const overrides = context.overrides;
-  const overrideExceptions = context.overrideExceptions;
-
-  let folder_id: string | null = null;
-  let classified_by = "none";
-  let confidence = 0;
-  const summary = "";
-  let classification_reason: string | null = null;
-  let matched_filter_ids: string[] = [];
-  let matched_folder_ids: string[] = [];
-  let aiSkipped = false;
-
-  const fromAddr = (parsed.from_addr || "").toLowerCase();
-  // Must use the same derivation the override WRITER uses
-  // (gmail/move.functions.ts), or a domain override stored from a malformed
-  // sender can never match the domain computed here and silently never fires.
-  const fromDomain = emailDomain(parsed.from_addr) ?? "";
-  // Attach sender_in_group hits so applyFilter can evaluate
-  // `sender_in_group` conditions without a second DB round trip.
-  if (!parsed.sender_group_ids) {
-    const hits = context.senderGroups.get(fromAddr);
-    parsed.sender_group_ids = hits ? Array.from(hits) : [];
-  }
-  const overrideHit = overrides.find((o) => {
-    const val = (o.value || "").toLowerCase();
-    return o.match_type === "email" ? val === fromAddr : val === fromDomain;
+  return decideFolder(parsed, context, {
+    trigger: opts.trigger ?? "arrival",
+    skipGmailLabelMatch: opts.skipGmailLabelMatch,
+    threadEmails: opts.threadEmails,
   });
-
-  // If override fired, check per-override exceptions (same applyFilter
-  // evaluator used by folder filters, including
-  // starts_with/ends_with/contains/regex).
-  let overrideExceptionHit: OverrideException | null = null;
-  if (overrideHit) {
-    const exForThisOverride = overrideExceptions.filter((e) => e.override_id === overrideHit.id);
-    for (const ex of exForThisOverride) {
-      if (
-        applyFilter(parsed, { id: "", folder_id: "", field: ex.field, op: ex.op, value: ex.value })
-      ) {
-        overrideExceptionHit = ex;
-        break;
-      }
-    }
-  }
-
-  // Folder match (computed up-front so we can let a folder beat the
-  // override when its `overrides_inbox_override` flag is on).
-  const labeledFolder = opts.skipGmailLabelMatch
-    ? undefined
-    : folderList.find((f) => f.gmail_label_id && parsed.raw_labels?.includes(f.gmail_label_id));
-  const folderMatch = labeledFolder
-    ? null
-    : matchByFiltersOnThread(parsed, opts.threadEmails ?? [], folderList, filterList);
-  const beatingFolderId =
-    overrideHit && folderMatch?.kind === "match"
-      ? (folderMatch.all_matched_folder_ids.find((fid) => {
-          const f = folderList.find((x) => x.id === fid);
-          return f?.overrides_inbox_override === true;
-        }) ?? null)
-      : null;
-
-  const overrideWins = !!overrideHit && !overrideExceptionHit && !beatingFolderId;
-
-  if (overrideWins) {
-    classified_by = "inbox_override";
-    classification_reason = `Global inbox list: ${overrideHit!.match_type} "${overrideHit!.value}"`;
-    aiSkipped = true;
-  } else {
-    if (labeledFolder) {
-      folder_id = labeledFolder.id;
-      classified_by = "gmail_label";
-      confidence = 1;
-      classification_reason = `Already labeled "${labeledFolder.name}" in Gmail at sync time`;
-    } else {
-      const m = folderMatch;
-      // If a beatingFolder forced us past the override, prefer that folder
-      // even if matchByFilters' priority sort picked a different one.
-      const winningFolderId = beatingFolderId ?? (m?.kind === "match" ? m.folder_id : null);
-      if (m?.kind === "match" && winningFolderId) {
-        folder_id = winningFolderId;
-        matched_folder_ids = m.all_matched_folder_ids;
-        confidence = 1;
-        if (m.tree_used) {
-          classified_by = "filter";
-          classification_reason = `Rule group matched for "${labelOf(folderList, winningFolderId)}"`;
-        } else if (m.filter) {
-          classified_by = m.filter.field === "domain" ? "domain_rule" : "filter";
-          matched_filter_ids = m.matched_filters.map((f) => f.id);
-          classification_reason =
-            classified_by === "domain_rule"
-              ? `Domain rule: ${m.filter.value} → ${labelOf(folderList, winningFolderId)}`
-              : `Filter: ${m.filter.field} ${m.filter.op} "${m.filter.value}"`;
-        }
-        if (m.matched_via_thread) {
-          classification_reason =
-            (classification_reason ?? "") + " (matched an earlier message in this thread)";
-        }
-        if (beatingFolderId && overrideHit) {
-          classification_reason =
-            (classification_reason ?? "") + ` (beat inbox override "${overrideHit.value}")`;
-        } else if (overrideExceptionHit && overrideHit) {
-          classification_reason =
-            (classification_reason ?? "") +
-            ` (exception to inbox override "${overrideHit.value}": ${overrideExceptionHit.field} ${overrideExceptionHit.op} "${overrideExceptionHit.value}")`;
-        }
-        // Calendar cold-email guard: known calendar contacts must never be
-        // routed into a folder flagged is_cold_email when the guard is on.
-        if (context.calendarGuardEnabled && context.calendarContacts.has(fromAddr)) {
-          const winningFolder = folderList.find((f) => f.id === winningFolderId);
-          if (winningFolder?.is_cold_email) {
-            folder_id = null;
-            classified_by = "calendar_contact";
-            classification_reason = `Known calendar contact — not routed to "${winningFolder.name}"`;
-          }
-        }
-      } else if (m?.kind === "excluded") {
-        classified_by = "excluded";
-        classification_reason = `Would match "${m.folder_name}" but excluded by rule: ${m.exclude.field} ${m.exclude.op} "${m.exclude.value}"`;
-        aiSkipped = true;
-      } else if (overrideExceptionHit && overrideHit) {
-        // Exception fired but no folder matched — fall through to AI; note it.
-        classification_reason = `Inbox override "${overrideHit.value}" bypassed by exception (${overrideExceptionHit.field} ${overrideExceptionHit.op} "${overrideExceptionHit.value}")`;
-      }
-    }
-  }
-
-  const needs_ai =
-    !folder_id &&
-    !aiSkipped &&
-    folderList.length > 0 &&
-    aiCandidateFolders(parsed, context).length > 0;
-
-  // A folder the rules routed into may carry a "surface to inbox" rule.
-  // Only rule-based routing (label/filter/domain) triggers the surface
-  // check — AI-classified mail runs its own pass.
-  const routedFolder = folder_id ? folderList.find((f) => f.id === folder_id) : null;
-  const needs_surface_check =
-    !!folder_id &&
-    !!routedFolder?.surface_ai_rule &&
-    routedFolder.surface_ai_rule.trim().length > 0;
-
-  return {
-    folder_id,
-    classified_by,
-    ai_confidence: confidence,
-    ai_summary: summary,
-    classification_reason,
-    matched_filter_ids,
-    matched_folder_ids,
-    needs_ai,
-    needs_surface_check,
-  };
 }
 
-/** AI-eligible folder set. A folder is only considered by the AI classifier
- * when the user has explicitly given it intent — a non-empty `ai_rule`.
- * Rules-only folders (filter_tree/simple filters) are handled by
- * matchByFilters and don't need to appear here. Folders with `skip_ai=true`
- * or whose own hard exclusion rules the email violates are also removed
- * (the AI classifier must never place mail into a folder its own rules
- * would reject). */
+/** The AI classifier's candidate folders, enriched with rules/examples.
+ * Eligibility itself is decided by decide-folder's aiCandidateIds so the
+ * deterministic and AI rungs can never disagree about which folders are
+ * in play. */
 function aiCandidateFolders(parsed: ParsedEmailForClassify, context: AccountContext) {
-  const eligibleIds = new Set(
-    context.folders
-      .filter(
-        (f) => f.processing_enabled !== false && !f.skip_ai && (f.ai_rule ?? "").trim().length > 0,
-      )
-      .map((f) => f.id),
-  );
-  return context.enrichedFolders.filter(
-    (f) => eligibleIds.has(f.id) && !emailVetoedForFolder(parsed, f.id, context.filters),
-  );
+  const eligibleIds = aiCandidateIds(parsed, context);
+  return context.enrichedFolders.filter((f) => eligibleIds.has(f.id));
 }
+
 
 /** AI fallback pass. Call only when classifyByRules returned
  * needs_ai=true. Takes the rules result as `base` so non-AI fields
@@ -278,6 +106,22 @@ export async function classifyByAi(
   const out: ClassificationResult = { ...base };
   const aiFolders = aiCandidateFolders(parsed, context);
   if (aiFolders.length === 0) return out;
+  const noteAi = (
+    suggestedId: string | null,
+    suggestedName: string | null,
+    confidence: number,
+    threshold: number,
+    accepted: boolean,
+  ) => {
+    if (!base.trace) return;
+    out.trace = withAiStep(base.trace, {
+      suggested_folder_id: suggestedId,
+      suggested_folder_name: suggestedName,
+      confidence,
+      threshold,
+      accepted,
+    });
+  };
   try {
     const r = await classifyEmail(parsed, aiFolders);
     const candidate = context.folders.find((f) => f.id === r.folder_id);
@@ -288,16 +132,19 @@ export async function classifyByAi(
       out.ai_summary = r.summary;
       out.classified_by = "ai";
       out.classification_reason = r.reason || null;
+      noteAi(r.folder_id, candidate?.name ?? null, r.confidence, threshold, true);
     } else if (r.folder_id) {
       out.classified_by = "ai_low_confidence";
       out.ai_confidence = r.confidence;
       out.ai_summary = r.summary;
       out.classification_reason = `AI suggested "${candidate?.name ?? "?"}" at ${(r.confidence * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`;
+      noteAi(r.folder_id, candidate?.name ?? null, r.confidence, threshold, false);
     } else {
       out.classified_by = "ai";
       out.ai_confidence = r.confidence;
       out.ai_summary = r.summary;
       out.classification_reason = r.reason || null;
+      noteAi(null, null, r.confidence, threshold, false);
     }
   } catch (e) {
     console.error("AI classify failed", e);
@@ -306,6 +153,7 @@ export async function classifyByAi(
   }
   return out;
 }
+
 
 export async function classifyParsedEmail(
   parsed: ParsedEmailForClassify,
@@ -337,11 +185,16 @@ export async function classifyParsedEmail(
         classification_reason: decision.reason
           ? `Surfaced to inbox: ${decision.reason}`
           : "Surfaced to inbox by folder rule",
+        ...(rules.trace
+          ? { trace: withSurfaceStep(rules.trace, true, decision.reason ?? "") }
+          : {}),
       };
     }
+    if (rules.trace) return { ...rules, trace: withSurfaceStep(rules.trace, false, "") };
   }
   return rules;
 }
+
 
 export type SurfaceDecision = {
   /** True = keep the email visible in the inbox (still filed into the folder). */
