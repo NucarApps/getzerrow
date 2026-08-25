@@ -85,6 +85,7 @@ export function AiDecisionDrawer({
   folders,
   folderRule,
   filters,
+  emailId,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -92,7 +93,18 @@ export function AiDecisionDrawer({
   folders: DrawerFolder[];
   folderRule: FolderRule;
   filters: Array<{ id: string; field: string; op: string; value: string }>;
+  /** When present, the drawer loads the stored decision trace for this
+   * message and shows the full ladder instead of the legacy summary. */
+  emailId?: string;
 }) {
+  const fetchHistory = useServerFn(getDecisionHistory);
+  const historyQ = useQuery({
+    queryKey: ["decision-history", emailId],
+    queryFn: () => fetchHistory({ data: { email_id: emailId as string } }),
+    enabled: open && !!emailId,
+    staleTime: 60_000,
+  });
+  const rulesTrace = historyQ.data?.trace ?? null;
   const method = methodMeta[email.classified_by ?? "none"] ?? methodMeta.none;
   const MethodIcon = method.Icon;
   const winner = email.folder_id ? folders.find((f) => f.id === email.folder_id) : null;
