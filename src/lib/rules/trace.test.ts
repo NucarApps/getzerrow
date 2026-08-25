@@ -24,7 +24,7 @@ const rule = (over: Partial<Rule> = {}): Rule => ({
   id: "11111111-1111-1111-1111-111111111111",
   folder_id: "f1",
   created_at: "2026-01-01T00:00:00.000Z",
-  groups: [[{ field: "from", op: "equals", value: "billing@netflix.com" }]],
+  groups: [[{ field: "from", op: "contains", value: "billing@netflix.com" }]],
   ...over,
 });
 
