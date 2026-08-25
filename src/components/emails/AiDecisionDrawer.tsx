@@ -5,8 +5,12 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { Bot, Filter as FilterIcon, Tag, Hand, HelpCircle, Clock, Layers } from "lucide-react";
 import { TriggeredBy } from "@/components/emails/triggered-by";
+import { RulesTracePanel } from "@/components/emails/RulesTracePanel";
+import { getDecisionHistory } from "@/lib/rules/decision-history.functions";
 import { ColorDotChip } from "@/components/ui/status-pill";
 import type { RuleNode } from "@/lib/sync/types";
 
@@ -85,6 +89,7 @@ export function AiDecisionDrawer({
   folders,
   folderRule,
   filters,
+  emailId,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -92,7 +97,18 @@ export function AiDecisionDrawer({
   folders: DrawerFolder[];
   folderRule: FolderRule;
   filters: Array<{ id: string; field: string; op: string; value: string }>;
+  /** When present, the drawer loads the stored decision trace for this
+   * message and shows the full ladder instead of the legacy summary. */
+  emailId?: string;
 }) {
+  const fetchHistory = useServerFn(getDecisionHistory);
+  const historyQ = useQuery({
+    queryKey: ["decision-history", emailId],
+    queryFn: () => fetchHistory({ data: { email_id: emailId as string } }),
+    enabled: open && !!emailId,
+    staleTime: 60_000,
+  });
+  const rulesTrace = historyQ.data?.trace ?? null;
   const method = methodMeta[email.classified_by ?? "none"] ?? methodMeta.none;
   const MethodIcon = method.Icon;
   const winner = email.folder_id ? folders.find((f) => f.id === email.folder_id) : null;
@@ -162,14 +178,21 @@ export function AiDecisionDrawer({
             </div>
           )}
 
-          {/* Rules that fired / why the folder was chosen */}
-          <TriggeredBy
-            classifiedBy={email.classified_by}
-            reason={email.classification_reason}
-            folder={folderRule}
-            filters={filters}
-            email={email}
-          />
+          {/* Rules that fired / why the folder was chosen. A stored v2
+              trace explains the whole ladder; older messages fall back to
+              the recomputed summary. */}
+          {rulesTrace ? (
+            <RulesTracePanel trace={rulesTrace} />
+          ) : (
+            <TriggeredBy
+              classifiedBy={email.classified_by}
+              reason={email.classification_reason}
+              folder={folderRule}
+              filters={filters}
+              email={email}
+            />
+          )}
+
 
           {/* Runner-up folders */}
           {others.length > 0 && (

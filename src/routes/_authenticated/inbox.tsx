@@ -2527,6 +2527,7 @@ function Reader({
           <AiDecisionDrawer
             open={whyOpen}
             onOpenChange={setWhyOpen}
+            emailId={email.id}
             email={email}
             folders={folders}
             folderRule={folderRulesQ.data?.folder ?? null}
