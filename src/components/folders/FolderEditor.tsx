@@ -67,6 +67,8 @@ import { FolderHealthCard } from "./FolderHealthCard";
 import { HistoryPanel } from "./editor/folder-history-panel";
 import { SummariesPanel } from "./editor/folder-summaries-panel";
 import { RuleGroupEditor } from "./editor/folder-rule-group-editor";
+import { RuleSentenceEditor } from "@/components/rules/RuleSentenceEditor";
+import type { Condition } from "@/lib/rules/types";
 import { ScanGmailSection } from "./editor/folder-scan-gmail-section";
 import { MarkReadScopeSection, type MarkReadMode } from "./editor/mark-read-scope-section";
 import type { Folder, Filter, GLabel } from "./editor/types";
