@@ -5,8 +5,12 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { Bot, Filter as FilterIcon, Tag, Hand, HelpCircle, Clock, Layers } from "lucide-react";
 import { TriggeredBy } from "@/components/emails/triggered-by";
+import { RulesTracePanel } from "@/components/emails/RulesTracePanel";
+import { getDecisionHistory } from "@/lib/rules/decision-history.functions";
 import { ColorDotChip } from "@/components/ui/status-pill";
 import type { RuleNode } from "@/lib/sync/types";
 
