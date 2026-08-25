@@ -18,4 +18,12 @@ export { checkRuleConflicts, MAX_CONFLICT_SAMPLES } from "./conflicts";
 export type { ConflictKind, ConflictReport, RuleConflict, SampleMessage } from "./conflicts";
 export { buildChangeSet, autoApplicableIds, describeChangeSet, INBOX_LABEL } from "./replay";
 export type { ChangeEntry, ChangeSet, ReplayMessage } from "./replay";
+// Phase E: live cutover bridge, shadow comparison, golden set.
+export { runRulesEngine, buildEvaluateContext, toEngineMessage, pinsForMessage } from "./bridge";
+export type { BridgeMessage, BridgeOptions } from "./bridge";
+export { compareDecisions, classifiedByForStage, isRuleLabel } from "./compare";
+export type { LegacyDecisionSummary, ShadowVerdict } from "./compare";
+export { runGolden, describeGoldenFailures } from "./golden";
+export type { GoldenCase, GoldenReport } from "./golden";
+export { GOLDEN_CASES, GOLDEN_FOLDERS, goldenContext } from "./golden-dataset";
 export * from "./types";

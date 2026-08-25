@@ -41,3 +41,6 @@ RECALL_REALTIME_TOKEN="<random secret guarding the realtime endpoint>"
 
 # HMAC secret for short-lived meeting-recording stream URLs
 MEETING_STREAM_SECRET="<random-32+ byte secret>"
+
+# Rules engine cutover: off | shadow (default) | on
+RULES_ENGINE_V2=shadow
