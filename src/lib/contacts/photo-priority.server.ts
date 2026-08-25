@@ -1,5 +1,5 @@
 // Photo priority resolver: decides whether the personal photo, the company
-// logo, or initials should represent a contact — across the Zerrow UI, iOS
+// logo, or initials should represent a contact — across the Atzro UI, iOS
 // CardDAV, and Google People push. Precedence: contact override > company
 // override > global default (default = company_first).
 

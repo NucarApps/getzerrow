@@ -8,7 +8,7 @@ import { useScopedAccount } from "@/lib/use-scoped-account";
 export const Route = createFileRoute("/_authenticated/settings/meetings-recording")({
   head: () => ({
     meta: [
-      { title: "Meeting recording — Settings — Zerrow" },
+      { title: "Meeting recording — Settings — Atzro" },
       { name: "robots", content: "noindex" },
     ],
   }),

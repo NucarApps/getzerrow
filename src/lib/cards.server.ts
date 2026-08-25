@@ -57,7 +57,7 @@ export function buildVCard(c: CardData, publicUrl?: string): string {
       `ADR;TYPE=WORK:;;${esc(street)};${esc(c.city ?? "")};${esc(c.region ?? "")};${esc(c.postal_code ?? "")};${esc(c.country ?? "")}`,
     );
   }
-  if (publicUrl) lines.push(`URL;TYPE=Zerrow:${esc(publicUrl)}`);
+  if (publicUrl) lines.push(`URL;TYPE=Atzro:${esc(publicUrl)}`);
   lines.push("END:VCARD");
   return lines.join("\r\n");
 }
@@ -171,7 +171,7 @@ View / save my card: ${args.publicUrl}
     intro: greeting,
     cta: { url: args.publicUrl, label: "View / save my card" },
     attachmentNote: "A .vcf file is attached - open it on your phone to add me to contacts.",
-    footerNote: "Sent with Zerrow",
+    footerNote: "Sent with Atzro",
   });
 
   return sendVCardEmail({
@@ -247,7 +247,7 @@ type CardEmailInput = {
   cta?: { url: string; label: string } | null;
   /** Small grey line about the .vcf attachment. */
   attachmentNote: string;
-  /** Quiet footer line, e.g. "Sent with Zerrow". */
+  /** Quiet footer line, e.g. "Sent with Atzro". */
   footerNote: string;
   /** Optional address, rendered as its own row. */
   addressLines?: string[];
@@ -429,7 +429,7 @@ ${sigLines}
 
 (.vcf attached — open it on your phone to save them to contacts.)
 
-— Shared from Zerrow`;
+— Shared from Atzro`;
 
   const intro = `${args.note?.trim() ? `${args.note.trim()}\n\n` : ""}I'm sharing ${displayName}'s contact info with you.`;
 
@@ -446,7 +446,7 @@ ${sigLines}
     },
     intro,
     attachmentNote: "A .vcf file is attached - open it on your phone to add them to contacts.",
-    footerNote: "Shared with Zerrow",
+    footerNote: "Shared with Atzro",
     addressLines,
   });
 

@@ -125,14 +125,14 @@ type CreateBotInput = {
 export async function createBot(input: CreateBotInput): Promise<RecallBot> {
   const body: Record<string, unknown> = {
     meeting_url: input.meetingUrl,
-    bot_name: input.botName?.slice(0, 100) || "Zerrow Notetaker",
+    bot_name: input.botName?.slice(0, 100) || "Atzro Notetaker",
     recording_config: {
       transcript: { provider: { meeting_captions: {} } },
     },
   };
   if (input.joinAt) body.join_at = input.joinAt;
 
-  // Subscribe to real-time transcript + chat events so "Hey Zerrow / @Zerrow"
+  // Subscribe to real-time transcript + chat events so "Hey Atzro / @Atzro"
   // wake phrases can be answered live. The webhook URL is authenticated with a
   // per-project shared secret; Recall does not sign real-time endpoints.
   const realtimeToken = process.env.RECALL_REALTIME_TOKEN?.trim();

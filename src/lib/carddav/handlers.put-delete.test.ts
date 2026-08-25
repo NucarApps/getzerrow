@@ -347,7 +347,7 @@ describe("PUT field preservation", () => {
       contactPath(C1),
       vcardBody([
         "FN:Erica Roy",
-        "NOTE:🤖 Zerrow summary\\nAI facts here\\n\\n— My notes —\\nkeep me",
+        "NOTE:🤖 Atzro summary\\nAI facts here\\n\\n— My notes —\\nkeep me",
         "ADR;TYPE=WORK:;;123 Main St;Springfield;IL;62704;USA",
       ]),
     );

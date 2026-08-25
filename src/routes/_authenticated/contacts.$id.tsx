@@ -5,8 +5,8 @@ import { ContactDetailView } from "@/components/contacts/ContactDetailView";
 export const Route = createFileRoute("/_authenticated/contacts/$id")({
   head: () => ({
     meta: [
-      { title: "Contact — Zerrow" },
-      { name: "description", content: "View and edit contact details in Zerrow." },
+      { title: "Contact — Atzro" },
+      { name: "description", content: "View and edit contact details in Atzro." },
       { name: "robots", content: "noindex" },
     ],
   }),

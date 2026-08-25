@@ -68,10 +68,10 @@ export function TrackingStandby() {
 
   // ---- Share score ----
   const shareScore = () => {
-    const text = `I scored ${state.score} pts on Zerrow Invader Defense (lvl ${state.level}, ×${state.maxCombo} combo). Beat me at https://getzerrow.com`;
+    const text = `I scored ${state.score} pts on Atzro Invader Defense (lvl ${state.level}, ×${state.maxCombo} combo). Beat me at https://getzerrow.com`;
     const nav = window.navigator as Navigator & { share?: (d: ShareData) => Promise<void> };
     if (nav.share) {
-      nav.share({ title: "Zerrow Invader Defense", text }).catch(() => undefined);
+      nav.share({ title: "Atzro Invader Defense", text }).catch(() => undefined);
     } else if (nav.clipboard?.writeText) {
       nav.clipboard.writeText(text);
     }

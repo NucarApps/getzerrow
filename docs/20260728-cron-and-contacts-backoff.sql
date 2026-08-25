@@ -1,4 +1,4 @@
--- Zerrow: cron stampede + Google Contacts push backoff
+-- Atzro: cron stampede + Google Contacts push backoff
 -- Consolidated from supabase/migrations/2026072812{0000,0100,0200,0300}_*.sql
 -- Safe to re-run: every statement is guarded or IF NOT EXISTS.
 

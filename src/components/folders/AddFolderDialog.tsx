@@ -94,12 +94,12 @@ export function AddFolderDialog({
   const [busy, setBusy] = useState(false);
 
   const NONE = "__none__";
-  const zerrowLabels = labels
-    .filter((l) => l.name === "Zerrow" || l.name.startsWith("Zerrow/"))
+  const atzroLabels = labels
+    .filter((l) => l.name === "Atzro" || l.name.startsWith("Atzro/"))
     .sort((a, b) => a.name.localeCompare(b.name));
   const labelPath = (n: string) => {
     const parts = n.split("/");
-    return parts.length === 1 ? "Zerrow (root)" : parts.slice(1).join(" / ");
+    return parts.length === 1 ? "Atzro (root)" : parts.slice(1).join(" / ");
   };
 
   function resetForm() {
@@ -279,7 +279,7 @@ export function AddFolderDialog({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={NONE}>None (top level)</SelectItem>
-                      {zerrowLabels.map((l) => (
+                      {atzroLabels.map((l) => (
                         <SelectItem key={l.id} value={l.id}>
                           Under: {labelPath(l.name)}
                         </SelectItem>

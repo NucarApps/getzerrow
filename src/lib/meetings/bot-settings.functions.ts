@@ -16,7 +16,7 @@ export const getMeetingBotSettings = createServerFn({ method: "GET" })
       .maybeSingle();
     if (error) throw new Error(error.message);
     return {
-      botName: data?.bot_name ?? "Zerrow Notetaker",
+      botName: data?.bot_name ?? "Atzro Notetaker",
       chatMessage: data?.chat_message ?? DEFAULT_CHAT_MESSAGE,
       chatResendOnJoin: data?.chat_resend_on_join ?? true,
       hasAvatar: !!data?.avatar_updated_at,

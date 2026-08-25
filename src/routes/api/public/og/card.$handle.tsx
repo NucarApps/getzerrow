@@ -90,7 +90,7 @@ export const Route = createFileRoute("/api/public/og/card/$handle")({
   ${tagline ? `<text x="270" y="438" font-family="Inter, system-ui, sans-serif" font-size="26" font-style="italic" fill="#ffffff" fill-opacity="0.82">"${esc(tagline)}"</text>` : ""}
 
   <!-- Footer -->
-  <text x="60" y="565" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="600" fill="#ffffff" fill-opacity="0.85" letter-spacing="2">ZERROW · CONTACT CARD</text>
+  <text x="60" y="565" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="600" fill="#ffffff" fill-opacity="0.85" letter-spacing="2">ATZRO · CONTACT CARD</text>
   <text x="${W - 60}" y="565" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="500" fill="#ffffff" fill-opacity="0.7">getzerrow.com/c/${esc(card.handle)}</text>
 </svg>`;
 

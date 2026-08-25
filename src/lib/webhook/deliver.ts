@@ -5,8 +5,8 @@
 // even then only body_text is sent (never HTML).
 //
 // SIGNING — HMAC-SHA256 over `${timestamp}.${body}` with the action's
-// decrypted secret, sent as `X-Zerrow-Signature: sha256=<hex>` plus
-// `X-Zerrow-Timestamp`. Receivers reconstruct the signed string and
+// decrypted secret, sent as `X-Atzro-Signature: sha256=<hex>` plus
+// `X-Atzro-Timestamp`. Receivers reconstruct the signed string and
 // compare with a constant-time equality check; binding the timestamp
 // into the signature blocks replay of captured deliveries.
 //
@@ -95,12 +95,12 @@ export async function deliverWebhook(input: {
   const timestamp = String(Math.floor(Date.now() / 1000));
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "User-Agent": "Zerrow-Webhook/1.0",
-    "X-Zerrow-Timestamp": timestamp,
-    "X-Zerrow-Delivery": input.deliveryId,
+    "User-Agent": "Atzro-Webhook/1.0",
+    "X-Atzro-Timestamp": timestamp,
+    "X-Atzro-Delivery": input.deliveryId,
   };
   if (input.secret) {
-    headers["X-Zerrow-Signature"] =
+    headers["X-Atzro-Signature"] =
       `sha256=${signWebhookBody(input.secret, timestamp, input.body)}`;
   }
 

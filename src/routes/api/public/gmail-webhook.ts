@@ -3,7 +3,7 @@
 // panel can show exactly why a push didn't lead to a sync.
 //
 // Synthetic test requests from the app's "Test webhook" buttons set the
-// `x-zerrow-test: 1` header so they are logged as `webhook_test` instead
+// `x-atzro-test: 1` header so they are logged as `webhook_test` instead
 // of `push` / `push_empty` and do NOT pollute real Google push diagnostics.
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
@@ -85,9 +85,9 @@ export const Route = createFileRoute("/api/public/gmail-webhook")({
         const tStart = Date.now();
         // Synthetic test requests must still be authenticated with the
         // CRON_SECRET — otherwise anyone could trigger Gmail syncs for any
-        // known email address by setting the x-zerrow-test header.
+        // known email address by setting the x-atzro-test header.
         const isTest =
-          request.headers.get("x-zerrow-test") === "1" && (await isAuthorizedCronRequest(request));
+          request.headers.get("x-atzro-test") === "1" && (await isAuthorizedCronRequest(request));
 
         // Authenticate Pub/Sub push. Preferred: OIDC bearer JWT signed by
         // Google (set on the subscription via pushConfig.oidcToken). Fallback:

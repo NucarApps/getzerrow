@@ -1,33 +1,33 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import zerrowLogo from "@/assets/zerrow-logo-v2.png";
+import { AtzroLogo } from "@/components/AtzroLogo";
 
-// Deep-link bridge for the native Zerrow app.
+// Deep-link bridge for the native Atzro app.
 //
-// A custom URL scheme (zerrow://) cannot be added to the backend auth redirect
+// A custom URL scheme (atzro://) cannot be added to the backend auth redirect
 // allow-list, so the native app points Supabase OAuth at this HTTPS page
 // (https://getzerrow.com/auth-callback), which IS allow-listed. After Google
 // redirects here with the OAuth result, this page forwards the exact same
-// tokens/code to zerrow://auth-callback, where supabase-swift's
+// tokens/code to atzro://auth-callback, where supabase-swift's
 // `session(from:)` completes the session.
 export const Route = createFileRoute("/auth-callback")({
   // Purely a client-side redirect bridge — no SSR, no auth gate.
   ssr: false,
   head: () => ({
     meta: [
-      { title: "Completing sign-in — Zerrow" },
+      { title: "Completing sign-in — Atzro" },
       { name: "robots", content: "noindex" },
       {
         name: "description",
-        content: "Returning you to the Zerrow app to finish signing in.",
+        content: "Returning you to the Atzro app to finish signing in.",
       },
     ],
   }),
   component: AuthCallbackBridge,
 });
 
-const APP_SCHEME = "zerrow://auth-callback";
+const APP_SCHEME = "atzro://auth-callback";
 
 function buildDeepLink(): string {
   if (typeof window === "undefined") return APP_SCHEME;
@@ -65,7 +65,7 @@ function AuthCallbackBridge() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm text-center">
-        <img src={zerrowLogo} alt="Zerrow" className="mx-auto mb-6 h-20 w-auto" />
+        <AtzroLogo className="mb-6 h-16 text-3xl" />
         {error ? (
           <>
             <h1 className="text-lg font-medium text-foreground">Sign-in didn't complete</h1>
@@ -76,12 +76,12 @@ function AuthCallbackBridge() {
           </>
         ) : (
           <>
-            <h1 className="text-lg font-medium text-foreground">Returning you to Zerrow…</h1>
+            <h1 className="text-lg font-medium text-foreground">Returning you to Atzro…</h1>
             <p className="mt-2 text-sm text-muted-foreground">
               If the app doesn't open automatically, tap the button below.
             </p>
             <Button asChild className="mt-6">
-              <a href={deepLink}>Open Zerrow</a>
+              <a href={deepLink}>Open Atzro</a>
             </Button>
           </>
         )}

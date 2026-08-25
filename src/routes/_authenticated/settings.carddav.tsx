@@ -46,7 +46,7 @@ import {
 export const Route = createFileRoute("/_authenticated/settings/carddav")({
   head: () => ({
     meta: [
-      { title: "iPhone contacts — Settings — Zerrow" },
+      { title: "iPhone contacts — Settings — Atzro" },
       { name: "robots", content: "noindex" },
     ],
   }),
@@ -246,8 +246,8 @@ function CardDavSettings() {
       <div>
         <h2 className="text-xl font-semibold">iPhone contacts</h2>
         <p className="text-sm text-muted-foreground">
-          Two-way sync between Zerrow and your iPhone over CardDAV. Edits, adds, and deletes on your
-          phone push back to Zerrow — deleting a contact on iPhone removes it here too. iOS uses
+          Two-way sync between Atzro and your iPhone over CardDAV. Edits, adds, and deletes on your
+          phone push back to Atzro — deleting a contact on iPhone removes it here too. iOS uses
           incremental sync (RFC 6578), so refreshes only fetch what actually changed.
         </p>
       </div>
@@ -323,7 +323,7 @@ function CardDavSettings() {
           <dt className="text-muted-foreground">Password</dt>
           <dd className="text-muted-foreground">The device password you just created.</dd>
           <dt className="text-muted-foreground">Description</dt>
-          <dd className="text-muted-foreground">Zerrow (optional)</dd>
+          <dd className="text-muted-foreground">Atzro (optional)</dd>
         </dl>
       </Card>
 
@@ -367,7 +367,7 @@ function CardDavSettings() {
         <div>
           <p className="font-medium">Group names on iPhone</p>
           <p className="text-sm text-muted-foreground">
-            iOS Contacts only shows a flat list of groups, so nested Zerrow groups (like Factory →
+            iOS Contacts only shows a flat list of groups, so nested Atzro groups (like Factory →
             Toyota) need a display style. Changing this triggers a group-name refresh on next sync —
             no need to remove the account.
           </p>
@@ -397,7 +397,7 @@ function CardDavSettings() {
           <div className="flex-1">
             <p className="text-sm font-medium">Include AI relationship summary in notes</p>
             <p className="text-sm text-muted-foreground">
-              Zerrow adds the "who is this?" summary it generates for a contact into the Notes field
+              Atzro adds the "who is this?" summary it generates for a contact into the Notes field
               on your iPhone and Google Contacts, above your own notes. Turn off to keep Notes
               user-only.
             </p>
@@ -412,7 +412,7 @@ function CardDavSettings() {
           <div className="flex-1">
             <p className="text-sm font-medium">Use company logo when no photo</p>
             <p className="text-sm text-muted-foreground">
-              When a contact doesn't have their own picture, Zerrow inlines their company logo (from
+              When a contact doesn't have their own picture, Atzro inlines their company logo (from
               their email domain or website) so iPhone shows a logo instead of the initials tile.
               Real photos always win.
             </p>

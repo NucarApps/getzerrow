@@ -7,7 +7,7 @@ type Ctx = {
 
 const AccountSelectionContext = createContext<Ctx | null>(null);
 
-const STORAGE_KEY = "zerrow.activeAccountId";
+const STORAGE_KEY = "atzro.activeAccountId";
 
 export function AccountSelectionProvider({ children }: { children: ReactNode }) {
   const [activeAccountId, setActiveAccountIdState] = useState<string | null>(() => {

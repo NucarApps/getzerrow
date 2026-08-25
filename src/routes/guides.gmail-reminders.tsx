@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 
 const TITLE = "How to set up Gmail reminders and follow-ups (2026 guide)";
 const DESCRIPTION =
-  "Set up Gmail reminders and follow-ups using native nudges, snooze, and Zerrow's AI-powered folders to automate your inbox workflow.";
+  "Set up Gmail reminders and follow-ups using native nudges, snooze, and Atzro's AI-powered folders to automate your inbox workflow.";
 const URL = "https://getzerrow.com/guides/gmail-reminders";
 
 export const Route = createFileRoute("/guides/gmail-reminders")({
@@ -39,8 +39,8 @@ export const Route = createFileRoute("/guides/gmail-reminders")({
             },
             {
               "@type": "HowToStep",
-              name: "Automate follow-ups with Zerrow",
-              text: "Create a Zerrow folder for awaiting-reply emails and let AI classification route messages that need a follow-up automatically.",
+              name: "Automate follow-ups with Atzro",
+              text: "Create a Atzro folder for awaiting-reply emails and let AI classification route messages that need a follow-up automatically.",
             },
           ],
         }),
@@ -64,7 +64,7 @@ export const Route = createFileRoute("/guides/gmail-reminders")({
               name: "How do I set an automatic follow-up reminder in Gmail?",
               acceptedAnswer: {
                 "@type": "Answer",
-                text: "Use Snooze for one-off reminders, or automate it: with Zerrow you create an 'Awaiting reply' folder and AI classification routes sent and waiting messages into it so follow-ups never slip.",
+                text: "Use Snooze for one-off reminders, or automate it: with Atzro you create an 'Awaiting reply' folder and AI classification routes sent and waiting messages into it so follow-ups never slip.",
               },
             },
             {
@@ -72,7 +72,7 @@ export const Route = createFileRoute("/guides/gmail-reminders")({
               name: "Can AI handle email follow-ups for me?",
               acceptedAnswer: {
                 "@type": "Answer",
-                text: "Yes. Zerrow reads each incoming email, classifies it, and files it into the folders you actually use, so reminders and follow-ups surface automatically instead of relying on you to remember.",
+                text: "Yes. Atzro reads each incoming email, classifies it, and files it into the folders you actually use, so reminders and follow-ups surface automatically instead of relying on you to remember.",
               },
             },
           ],
@@ -100,7 +100,7 @@ function GmailRemindersGuide() {
       >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link to="/" className="text-2xl font-bold tracking-tight" style={sora}>
-            Zerrow<span style={{ color: INK_SOFT }}>.</span>
+            Atzro<span style={{ color: INK_SOFT }}>.</span>
           </Link>
           <Link
             to="/login"
@@ -151,8 +151,8 @@ function GmailRemindersGuide() {
             and check the label regularly. The moment your inbox gets busy, the system breaks down.
           </Section>
 
-          <Section title="4. Automate follow-ups with Zerrow">
-            This is where automation pays off. Zerrow reads every incoming email, classifies it with
+          <Section title="4. Automate follow-ups with Atzro">
+            This is where automation pays off. Atzro reads every incoming email, classifies it with
             AI, and files it into the folders you actually use. To turn that into a reminder system:
             <br />
             <br />
@@ -179,7 +179,7 @@ function GmailRemindersGuide() {
             Let your inbox remind you
           </h2>
           <p className="mt-3" style={{ color: INK_SOFT }}>
-            Zerrow files every email into the folders you think in, so follow-ups surface
+            Atzro files every email into the folders you think in, so follow-ups surface
             automatically. Connect Gmail and try it free.
           </p>
           <Link

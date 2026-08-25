@@ -86,7 +86,7 @@ describe("buildCardDavContactPatch", () => {
         "VERSION:3.0\r\n" +
         "UID:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\r\n" +
         "FN:Chanell Dagesse\r\n" +
-        "EMAIL;TYPE=INTERNET;TYPE=pref:carddav+aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee@local.zerrow\r\n" +
+        "EMAIL;TYPE=INTERNET;TYPE=pref:carddav+aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee@local.atzro\r\n" +
         "END:VCARD\r\n",
     );
 

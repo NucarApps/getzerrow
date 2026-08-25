@@ -61,7 +61,7 @@ describe("CardDAV iOS sync regression: existing email must never be nulled", () 
       name: "legacy carddav+uuid placeholder from stale iOS cache",
       body: vcard([
         "FN:Chanell Dagesse",
-        `EMAIL;TYPE=INTERNET;TYPE=pref:carddav+${UID}@local.zerrow`,
+        `EMAIL;TYPE=INTERNET;TYPE=pref:carddav+${UID}@local.atzro`,
       ]),
     },
     {

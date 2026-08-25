@@ -5,7 +5,7 @@
 // list. The old fallback (`h.messagesAdded ?? h.messages`) treated those
 // as newly-added mail, which put them in the walk's seenAdded set — and
 // the walk skips label ops for seenAdded messages, so the archive signal
-// was silently dropped. Archiving in Gmail never reached Zerrow.
+// was silently dropped. Archiving in Gmail never reached Atzro.
 import { describe, it, expect } from "vitest";
 import { collectAddedMessages, type GmailHistoryRecord } from "./sync/history-events";
 

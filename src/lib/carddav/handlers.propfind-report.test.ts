@@ -242,13 +242,13 @@ describe("PROPFIND", () => {
     expect(body).toContain(`<D:href>/api/public/carddav/${encodeURIComponent(EMAIL)}/</D:href>`);
     expect(body).toContain("<C:addressbook-home-set>");
     // Depth 0 must not enumerate the addressbook collection itself.
-    expect(body).not.toContain("Zerrow Contacts");
+    expect(body).not.toContain("Atzro Contacts");
   });
 
   it("depth 1 on the principal adds the addressbook collection block", async () => {
     const res = await propfind(`${EMAIL}`, "1");
     const body = await res.text();
-    expect(body).toContain("Zerrow Contacts");
+    expect(body).toContain("Atzro Contacts");
     expect(body).toContain("<C:addressbook/>");
     expect(body).toContain('version="3.0"');
   });
@@ -356,7 +356,7 @@ describe("REPORT addressbook-multiget", () => {
 
 describe("REPORT sync-collection", () => {
   const token = (userId: string, ms: number, seq: number) =>
-    `urn:zerrow:carddav:${userId}:${ms}:${seq}`;
+    `urn:atzro:carddav:${userId}:${ms}:${seq}`;
 
   it("rejects an unsupported sync-level with 400 valid-sync-token", async () => {
     const res = await report(syncCollectionBody({ level: "2" }));

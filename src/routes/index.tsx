@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
-import zerrowLogo from "@/assets/zerrow-logo-v2.png";
-import zerrowShip from "@/assets/zerrow-ship.png";
+import { AtzroLogo } from "@/components/AtzroLogo";
+import atzroShip from "@/assets/atzro-ship.png";
 
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
@@ -11,20 +11,20 @@ export const Route = createFileRoute("/")({
   },
   head: () => ({
     meta: [
-      { title: "Zerrow — Every email finds its planet" },
+      { title: "Atzro — Every email finds its planet" },
       {
         name: "description",
         content:
-          "Zerrow is the cosmic sorting office for your Gmail. Newsletters, receipts, and cold pitches sort themselves onto the right planets — your inbox stays a quiet little home planet.",
+          "Atzro is the cosmic sorting office for your Gmail. Newsletters, receipts, and cold pitches sort themselves onto the right planets — your inbox stays a quiet little home planet.",
       },
-      { property: "og:title", content: "Zerrow — Every email finds its planet" },
+      { property: "og:title", content: "Atzro — Every email finds its planet" },
       {
         property: "og:description",
         content:
           "The cosmic sorting office for your Gmail. Every email sorts itself onto the right planet — your inbox stays quiet.",
       },
       { property: "og:url", content: "https://getzerrow.com/" },
-      { name: "twitter:title", content: "Zerrow — Every email finds its planet" },
+      { name: "twitter:title", content: "Atzro — Every email finds its planet" },
       {
         name: "twitter:description",
         content:
@@ -38,7 +38,7 @@ export const Route = createFileRoute("/")({
         rel: "stylesheet",
         href: "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap",
       },
-      { rel: "stylesheet", href: "/zerrow-landing.css" },
+      { rel: "stylesheet", href: "/atzro-landing.css" },
       { rel: "canonical", href: "https://getzerrow.com/" },
     ],
     scripts: [
@@ -50,10 +50,10 @@ export const Route = createFileRoute("/")({
           mainEntity: [
             {
               "@type": "Question",
-              name: "Does Zerrow store my emails?",
+              name: "Does Atzro store my emails?",
               acceptedAnswer: {
                 "@type": "Answer",
-                text: "Zerrow syncs message metadata and content so it can classify and summarize. Sensitive content is encrypted at rest, everything is scoped to your account, and you can disconnect Gmail at any time from Settings.",
+                text: "Atzro syncs message metadata and content so it can classify and summarize. Sensitive content is encrypted at rest, everything is scoped to your account, and you can disconnect Gmail at any time from Settings.",
               },
             },
             {
@@ -61,7 +61,7 @@ export const Route = createFileRoute("/")({
               name: "Will it move emails in Gmail itself?",
               acceptedAnswer: {
                 "@type": "Answer",
-                text: "Yes — when Zerrow files an email into a folder, it applies the matching Gmail label so your phone, web, and other clients stay in sync.",
+                text: "Yes — when Atzro files an email into a folder, it applies the matching Gmail label so your phone, web, and other clients stay in sync.",
               },
             },
             {
@@ -69,7 +69,7 @@ export const Route = createFileRoute("/")({
               name: "What if it lands on the wrong planet?",
               acceptedAnswer: {
                 "@type": "Answer",
-                text: "Drag the email to the right folder and Zerrow learns the route. Hit Reanalyze on any message, and the rule activity log shows exactly why each decision was made.",
+                text: "Drag the email to the right folder and Atzro learns the route. Hit Reanalyze on any message, and the rule activity log shows exactly why each decision was made.",
               },
             },
             {
@@ -201,7 +201,7 @@ function LandingPage() {
           }}
         ></span>
         <span
-          className="tw tw--orange"
+          className="tw tw--brand"
           style={{
             top: "8%",
             left: "56%",
@@ -226,13 +226,13 @@ function LandingPage() {
             <i></i>
           </span>
         </div>
-        <img className="sky__flyby" src={zerrowShip} alt="" />
+        <img className="sky__flyby" src={atzroShip} alt="" />
       </div>
 
       {/* NAV */}
       <header className="nav">
         <a href="#top" className="brand">
-          <img className="brand__logo" src={zerrowLogo} alt="Zerrow" />
+          <AtzroLogo className="h-9 text-[26px]" />
         </a>
         <nav className="nav__links">
           <a href="#planets">The planets</a>
@@ -253,12 +253,12 @@ function LandingPage() {
       <main>
         {/* HERO + ORBIT SYSTEM */}
         <section className="hero" id="top">
-          <div className="kicker">The Zerrow system · pop. your email</div>
+          <div className="kicker">The Atzro system · pop. your email</div>
           <h1 className="hero__title">
             Every email finds <span className="accent">its planet.</span>
           </h1>
           <p className="hero__sub">
-            Zerrow is the cosmic sorting office for your Gmail. Newsletters orbit Planet Newsletter.
+            Atzro is the cosmic sorting office for your Gmail. Newsletters orbit Planet Newsletter.
             Receipts join the Receipt Ring. Cold pitches? <b>Straight into the black hole.</b> Your
             inbox stays a quiet little home planet.
           </p>
@@ -275,7 +275,7 @@ function LandingPage() {
           <div className="orbit" aria-label="Emails orbiting into folder planets">
             <div className="orbit__sun"></div>
             <div className="orbit__sunring"></div>
-            <img className="orbit__ship" src={zerrowShip} alt="" />
+            <img className="orbit__ship" src={atzroShip} alt="" />
             <div className="orbit__homelbl">
               <span>Home · your inbox</span>
             </div>
@@ -317,7 +317,7 @@ function LandingPage() {
                   <span className="bhole__glow"></span>
                   <span className="bhole__core"></span>
                 </button>
-                <div className="planet__lbl" style={{ color: "var(--orange)", marginTop: 12 }}>
+                <div className="planet__lbl" style={{ color: "var(--brand)", marginTop: 12 }}>
                   The Black Hole
                   <br />
                   <small>cold pitches · {eaten.toLocaleString("en-US")} eaten</small>
@@ -343,7 +343,7 @@ function LandingPage() {
               <div className="stat__num">1,248</div>
               <div className="stat__lbl">Deliveries since breakfast</div>
             </div>
-            <div className="stat stat--orange">
+            <div className="stat stat--brand">
               <div className="stat__num">99.2%</div>
               <div className="stat__lbl">Land on the right planet</div>
             </div>
@@ -359,11 +359,11 @@ function LandingPage() {
           <header className="sect-head">
             <div className="kicker">Tour the system</div>
             <h2 className="sect-title">
-              You name the planets. <span className="accent">Zerrow flies the mail.</span>
+              You name the planets. <span className="accent">Atzro flies the mail.</span>
             </h2>
             <p className="sect-lede">
               A folder is just a planet with a one-line description. Write it in plain English —
-              Zerrow handles the gravity.
+              Atzro handles the gravity.
             </p>
           </header>
 
@@ -397,7 +397,7 @@ function LandingPage() {
                 </p>
               </div>
             </article>
-            <article className="pcard pcard--orange">
+            <article className="pcard pcard--brand">
               <div className="pcard__icon">
                 <span className="bhole__glow" style={{ inset: -8 }}></span>
                 <span
@@ -406,7 +406,7 @@ function LandingPage() {
                 ></span>
               </div>
               <div>
-                <div className="pcard__tag" style={{ color: "var(--orange)" }}>
+                <div className="pcard__tag" style={{ color: "var(--brand)" }}>
                   The Black Hole
                 </div>
                 <h3>Cold pitches check in. They don't check out.</h3>
@@ -423,7 +423,7 @@ function LandingPage() {
                 style={{ animationDuration: "4.5s" }}
               ></div>
               <div>
-                <div className="pcard__tag" style={{ color: "var(--orange)" }}>
+                <div className="pcard__tag" style={{ color: "var(--brand)" }}>
                   Home · your inbox
                 </div>
                 <h3>Population: only mail that matters</h3>
@@ -437,7 +437,7 @@ function LandingPage() {
           </div>
 
           <p className="pcards__note">
-            Filed something wrong? Drag it to the right planet and Zerrow learns the route. Every
+            Filed something wrong? Drag it to the right planet and Atzro learns the route. Every
             decision is logged — <b>which rule fired, what the AI decided, at what confidence.</b>{" "}
             No mystery meteors.
           </p>
@@ -520,8 +520,8 @@ function LandingPage() {
                 <li>Synced to iPhone (CardDAV) + Google</li>
               </ul>
             </article>
-            <article className="duo__panel duo__panel--orange">
-              <div className="pcard__tag" style={{ color: "var(--orange)" }}>
+            <article className="duo__panel duo__panel--brand">
+              <div className="pcard__tag" style={{ color: "var(--brand)" }}>
                 The vault at the edge of space
               </div>
               <h3 className="duo__title">Your mail stays yours</h3>
@@ -530,7 +530,7 @@ function LandingPage() {
                 least-privilege scopes — we never see a password. Every row of data sealed to your
                 account, and one button to disconnect and purge it all.
               </p>
-              <ul className="duo__list duo__list--orange">
+              <ul className="duo__list duo__list--brand">
                 <li>Content encrypted at rest</li>
                 <li>Google OAuth — no passwords stored</li>
                 <li>Row-level security on every table</li>
@@ -571,7 +571,7 @@ function LandingPage() {
               <div className="step__num step__num--sun">1</div>
               <h3 className="step__title">Board with Google</h3>
               <p className="step__body">
-                OAuth, not passwords. Your Gmail stays exactly where it is — Zerrow just gets a jump
+                OAuth, not passwords. Your Gmail stays exactly where it is — Atzro just gets a jump
                 seat.
               </p>
             </div>
@@ -579,7 +579,7 @@ function LandingPage() {
               <div className="step__num step__num--amber">2</div>
               <h3 className="step__title">Chart your planets</h3>
               <p className="step__body">
-                One plain-English line per folder. "Receipts and renewals." Done. Zerrow learns the
+                One plain-English line per folder. "Receipts and renewals." Done. Atzro learns the
                 rest from examples.
               </p>
             </div>
@@ -607,13 +607,13 @@ function LandingPage() {
             <details className="faq-item" open>
               <summary>
                 <span className="faq-tx">TX-01</span>
-                <span className="faq-q">Does Zerrow store my emails?</span>
+                <span className="faq-q">Does Atzro store my emails?</span>
                 <span className="faq-toggle" aria-hidden="true">
                   +
                 </span>
               </summary>
               <div className="faq-body">
-                Zerrow syncs message metadata and content so it can classify and summarize.
+                Atzro syncs message metadata and content so it can classify and summarize.
                 Sensitive content is <b>encrypted at rest</b>, everything is{" "}
                 <b>scoped to your account</b>, and you can disconnect Gmail at any time from
                 Settings.
@@ -628,7 +628,7 @@ function LandingPage() {
                 </span>
               </summary>
               <div className="faq-body">
-                Yes — when Zerrow files an email onto a planet, it applies the matching Gmail label
+                Yes — when Atzro files an email onto a planet, it applies the matching Gmail label
                 so your <b>phone, web, and other clients stay in sync</b>.
               </div>
             </details>
@@ -641,7 +641,7 @@ function LandingPage() {
                 </span>
               </summary>
               <div className="faq-body">
-                Drag the email to the right folder and Zerrow learns the route. Hit <b>Reanalyze</b>{" "}
+                Drag the email to the right folder and Atzro learns the route. Hit <b>Reanalyze</b>{" "}
                 on any message, and the <b>rule activity log</b> shows exactly why each decision was
                 made.
               </div>
@@ -664,7 +664,7 @@ function LandingPage() {
         {/* CTA */}
         <section className="section" style={{ paddingTop: 24, paddingBottom: 96 }}>
           <div className="cta__inner">
-            <img className="cta__ship" src={zerrowShip} alt="" />
+            <img className="cta__ship" src={atzroShip} alt="" />
             <h2 className="cta__title">
               Give your inbox <span className="accent">a solar system.</span>
             </h2>
@@ -686,7 +686,7 @@ function LandingPage() {
         {/* FOOTER */}
         <footer className="footer">
           <div className="footer__inner">
-            <div>© 2026 Zerrow · The cosmic sorting office</div>
+            <div>© 2026 Atzro · The cosmic sorting office</div>
             <div className="footer__status">
               <i aria-hidden="true"></i>
               <span>All planets reporting in</span>

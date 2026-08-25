@@ -1,5 +1,5 @@
 // Basic-auth verification for the CardDAV routes. Username is the user's
-// Zerrow email, password is a token generated in Settings and stored as an
+// Atzro email, password is a token generated in Settings and stored as an
 // unsalted SHA-256 hash. Never accepts the real login password. Verification
 // compares the SHA-256 of the presented token against the stored hash inside a
 // SECURITY DEFINER helper (a plain equality lookup — not a constant-time
@@ -20,7 +20,7 @@ export function carddavAuthChallengeResponse(): Response {
   return new Response("Authentication required", {
     status: 401,
     headers: {
-      "WWW-Authenticate": 'Basic realm="Zerrow CardDAV"',
+      "WWW-Authenticate": 'Basic realm="Atzro CardDAV"',
       "Content-Type": "text/plain",
     },
   });

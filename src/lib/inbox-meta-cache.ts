@@ -13,7 +13,7 @@
 // Cleared on sign-out (see __root.tsx). localStorage (not IndexedDB) on purpose:
 // it reads synchronously, which is what makes the first paint 0ms.
 
-const PREFIX = "zerrow:inbox-meta:";
+const PREFIX = "atzro:inbox-meta:";
 const MAX_KEYS = 10;
 
 // Non-sensitive fields safe to persist (no decrypted content, no sender /

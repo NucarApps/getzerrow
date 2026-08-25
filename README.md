@@ -1,6 +1,6 @@
-# Zerrow — AI inbox for Gmail
+# Atzro — AI inbox for Gmail
 
-Zerrow connects to Gmail and sorts incoming mail into user-defined folders —
+Atzro connects to Gmail and sorts incoming mail into user-defined folders —
 deterministic rules first, AI classification second — then acts on it:
 labels, replies, drafts, webhooks, digests. Every decision is audited and
 explainable, and email content is encrypted at rest.
@@ -140,5 +140,5 @@ end-of-project audit of that work is in
 [`docs/rules/cleanup-pass.md`](docs/rules/cleanup-pass.md).
 
 Signing the native Swift app in against this backend (Google, via the
-`zerrow://auth-callback` deep link) is documented in
+`atzro://auth-callback` deep link) is documented in
 [`docs/swift-auth.md`](docs/swift-auth.md).

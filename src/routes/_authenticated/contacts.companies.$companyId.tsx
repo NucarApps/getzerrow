@@ -76,7 +76,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export const Route = createFileRoute("/_authenticated/contacts/companies/$companyId")({
   head: () => ({
-    meta: [{ title: "Company — Zerrow" }, { name: "robots", content: "noindex" }],
+    meta: [{ title: "Company — Atzro" }, { name: "robots", content: "noindex" }],
   }),
   component: CompanyDetailPage,
 });

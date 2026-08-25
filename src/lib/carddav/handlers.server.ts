@@ -193,7 +193,7 @@ async function loadContactPhotoOrLogo(
   return fallback ?? own;
 }
 
-const SYNC_TOKEN_PREFIX = "urn:zerrow:carddav:";
+const SYNC_TOKEN_PREFIX = "urn:atzro:carddav:";
 
 type SyncState = { updatedSince: string; seqSince: number };
 
@@ -372,8 +372,8 @@ function propfindPrincipal(email: string, depth: string): Response {
   if (depth === "1") {
     const bookProps =
       `<D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>` +
-      `<D:displayname>Zerrow Contacts</D:displayname>` +
-      `<C:addressbook-description>Contacts synced from Zerrow</C:addressbook-description>` +
+      `<D:displayname>Atzro Contacts</D:displayname>` +
+      `<C:addressbook-description>Contacts synced from Atzro</C:addressbook-description>` +
       `<C:supported-address-data>` +
       `<C:address-data-type content-type="text/vcard" version="3.0"/>` +
       `</C:supported-address-data>`;
@@ -396,7 +396,7 @@ async function propfindAddressbook(
 
   const bookProps =
     `<D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>` +
-    `<D:displayname>Zerrow Contacts</D:displayname>` +
+    `<D:displayname>Atzro Contacts</D:displayname>` +
     `<CS:getctag>${xmlEscape(ctag)}</CS:getctag>` +
     `<D:sync-token>${xmlEscape(syncToken)}</D:sync-token>` +
     `<D:supported-report-set>` +
@@ -530,7 +530,7 @@ async function buildGroupResponse(
 }
 
 /** Resolve a group's display name to its full nested path
- * ("Clients / VIPs") so iOS can distinguish nested Zerrow groups. Apple's
+ * ("Clients / VIPs") so iOS can distinguish nested Atzro groups. Apple's
  * KIND:group vCard has no native parent field. Formatting itself lives in
  * the pure `formatGroupDisplayName` shared with the settings preview. */
 type GroupTreeMap = Map<string, { name: string; parent: string | null }>;

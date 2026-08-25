@@ -617,7 +617,7 @@ export function ContactDetailView({ id, onDeleted, onDirtyChange, flushRef }: Pr
             <AlertDialogHeader>
               <AlertDialogTitle>Delete “{displayName}”?</AlertDialogTitle>
               <AlertDialogDescription>
-                The contact is removed from Zerrow and, on the next sync, from your connected
+                The contact is removed from Atzro and, on the next sync, from your connected
                 address books.
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -917,7 +917,7 @@ function ShareContactDialog({
     contact.email ? `Email: ${contact.email}` : "",
     contact.phone ? `Phone: ${contact.phone}` : "",
     contact.website ? contact.website : "",
-    "— Shared from Zerrow",
+    "— Shared from Atzro",
   ]
     .filter(Boolean)
     .join("\n");

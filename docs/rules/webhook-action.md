@@ -1,6 +1,6 @@
 # Task 5 — Webhook action (HMAC + SSRF guard + retries)
 
-The `call_webhook` action type is live: when a rule files an email, Zerrow
+The `call_webhook` action type is live: when a rule files an email, Atzro
 can POST a signed `email.classified` event to a user-configured HTTPS
 endpoint.
 
@@ -29,9 +29,9 @@ Payload:
 `body_text` is included **only** when the action opted in via
 `folder_actions.include_body` (new column); HTML is never sent.
 
-Signing: `X-Zerrow-Signature: sha256=<hex>` = HMAC-SHA256 over
+Signing: `X-Atzro-Signature: sha256=<hex>` = HMAC-SHA256 over
 `${timestamp}.${body}` with the action's secret, plus
-`X-Zerrow-Timestamp` and `X-Zerrow-Delivery`. Binding the timestamp into
+`X-Atzro-Timestamp` and `X-Atzro-Delivery`. Binding the timestamp into
 the signature blocks replay. Receivers should compare with a
 constant-time equality check. Deliveries are timeboxed (10s), never
 follow redirects (`redirect: "error"`), and treat non-2xx as failure.

@@ -144,7 +144,7 @@ export async function generateMeetingBreakdown(transcriptText: string): Promise<
   }
 }
 
-export const DEFAULT_BOT_NAME = "Zerrow Notetaker";
+export const DEFAULT_BOT_NAME = "Atzro Notetaker";
 const AVATAR_BUCKET = "meeting-bot-avatars";
 export const DEFAULT_AUTO_LEAVE_ENABLED = true;
 export const DEFAULT_AUTO_LEAVE_MINUTES = 30;

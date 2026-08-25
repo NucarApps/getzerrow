@@ -341,12 +341,12 @@ export const createGmailLabel = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
     const labels = await listLabels(data.account_id);
-    let fullName = `Zerrow/${data.name}`;
+    let fullName = `Atzro/${data.name}`;
     if (data.parent_label_id) {
       const parent = labels.labels?.find((l) => l.id === data.parent_label_id);
       if (!parent) throw new Error("Parent label not found");
-      if (!parent.name.startsWith("Zerrow/") && parent.name !== "Zerrow") {
-        throw new Error("Parent label must be within Zerrow namespace");
+      if (!parent.name.startsWith("Atzro/") && parent.name !== "Atzro") {
+        throw new Error("Parent label must be within Atzro namespace");
       }
       fullName = `${parent.name}/${data.name}`;
     }

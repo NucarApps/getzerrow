@@ -5,9 +5,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { authenticateRequest } from "@/lib/mobile-auth.server";
 
-const DEFAULT_BOT_NAME = "Zerrow Notetaker";
+const DEFAULT_BOT_NAME = "Atzro Notetaker";
 const DEFAULT_CHAT_MESSAGE =
-  "Hi, I'm the Zerrow notetaker and I'll be taking notes for this meeting.";
+  "Hi, I'm the Atzro notetaker and I'll be taking notes for this meeting.";
 
 const settingsSchema = z.object({
   botName: z.string().trim().min(1).max(100),

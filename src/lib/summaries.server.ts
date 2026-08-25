@@ -77,9 +77,9 @@ function buildRfc822(args: {
   text: string;
   html: string;
 }): string {
-  const boundary = `=_zerrow_${Math.random().toString(36).slice(2)}`;
+  const boundary = `=_atzro_${Math.random().toString(36).slice(2)}`;
   const date = new Date().toUTCString();
-  const messageId = `<zerrow-summary-${Date.now()}-${Math.random().toString(36).slice(2)}@zerrow.local>`;
+  const messageId = `<atzro-summary-${Date.now()}-${Math.random().toString(36).slice(2)}@atzro.local>`;
   const subjectEncoded = `=?UTF-8?B?${Buffer.from(args.subject).toString("base64")}?=`;
   return [
     `From: ${args.fromAddr}`,

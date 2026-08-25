@@ -104,7 +104,7 @@ export function SummariesPanel({ folderId }: { folderId: string }) {
       </div>
 
       <p className="mt-2 text-xs text-muted-foreground">
-        Zerrow reads emails received in this folder over the last 24 hours and inserts an AI-written
+        Atzro reads emails received in this folder over the last 24 hours and inserts an AI-written
         digest into your inbox at the time you choose.
       </p>
 

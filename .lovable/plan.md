@@ -1,81 +1,63 @@
-# Atzro rebrand + rules engine rethink
+# Rules engine: one decision, one path
 
-Two workstreams. The rebrand is mechanical and ships first. The rules engine starts with an audit so we choose the rebuild from evidence, not guesses.
+The audit found nine different places in the code that can decide which folder an email lands in. Only one of them (the live arrival path) actually follows the full set of rules you configured. The others each implement a partial copy — which is why filing feels inconsistent and why "why did this land here?" often has no good answer.
 
-## Workstream 1 — Rebrand to Atzro
+## What's broken today
 
-Full rebrand including internals, as chosen.
+- **Gmail label sync ignores everything.** When a label appears on a message (from your phone, another client, or a paused folder's label), the email is moved into that folder with no check of your always-inbox overrides, no exclusion rules, no domain allowlists, and no calendar cold-email guard. Paused folders still get mail this way.
+- **Backfill and "scan Gmail" use a weaker engine.** No overrides, no AI, no cold-email guard, no surface-to-inbox.
+- **Manual moves and rule actions rewrite the folder without updating the explanation.** After a "move to folder" action fires, the stored reason still describes the *original* decision, so the AI-decision drawer shows something provably wrong.
+- **The confidence threshold exists in three hand-copied versions** (live, rescue batch, reanalyze) that can drift apart.
+- **Rescue skips surface-to-inbox**, so mail that was stranded and later rescued never gets pulled back to your inbox even when the folder says it should.
+- **Most paths write no audit row at all.** Manual moves, bulk moves, label claims, backfill and reanalyze never record to the rules-activity log, so the log only shows a fraction of what happened.
+- **Losing candidates are never recorded.** When three folders matched and priority picked one, the other two are computed and thrown away — so we can't explain the choice.
 
-Visual direction: keep the dark deep-space UI, swap the NASA-orange accent for the Atzro violet-to-coral gradient.
+## The rebuild
 
-- Palette: base `#0a0e1a`, surfaces `#131826`, primary violet `#8b5cf6`, secondary/glow coral `#fb7185`. Gradient token `violet -> pink -> coral` for the primary CTA, active nav, focus ring, and progress/rocket indicators.
-- Logo: the uploaded mark and lockup become CDN assets; mark for the sidebar/mobile, lockup for login, landing, and the public contact card.
-- Favicon: square copy of the mark in `public/`, replacing the current Zerrow icons.
-- Copy: every visible "Zerrow" becomes "Atzro" — landing page, login, privacy, terms, guides, empty states, digest emails, contact-card OG images, `llms.txt`, `robots.txt`, `manifest.webmanifest`, page titles and meta/OG on every route.
-- Wake word: "Hey Zerrow" becomes "Hey Atzro" in the meeting Q&A trigger, with the old phrase kept as a silent alias so in-flight meetings don't break.
-- Internals: rename identifiers, comments, test fixtures, and asset filenames. Database table/column names, env var names, and existing OAuth/webhook secret names stay untouched — renaming those is a live-data migration with no user benefit.
+### 1. One decision function
 
-Out of scope: the `getzerrow.com` domain and Google OAuth consent-screen branding. Both are configured outside the codebase; I will list the exact steps for you at the end.
+Create a single pure `decideFolder()` that is the only thing allowed to produce a filing decision. Inputs: the email, the folder set, filters, overrides, exceptions, sender groups, calendar contacts, thread context, and the trigger (`arrival`, `label_change`, `backfill`, `rescue`, `reanalyze`, `manual`). Output: chosen folder, a `classified_by` value, a human reason, and a full **decision trace** (every folder considered, every rule that matched, every veto that fired, and why the winner won).
 
-## Workstream 2 — Rules engine
-
-### Phase A — Audit (first deliverable)
-
-The pipeline has grown many independent paths that can file a message: the filter engine, AI classification, the Gmail-label mirror, ingest/backfill, rescue, reprocess, and manual moves. Each has its own copy of the precedence order. I will map all of them and produce a findings document covering:
-
-- Every code path that can set an email's folder, and the order it applies.
-- Where those orders disagree (the concrete "confusing" bugs).
-- Where a decision is made but not recorded, so the UI can't explain it.
-- Which folder settings silently interact (priority, `filter_logic`, exclusions, `skip_ai`, min confidence, surface-to-inbox, cold-email guard, pause).
-
-You review that document and we pick the rebuild scope from it.
-
-### Phase B — The target model (what I expect to build)
-
-Based on your description, the intended engine is a single ordered pipeline, evaluated once per message, with no other path allowed to file mail:
+Fixed precedence, applied identically for every trigger:
 
 ```text
-1. Gmail label mirror   folder linked to a label Gmail already applied -> file, stop
-2. Hard rules           deterministic conditions, folder priority order -> file, stop
-3. Exclusions/vetoes    any matching exclusion pins the message to the inbox -> stop
-4. AI fallback          only when no hard rule matched:
-                        score the message against every eligible folder's
-                        description + learned profile, pick the best above
-                        that folder's confidence floor -> file
-5. Inbox                nothing matched -> stays in the inbox
+1. folder paused            -> inert, never a destination
+2. exclusion / domain_in veto -> folder disqualified
+3. always-inbox override    -> inbox, unless folder opts out
+4. linked Gmail label       -> that folder
+5. filter tree / filters    -> highest-priority surviving folder
+6. calendar cold-email guard -> inbox
+7. AI (only if ai_rule set, not skip_ai, above min confidence)
+8. surface-to-inbox rule    -> keep visible in inbox, still filed
+9. no match                 -> inbox
 ```
 
-Key changes from today:
+Manual moves stay an intentional hard override, but they now go through the same function so they record a trace and respect pause.
 
-- Hard rules always beat AI. AI never re-files something a rule already decided.
-- AI matches against a plain-language **folder description** you write, so folder setup is "describe what belongs here" instead of assembling a rule tree.
-- One evaluation per message, one recorded outcome. Backfill, rescue, and reprocess call the same function instead of reimplementing it.
+### 2. Every path calls it
 
-### Phase C — Full decision trace
+Rewrite all nine writers to call `decideFolder()` and then one shared `applyDecision()` that persists folder, classifier, reason, trace, side effects (archive / mark-read scope / star / hide / snooze / forward) and the audit row. No path gets to set `folder_id` directly anymore — enforced by a lint-style test that fails if `folder_id` is written outside `applyDecision`.
 
-Every filed message stores a structured trace, and the AI decision drawer shows it in plain language:
+This closes: label-mirror bypass, paused folders receiving mail, backfill weakness, missing side effects on manual moves, stale reasons after rule actions.
 
-- Stage that decided it (label mirror / hard rule / exclusion / AI / none).
-- For a rule: which folder, which condition, the field, operator, and the value it matched, and which rules were evaluated and skipped before it.
-- For AI: the folder descriptions it compared, the score per candidate folder, the winner, its confidence, the folder's floor, and the model's stated reason.
-- Side effects applied (archive, mark-read, star, hide, forward, snooze) or the reason they were skipped (folder paused).
+### 3. Full explainability
 
-Traces are written for backfill and reprocess too, so you can replay why anything landed where it did.
+Persist the decision trace with each email and render it in the AI-decision drawer: candidates considered, rules matched per candidate, vetoes, the AI confidence vs. your threshold, and the tiebreak. Every path writes an activity-log row, including manual moves and backfill.
 
-### Phase D — Simulator and rollout
+### 4. Rule simulator
 
-- "Test this folder" runs the new engine against your recent mail and shows what would change, before anything moves.
-- The new engine ships behind a per-account switch so we can compare old and new on real mail, then flip it on.
+Given a folder's current rules, show live which of your recent messages would land there, which would be vetoed, and which the AI would have to judge — before you save.
+
+### 5. Verification
+
+Table-driven tests for the precedence ladder (one case per rung, per trigger), plus regression tests for each bug named above: paused folder + Gmail label, override vs. label, excluded domain via manual move, rescue + surface rule, rule action reason freshness.
 
 ## Technical notes
 
-- New `src/lib/rules/` module: a pure `evaluate(message, folders, rules)` returning `{ folderId, stage, trace }` with no Supabase imports, so the whole precedence is unit-testable. Existing `src/lib/sync/filter-engine.ts` logic folds into it.
-- `folders` gains a `description` column (the AI-facing plain-language rule) and `emails` gains a `decision_trace` jsonb column; existing `ai_rule` / `learned_profile` are migrated into the new fields.
-- Design tokens change in `src/styles.css` and `public/zerrow-landing.css` (renamed); no component hardcodes colors, so the accent swap is token-only.
-- Logos go through Lovable Assets; the favicon is a real square file in `public/`.
+- `src/lib/sync/decide-folder.ts` (new, pure, no Supabase) absorbs `classify.ts` precedence, `ingest-classify.ts`, and `filter-engine.ts` matching; `filter-engine.ts` stays as the leaf matcher.
+- `src/lib/sync/apply-decision.ts` (new) is the single writer: emails patch + `executed_rules` + `computeFolderEffects` + Gmail label sync.
+- Rewritten callers: `process-message.ts`, `rescue.ts`, `history.ts` (`applyLabelChange`), `gmail/ingest-classify.ts` callers (`reprocess.functions.ts`, `rules.functions.ts`), `folder-learn.ts`, `move-email.server.ts`, `move.functions.ts` (`reanalyzeEmail`, `reclassifyEmails`, `bulkMoveEmails`), `action-dispatch.ts`.
+- New column `emails.decision_trace jsonb` plus `executed_rules.trace_json`, both encrypted-at-rest consistent with existing columns.
+- Deleted: the duplicated `min_ai_confidence` gate in `rescue.ts`, the ad-hoc override/exclusion branches in `move.functions.ts`.
 
-## Order of work
-
-1. Rebrand (visible immediately).
-2. Rules engine audit document — you review before I write engine code.
-3. New engine + trace + simulator, behind a switch.
+Existing filed mail is not re-filed by this change; the new engine applies to new arrivals and to anything you explicitly reanalyze.

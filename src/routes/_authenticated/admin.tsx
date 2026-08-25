@@ -50,7 +50,7 @@ import {
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({
-    meta: [{ title: "Admin — Zerrow" }, { name: "robots", content: "noindex" }],
+    meta: [{ title: "Admin — Atzro" }, { name: "robots", content: "noindex" }],
   }),
   beforeLoad: async () => {
     const { data, error } = await supabase.auth.getUser();

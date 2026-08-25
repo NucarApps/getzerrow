@@ -21,7 +21,7 @@ import { CheckCircle2, Circle, Trash2, Sparkles, Video, Mail, Plus, X } from "lu
 export const Route = createFileRoute("/_authenticated/tasks")({
   head: () => ({
     meta: [
-      { title: "Tasks — Zerrow" },
+      { title: "Tasks — Atzro" },
       {
         name: "description",
         content: "Your action items, added manually or extracted from meetings and email.",
@@ -163,7 +163,7 @@ function TasksPage() {
         {q.data && tasks.length === 0 && (
           <div className="rounded-lg border border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
             {status === "open"
-              ? "No open tasks. Add one above, or Zerrow will find them from your meetings and email."
+              ? "No open tasks. Add one above, or Atzro will find them from your meetings and email."
               : "Nothing here."}
           </div>
         )}

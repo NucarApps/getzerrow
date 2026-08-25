@@ -189,7 +189,7 @@ export const backfillMultiEmailsFromGoogle = createServerFn({ method: "POST" })
 
 /** Clear stored photo etags so the next Google pull re-downloads the photo
  * for every linked contact that currently has no local avatar. Fixes cases
- * where a picture was set on Google/iOS before Zerrow's photo sync shipped:
+ * where a picture was set on Google/iOS before Atzro's photo sync shipped:
  * the pull loop otherwise short-circuits on the stable photo URL and never
  * touches those contacts again. */
 export const backfillGoogleContactPhotos = createServerFn({ method: "POST" })

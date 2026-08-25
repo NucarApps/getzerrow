@@ -22,7 +22,7 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/settings/account")({
   head: () => ({
-    meta: [{ title: "Account — Settings — Zerrow" }, { name: "robots", content: "noindex" }],
+    meta: [{ title: "Account — Settings — Atzro" }, { name: "robots", content: "noindex" }],
   }),
   component: AccountSettings,
 });
@@ -63,7 +63,7 @@ function DangerZone() {
     <Card className="border-destructive/40 p-4 md:p-6">
       <h2 className="font-display text-xl text-destructive">Delete account</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Permanently delete your Zerrow account, revoke Google access, and remove all synced
+        Permanently delete your Atzro account, revoke Google access, and remove all synced
         messages, folders, contacts, and settings. This cannot be undone.
       </p>
       <AlertDialog
@@ -80,7 +80,7 @@ function DangerZone() {
         </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete your Zerrow account?</AlertDialogTitle>
+            <AlertDialogTitle>Delete your Atzro account?</AlertDialogTitle>
             <AlertDialogDescription>
               This will revoke Google access on all connected mailboxes, delete every email, folder,
               filter, contact, and queued job we hold for you, and remove your sign-in. It cannot be

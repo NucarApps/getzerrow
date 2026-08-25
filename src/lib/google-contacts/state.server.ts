@@ -64,7 +64,7 @@ export async function updateSyncState(id: string, patch: Partial<SyncState>): Pr
   if (error) throw new Error(`Failed to update google_sync_state: ${error.message}`);
 }
 
-/** Load a Zerrow contact in the shape the mapper expects (decrypted). */
+/** Load a Atzro contact in the shape the mapper expects (decrypted). */
 export async function loadLocalContact(contactId: string): Promise<LocalContact | null> {
   const { row } = await getContactDecrypted(contactId);
   if (!row) return null;

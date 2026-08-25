@@ -1,11 +1,11 @@
-# Zerrow Swift app — Supabase auth (Google) setup
+# Atzro Swift app — Supabase auth (Google) setup
 
-This guide covers signing the native Swift app into the Zerrow backend with
-Google, using the deep link `zerrow://auth-callback`. Two flows are documented:
+This guide covers signing the native Swift app into the Atzro backend with
+Google, using the deep link `atzro://auth-callback`. Two flows are documented:
 
 - **Option 2 (recommended)** — native Google ID-token flow. No change to the
   backend redirect allow-list is required.
-- **Option 1** — web-based redirect flow. Requires `zerrow://auth-callback` to
+- **Option 1** — web-based redirect flow. Requires `atzro://auth-callback` to
   be added to the backend auth redirect allow-list (see "Backend redirect
   allow-list" below).
 
@@ -34,19 +34,19 @@ Add via **File → Add Package Dependencies…**:
 
 ## 2. Info.plist — URL schemes
 
-Register the app's custom scheme so `zerrow://auth-callback` reopens the app,
+Register the app's custom scheme so `atzro://auth-callback` reopens the app,
 and (for Option 2) the Google reversed-client-id scheme.
 
 ```xml
 <key>CFBundleURLTypes</key>
 <array>
-  <!-- Zerrow deep link: zerrow://auth-callback -->
+  <!-- Atzro deep link: atzro://auth-callback -->
   <dict>
     <key>CFBundleURLName</key>
-    <string>com.zerrow.app</string>
+    <string>com.atzro.app</string>
     <key>CFBundleURLSchemes</key>
     <array>
-      <string>zerrow</string>
+      <string>atzro</string>
     </array>
   </dict>
   <!-- Google Sign-In (Option 2). Value is your REVERSED_CLIENT_ID
@@ -85,7 +85,7 @@ sheet, and Supabase accepts the resulting ID token directly.
 
 ### Scopes
 
-Zerrow syncs Gmail server-side, so request the same scopes the web app uses and
+Atzro syncs Gmail server-side, so request the same scopes the web app uses and
 ask for offline access to obtain a refresh token:
 
 ```
@@ -143,11 +143,11 @@ func signInWithGoogle(presenting: UIViewController) async throws {
 
 ## Option 1 — web redirect flow (via the `/auth-callback` bridge)
 
-A custom URL scheme (`zerrow://`) cannot be added to the backend auth redirect
-allow-list, so **do not** point Supabase OAuth directly at `zerrow://auth-callback`.
+A custom URL scheme (`atzro://`) cannot be added to the backend auth redirect
+allow-list, so **do not** point Supabase OAuth directly at `atzro://auth-callback`.
 Instead, point it at the allow-listed HTTPS bridge page
 `https://getzerrow.com/auth-callback`. That page immediately forwards the OAuth
-result (tokens or `?code=`) to `zerrow://auth-callback`, and supabase-swift's
+result (tokens or `?code=`) to `atzro://auth-callback`, and supabase-swift's
 `session(from:)` finishes the session. No allow-list change is needed.
 
 Uses `ASWebAuthenticationSession`:
@@ -166,14 +166,14 @@ func signInWithGoogleRedirect() async throws {
     ]
   )
   // supabase-swift opens ASWebAuthenticationSession. Google redirects to the
-  // HTTPS bridge, which forwards to zerrow://auth-callback to complete sign-in.
+  // HTTPS bridge, which forwards to atzro://auth-callback to complete sign-in.
 }
 ```
 
-> Set `ASWebAuthenticationSession`'s `callbackURLScheme` to `zerrow` so the
-> session captures the redirect to `zerrow://auth-callback`. supabase-swift does
-> this for you when you pass a `zerrow://` `redirectTo`, but here the browser is
-> sent to the HTTPS bridge first; the bridge then bounces to `zerrow://`.
+> Set `ASWebAuthenticationSession`'s `callbackURLScheme` to `atzro` so the
+> session captures the redirect to `atzro://auth-callback`. supabase-swift does
+> this for you when you pass a `atzro://` `redirectTo`, but here the browser is
+> sent to the HTTPS bridge first; the bridge then bounces to `atzro://`.
 
 Handle the deep link (SwiftUI):
 
@@ -239,7 +239,7 @@ Available today: `/api/mobile/card`, `/api/mobile/emails.action`,
 
 ## 6. Gmail connect handoff (required for sync to work)
 
-Signing in authenticates the user, but Zerrow only syncs an inbox once the
+Signing in authenticates the user, but Atzro only syncs an inbox once the
 backend holds a Gmail **refresh token** for that account. On the web, the login
 page forwards `provider_token` + `provider_refresh_token` to a server function
 (`connectGmailFromSession`) which stores the encrypted tokens and starts the
@@ -272,11 +272,11 @@ the web app.
 
 ## Backend redirect allow-list (not required)
 
-A custom URL scheme (`zerrow://auth-callback`) **cannot** be added to the auth
+A custom URL scheme (`atzro://auth-callback`) **cannot** be added to the auth
 redirect allow-list. That's why Option 1 redirects to the HTTPS bridge page
 `https://getzerrow.com/auth-callback` instead — it's already covered by the
 existing allow-list entry `https://getzerrow.com/**`, and it forwards the OAuth
-result on to `zerrow://auth-callback` client-side.
+result on to `atzro://auth-callback` client-side.
 
 ```
 https://getzerrow.com/**        ← covers the /auth-callback bridge

@@ -425,7 +425,7 @@ export const listFolderSummaries = createServerFn({ method: "POST" })
 // nothing rule- or AI-wise until the user gives it explicit intent
 // (filter_tree or ai_rule) — regardless of whether it was linked to an
 // existing Gmail label or created alongside a fresh one. Gmail-label
-// routing still works because that's a Gmail-side signal, not a Zerrow
+// routing still works because that's a Gmail-side signal, not a Atzro
 // classification. See folder-mgmt.defaults.test.ts.
 export function deriveFolderAiDefaults(_gmailLabelId: string | null | undefined): {
   skip_ai: boolean;

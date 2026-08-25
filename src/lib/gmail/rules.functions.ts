@@ -90,7 +90,7 @@ export const getSyncLatencyStats = createServerFn({ method: "POST" })
 
 /**
  * POST a synthetic envelope to our own Pub/Sub webhook to prove the endpoint
- * is reachable. Tagged with `x-zerrow-test: 1` so the webhook logs it as
+ * is reachable. Tagged with `x-atzro-test: 1` so the webhook logs it as
  * `webhook_test` and it does NOT pollute real push diagnostics.
  *
  * If `realistic` is true and the user has a connected account, builds a
@@ -121,10 +121,10 @@ export const pingPubsubWebhook = createServerFn({ method: "POST" })
         envelope = {
           message: {
             data: dataB64,
-            messageId: `zerrow-test-${Date.now()}`,
+            messageId: `atzro-test-${Date.now()}`,
             publishTime: new Date().toISOString(),
           },
-          subscription: "zerrow-app-side-test",
+          subscription: "atzro-app-side-test",
         };
         mode = "realistic";
         account_email = acc.email_address;
@@ -135,7 +135,7 @@ export const pingPubsubWebhook = createServerFn({ method: "POST" })
     const cronSecret = process.env.CRON_SECRET;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "x-zerrow-test": "1",
+      "x-atzro-test": "1",
     };
     if (cronSecret) headers["authorization"] = `Bearer ${cronSecret}`;
     try {
@@ -470,7 +470,7 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
 /**
  * Retroactively apply a folder's behavior toggle to emails already classified into it.
  * Called when the user flips auto_mark_read, auto_archive/hide_from_inbox, or auto_star ON.
- * Updates Zerrow DB + Gmail (via batchModify) in one pass. Capped at 10k emails per call.
+ * Updates Atzro DB + Gmail (via batchModify) in one pass. Capped at 10k emails per call.
  */
 export const applyFolderBehaviorRetroactive = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

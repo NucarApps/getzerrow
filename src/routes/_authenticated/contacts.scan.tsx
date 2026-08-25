@@ -16,8 +16,8 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/_authenticated/contacts/scan")({
   head: () => ({
     meta: [
-      { title: "Scan a card — Zerrow" },
-      { name: "description", content: "Scan a business card to add a new contact in Zerrow." },
+      { title: "Scan a card — Atzro" },
+      { name: "description", content: "Scan a business card to add a new contact in Atzro." },
       { name: "robots", content: "noindex" },
     ],
   }),

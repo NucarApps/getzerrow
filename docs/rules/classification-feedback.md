@@ -1,7 +1,7 @@
 # Explain classification + feedback (rules upgrade, task 12)
 
 One-tap "this was wrong" from any rule-activity row: pick the right
-folder and Zerrow records the feedback, moves the email, and teaches
+folder and Atzro records the feedback, moves the email, and teaches
 the corrected folder — in one action.
 
 ## Data model

@@ -29,7 +29,7 @@ export function EmailBodyFrame({ html }: { html: string }) {
         document.documentElement ? document.documentElement.scrollHeight : 0,
         document.body ? document.body.scrollHeight : 0
       );
-      parent.postMessage({ __zerrowFrame: id, height: h }, "*");
+      parent.postMessage({ __atzroFrame: id, height: h }, "*");
     } catch(e){}
   }
   post();
@@ -53,7 +53,7 @@ export function EmailBodyFrame({ html }: { html: string }) {
   });
   window.addEventListener("resize", post);
   window.addEventListener("message", function(e){
-    if (e && e.data && e.data.__zerrowPing === id) post();
+    if (e && e.data && e.data.__atzroPing === id) post();
   });
 })();
 </script>`;
@@ -66,8 +66,8 @@ export function EmailBodyFrame({ html }: { html: string }) {
       // opaque ("null") for a srcdoc sandbox, so we pin to the contentWindow and
       // the per-render frameId nonce rather than checking e.origin.
       if (e.source !== iframeRef.current?.contentWindow) return;
-      const d = e.data as { __zerrowFrame?: string; height?: number } | null;
-      if (!d || d.__zerrowFrame !== frameId || typeof d.height !== "number") return;
+      const d = e.data as { __atzroFrame?: string; height?: number } | null;
+      if (!d || d.__atzroFrame !== frameId || typeof d.height !== "number") return;
       const f = iframeRef.current;
       if (!f) return;
       const clamped = Math.min(Math.max(d.height + 4, MIN_PX), 8000);
@@ -85,7 +85,7 @@ export function EmailBodyFrame({ html }: { html: string }) {
     // own iframe's contentWindow, so wildcard disclosure is moot.
     try {
       // nosemgrep: javascript.browser.security.wildcard-postmessage-configuration.wildcard-postmessage-configuration
-      f?.contentWindow?.postMessage({ __zerrowPing: frameId }, "*");
+      f?.contentWindow?.postMessage({ __atzroPing: frameId }, "*");
     } catch {
       /* best-effort: iframe may not be ready yet */
     }

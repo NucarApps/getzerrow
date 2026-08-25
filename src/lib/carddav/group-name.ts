@@ -1,6 +1,6 @@
 /**
  * Pure, client-safe formatting of a group's iPhone display name. iOS
- * Contacts only shows a flat group list, so nested Zerrow groups get their
+ * Contacts only shows a flat group list, so nested Atzro groups get their
  * path flattened per the user's `group_name_style` setting. The CardDAV
  * handler delegates here, and the settings-page preview uses the same
  * function, so what the preview shows is exactly what syncs.

@@ -142,7 +142,7 @@ export const Route = createFileRoute("/_authenticated/inbox")({
   component: InboxPage,
   errorComponent: RouteErrorFallback,
   head: () => ({
-    links: [{ rel: "stylesheet", href: "/zerrow-landing.css" }],
+    links: [{ rel: "stylesheet", href: "/atzro-landing.css" }],
   }),
 });
 

@@ -144,7 +144,7 @@ export async function fetchLogoBytes(
 
       const res = await fetch(current, {
         redirect: "manual",
-        headers: { "user-agent": "Mozilla/5.0 ZerrowLogoBot" },
+        headers: { "user-agent": "Mozilla/5.0 AtzroLogoBot" },
         signal: AbortSignal.timeout(4000),
       });
 

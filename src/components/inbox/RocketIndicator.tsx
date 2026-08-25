@@ -1,4 +1,4 @@
-import zerrowShip from "@/assets/zerrow-ship.png";
+import atzroShip from "@/assets/atzro-ship.png";
 
 export type RocketPhase = "idle" | "ready" | "launching" | "returning";
 
@@ -80,8 +80,8 @@ export function RocketIndicator({ pull, phase }: Props) {
           />
         )}
         <img
-          src={zerrowShip}
-          alt="Zerrow spacecraft illustration"
+          src={atzroShip}
+          alt="Atzro spacecraft illustration"
           draggable={false}
           style={{
             width: "100%",

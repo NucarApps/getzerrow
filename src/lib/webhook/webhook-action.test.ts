@@ -4,7 +4,7 @@
 //     loopback / RFC1918 / link-local / CGNAT / metadata IP literals —
 //     and accepts ordinary public https hosts,
 //   * the signature is deterministic HMAC-SHA256 over
-//     `${timestamp}.${body}` sent as `X-Zerrow-Signature: sha256=<hex>`,
+//     `${timestamp}.${body}` sent as `X-Atzro-Signature: sha256=<hex>`,
 //   * payloads exclude email bodies unless include_body opted in,
 //   * delivery is timeboxed, treats non-2xx as failure, and never throws,
 //   * the runner increments attempt via the claim RPC, reschedules failed
@@ -87,7 +87,7 @@ describe("url-guard (SSRF)", () => {
   });
 
   it.each([
-    "https://hooks.example.com/zerrow",
+    "https://hooks.example.com/atzro",
     "https://webhook.site/2f3c9a51-0000-4000-8000-000000000000",
     "https://172.32.0.1/hook", // just outside 172.16/12
     "https://11.22.33.44/hook",
@@ -156,11 +156,11 @@ describe("deliverWebhook", () => {
     const [calledUrl, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(calledUrl).toBe("https://hooks.example.com/z");
     const headers = init.headers as Record<string, string>;
-    const ts = headers["X-Zerrow-Timestamp"];
-    expect(headers["X-Zerrow-Signature"]).toBe(
+    const ts = headers["X-Atzro-Timestamp"];
+    expect(headers["X-Atzro-Signature"]).toBe(
       `sha256=${signWebhookBody("whsec_test", ts, '{"a":1}')}`,
     );
-    expect(headers["X-Zerrow-Delivery"]).toBe("d1");
+    expect(headers["X-Atzro-Delivery"]).toBe("d1");
     expect(init.redirect).toBe("error");
   });
 
@@ -357,7 +357,7 @@ describe("live fire", () => {
               id: "live-1",
               thread_id: null,
               from_addr: "demo@getzerrow.com",
-              from_name: "Zerrow Live Fire",
+              from_name: "Atzro Live Fire",
               subject: "Task 5 acceptance test",
               received_at: new Date().toISOString(),
               ai_summary: "Signed webhook delivery test",

@@ -91,7 +91,7 @@ const TERMINAL = new Set(["done", "failed"]);
 export const Route = createFileRoute("/_authenticated/meetings")({
   head: () => ({
     meta: [
-      { title: "Meetings — Zerrow" },
+      { title: "Meetings — Atzro" },
       {
         name: "description",
         content: "Record, transcribe, and summarize your meetings automatically.",

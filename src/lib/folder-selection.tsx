@@ -9,7 +9,7 @@ type Ctx = {
 
 const FolderSelectionContext = createContext<Ctx | null>(null);
 
-const STORAGE_KEY = "zerrow.selectedFolder";
+const STORAGE_KEY = "atzro.selectedFolder";
 
 export function FolderSelectionProvider({ children }: { children: ReactNode }) {
   const [selected, setSelectedState] = useState<FolderSelection>(() => {

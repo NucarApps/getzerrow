@@ -121,7 +121,7 @@ export function MeetingBotCard() {
       if (upErr) throw upErr;
       await saveSettings({
         data: {
-          botName: botName.trim() || "Zerrow Notetaker",
+          botName: botName.trim() || "Atzro Notetaker",
           chatMessage,
           chatResendOnJoin: resend,
           autoLeaveEnabled,
@@ -145,7 +145,7 @@ export function MeetingBotCard() {
     try {
       await saveSettings({
         data: {
-          botName: botName.trim() || "Zerrow Notetaker",
+          botName: botName.trim() || "Atzro Notetaker",
           chatMessage,
           chatResendOnJoin: resend,
           autoLeaveEnabled,
@@ -212,7 +212,7 @@ export function MeetingBotCard() {
             value={botName}
             maxLength={100}
             onChange={(e) => setBotName(e.target.value)}
-            placeholder="Zerrow Notetaker"
+            placeholder="Atzro Notetaker"
           />
           <p className="text-xs text-muted-foreground">
             The name shown in the participant list when the bot joins.
@@ -281,7 +281,7 @@ export function MeetingBotCard() {
             maxLength={1000}
             rows={3}
             onChange={(e) => setChatMessage(e.target.value)}
-            placeholder="Hi! I'm the Zerrow notetaker. I'm here to record and summarize this meeting."
+            placeholder="Hi! I'm the Atzro notetaker. I'm here to record and summarize this meeting."
           />
           <p className="text-xs text-muted-foreground">
             Posted in the meeting chat when the bot joins. Leave empty to post nothing.
