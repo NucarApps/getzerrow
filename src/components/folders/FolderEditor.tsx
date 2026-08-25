@@ -67,6 +67,8 @@ import { FolderHealthCard } from "./FolderHealthCard";
 import { HistoryPanel } from "./editor/folder-history-panel";
 import { SummariesPanel } from "./editor/folder-summaries-panel";
 import { RuleGroupEditor } from "./editor/folder-rule-group-editor";
+import { RuleSentenceEditor } from "@/components/rules/RuleSentenceEditor";
+import type { Condition } from "@/lib/rules/types";
 import { ScanGmailSection } from "./editor/folder-scan-gmail-section";
 import { MarkReadScopeSection, type MarkReadMode } from "./editor/mark-read-scope-section";
 import type { Folder, Filter, GLabel } from "./editor/types";
@@ -142,6 +144,7 @@ export function FolderEditor({
   const simulateFn = useServerFn(simulateRule);
   const [simBusy, setSimBusy] = useState(false);
   const [simResult, setSimResult] = useState<SimulationResult | null>(null);
+  const [guidedOpen, setGuidedOpen] = useState(false);
   const dirty = JSON.stringify(local) !== JSON.stringify(folder);
   const linkedLabel = labels.find((l) => l.id === folder.gmail_label_id);
 
@@ -346,6 +349,47 @@ export function FolderEditor({
     setNewF({ field: "from", op: "contains", value: "" });
     qc.invalidateQueries({ queryKey: ["folder-filters", folder.id] });
   }
+  /** Persist a rule from the guided editor. One match group becomes an
+   * AND list of filter rows; several groups become an OR-of-ANDs tree,
+   * which is the shape the engine reads either way. */
+  async function saveGuidedRule(groups: Condition[][]) {
+    if (groups.length === 0) return;
+    if (groups.length === 1) {
+      const rows = groups[0]!.map((c) => ({
+        folder_id: folder.id,
+        field: c.field,
+        op: c.op,
+        value: c.value,
+      }));
+      const { error } = await supabase.from("folder_filters").insert(rows);
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      if (rows.length > 1) setLocal({ ...local, filter_logic: "all" });
+      qc.invalidateQueries({ queryKey: ["folder-filters", folder.id] });
+    } else {
+      setLocal({
+        ...local,
+        filter_tree: {
+          type: "group",
+          op: "or",
+          children: groups.map((g) => ({
+            type: "group" as const,
+            op: "and" as const,
+            children: g.map((c) => ({
+              type: "cond" as const,
+              field: c.field,
+              op: c.op,
+              value: c.value,
+            })),
+          })),
+        },
+      });
+    }
+    toast.success("Rule added — save the folder to apply it");
+  }
+
   async function removeFilter(id: string) {
     await supabase.from("folder_filters").delete().eq("id", id);
     qc.invalidateQueries({ queryKey: ["folder-filters", folder.id] });
@@ -704,6 +748,34 @@ export function FolderEditor({
                 </p>
               </div>
             ) : null}
+
+            {/* Guided rule builder: writes the same rows as the list below,
+                but checks for collisions and previews the effect on existing
+                mail before saving. */}
+            <div className="mt-3">
+              {guidedOpen ? (
+                <RuleSentenceEditor
+                  accountId={folder.gmail_account_id}
+                  folderId={folder.id}
+                  folderName={local.name || folder.name}
+                  onCancel={() => setGuidedOpen(false)}
+                  onSave={async (groups) => {
+                    await saveGuidedRule(groups);
+                    setGuidedOpen(false);
+                  }}
+                />
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => setGuidedOpen(true)}
+                >
+                  Add a rule with conflict checks…
+                </Button>
+              )}
+            </div>
+
 
             <div className="mt-2 space-y-1.5">
               {filters.map((f) => {
