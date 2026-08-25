@@ -167,7 +167,13 @@ export async function classifyParsedEmail(
   } = {},
 ): Promise<ClassificationResult> {
   const context = opts.context ?? (await loadAccountContext(accountId, userId));
-  const rules = classifyByRules(parsed, context, {
+  const legacy = classifyByRules(parsed, context, {
+    skipGmailLabelMatch: opts.skipGmailLabelMatch,
+    threadEmails: opts.threadEmails,
+  });
+  // Phase E cutover: the amended engine either runs alongside for
+  // comparison (shadow, the default) or decides outright.
+  const rules = runEngineStage(parsed, context, legacy, {
     skipGmailLabelMatch: opts.skipGmailLabelMatch,
     threadEmails: opts.threadEmails,
   });
