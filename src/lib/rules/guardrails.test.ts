@@ -53,7 +53,7 @@ describe("evaluateGuardrails", () => {
         scope: "folder",
         kind: "exclusion",
         folder_id: "f1",
-        condition: { field: "subject", op: "not_contains", value: "invoice" },
+        condition: { field: "subject", op: "not_contains", value: "Hello" },
       },
     ];
     const res = evaluateGuardrails(msg(), guardrails);
