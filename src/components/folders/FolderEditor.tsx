@@ -144,6 +144,7 @@ export function FolderEditor({
   const simulateFn = useServerFn(simulateRule);
   const [simBusy, setSimBusy] = useState(false);
   const [simResult, setSimResult] = useState<SimulationResult | null>(null);
+  const [guidedOpen, setGuidedOpen] = useState(false);
   const dirty = JSON.stringify(local) !== JSON.stringify(folder);
   const linkedLabel = labels.find((l) => l.id === folder.gmail_label_id);
 
