@@ -141,9 +141,6 @@ import { useFoldersFullQuery, useGmailLabelsQuery } from "@/hooks/use-folder-que
 export const Route = createFileRoute("/_authenticated/inbox")({
   component: InboxPage,
   errorComponent: RouteErrorFallback,
-  head: () => ({
-    links: [{ rel: "stylesheet", href: "/atzro-landing.css" }],
-  }),
 });
 
 type Email = {
