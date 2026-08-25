@@ -705,6 +705,34 @@ export function FolderEditor({
               </div>
             ) : null}
 
+            {/* Guided rule builder: writes the same rows as the list below,
+                but checks for collisions and previews the effect on existing
+                mail before saving. */}
+            <div className="mt-3">
+              {guidedOpen ? (
+                <RuleSentenceEditor
+                  accountId={folder.gmail_account_id}
+                  folderId={folder.id}
+                  folderName={local.name || folder.name}
+                  onCancel={() => setGuidedOpen(false)}
+                  onSave={async (groups) => {
+                    await saveGuidedRule(groups);
+                    setGuidedOpen(false);
+                  }}
+                />
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => setGuidedOpen(true)}
+                >
+                  Add a rule with conflict checks…
+                </Button>
+              )}
+            </div>
+
+
             <div className="mt-2 space-y-1.5">
               {filters.map((f) => {
                 const isExclude =
