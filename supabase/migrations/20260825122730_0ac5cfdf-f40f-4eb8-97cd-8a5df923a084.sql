@@ -1,0 +1,2 @@
+ALTER TABLE public.emails ADD COLUMN IF NOT EXISTS decision_trace jsonb;
+COMMENT ON COLUMN public.emails.decision_trace IS 'Explanation of the routing decision (folders considered, rules fired, vetoes). Config metadata only, no message content.';
