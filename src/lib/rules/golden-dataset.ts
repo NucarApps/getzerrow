@@ -53,8 +53,10 @@ const GOLDEN_GUARDRAILS: Guardrail[] = [
     scope: "folder",
     kind: "exclusion",
     folder_id: GOLDEN_FOLDERS.vendor,
-    condition: { field: "subject", op: "not_contains", value: "invoice" },
-    label: "vendor folder only takes invoices",
+    // folder_filters store excludes as "block when the field contains
+    // this", so this rejects shipping notices from the vendor folder.
+    condition: { field: "subject", op: "not_contains", value: "shipping" },
+    label: "vendor folder rejects shipping notices",
   },
   {
     id: "g-protected",
