@@ -9,8 +9,10 @@
 //   mode "on"     — the engine's deterministic decision is returned, with
 //                   its v2 trace attached for storage.
 //
-// The AI stage is never run here: classify.ts owns the async passes, so
-// this stage always evaluates with aiEnabled=false and reports needs_ai.
+// No AI call happens here. The engine's stage 6 only decides whether AI is
+// eligible and which folders it may consider, so it is evaluated with
+// aiEnabled=true and the async pass in classify.ts acts on needs_ai — the
+// same split the legacy ladder uses.
 import { logInfo, logMetric } from "../log.server";
 import { classifiedByForStage, compareDecisions } from "../rules/compare";
 import { runRulesEngine } from "../rules/bridge";
@@ -34,7 +36,7 @@ export function runEngineStage(
   try {
     engine = runRulesEngine(parsed, context, {
       trigger: "arrival",
-      aiEnabled: false,
+      aiEnabled: true,
       skipGmailLabelMatch: opts.skipGmailLabelMatch,
       threadEmails: opts.threadEmails,
     });
