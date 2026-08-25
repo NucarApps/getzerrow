@@ -8,7 +8,7 @@
 import { describe, it, expect } from "vitest";
 import { decideFolder, type DecisionTrigger } from "./decide-folder";
 import type { AccountContext } from "./account-context";
-import type { Filter, Folder, InboxOverride } from "./types";
+import type { Filter, Folder } from "./types";
 import type { ParsedEmailForClassify } from "./classify";
 
 function folder(over: Partial<Folder> = {}): Folder {
@@ -115,9 +115,7 @@ describe("decideFolder precedence", () => {
   });
 
   it("rung 3: an always-inbox override wins over a filter match", () => {
-    const overrides = [
-      { id: "o1", kind: "domain", value: "stripe.com" },
-    ] as unknown as InboxOverride[];
+    const overrides = [{ id: "o1", match_type: "domain", value: "stripe.com" }];
     const r = decideFolder(parsed, context({ folders: [invoices], filters: [invoiceFilter], overrides }), {
       trigger: "arrival",
     });
@@ -126,9 +124,7 @@ describe("decideFolder precedence", () => {
   });
 
   it("rung 3: a folder with overrides_inbox_override opts out of the override", () => {
-    const overrides = [
-      { id: "o1", kind: "domain", value: "stripe.com" },
-    ] as unknown as InboxOverride[];
+    const overrides = [{ id: "o1", match_type: "domain", value: "stripe.com" }];
     const strong = folder({ ...invoices, overrides_inbox_override: true });
     const r = decideFolder(parsed, context({ folders: [strong], filters: [invoiceFilter], overrides }), {
       trigger: "arrival",
