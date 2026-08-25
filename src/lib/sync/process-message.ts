@@ -36,6 +36,7 @@ import {
 import { bumpEmailsSinceLearn } from "./folder-learn";
 import { toEmailUpsert } from "./email-upsert";
 import { upsertEmailEncrypted, updateEmailEncrypted } from "./encrypted-writer";
+import { persistDecision } from "./apply-decision";
 import { recordExecution } from "./executed-rules";
 import {
   dispatchFolderActions,
@@ -294,24 +295,14 @@ export async function applyFolderActions(
   return outcomes;
 }
 
-/** Persist a classification outcome onto an existing email row via the
- * encrypted-write RPC. Sensitive fields (ai_summary, classification_reason)
- * are encrypted; folder_id/ai_confidence/classified_by/matched_* are plain.
- * The RPC treats a null folder_id as "leave unchanged" — every caller here
- * runs against a row whose folder_id is already null, so a null outcome
- * correctly leaves it in the Inbox. */
+/** Persist a classification outcome onto an existing email row. Delegates
+ * to the single writer in ./apply-decision.ts, which also stores the
+ * decision trace (folders considered, rules fired, vetoes) when the
+ * decision carries one. */
 async function persistClassification(emailId: string, c: ClassificationResult) {
-  await updateEmailEncrypted({
-    email_id: emailId,
-    folder_id: c.folder_id,
-    ai_summary: c.ai_summary || null,
-    ai_confidence: c.ai_confidence,
-    classified_by: c.classified_by,
-    classification_reason: c.classification_reason,
-    matched_filter_ids: c.matched_filter_ids,
-    matched_folder_ids: c.matched_folder_ids,
-  });
+  await persistDecision(emailId, c);
 }
+
 
 /** After deterministic rules file an email into a folder that carries a
  * "surface to inbox" rule, ask the AI whether this specific message
