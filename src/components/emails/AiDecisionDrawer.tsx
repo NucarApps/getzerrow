@@ -178,14 +178,21 @@ export function AiDecisionDrawer({
             </div>
           )}
 
-          {/* Rules that fired / why the folder was chosen */}
-          <TriggeredBy
-            classifiedBy={email.classified_by}
-            reason={email.classification_reason}
-            folder={folderRule}
-            filters={filters}
-            email={email}
-          />
+          {/* Rules that fired / why the folder was chosen. A stored v2
+              trace explains the whole ladder; older messages fall back to
+              the recomputed summary. */}
+          {rulesTrace ? (
+            <RulesTracePanel trace={rulesTrace} />
+          ) : (
+            <TriggeredBy
+              classifiedBy={email.classified_by}
+              reason={email.classification_reason}
+              folder={folderRule}
+              filters={filters}
+              email={email}
+            />
+          )}
+
 
           {/* Runner-up folders */}
           {others.length > 0 && (
