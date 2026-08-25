@@ -36,6 +36,7 @@ import {
 import { bumpEmailsSinceLearn } from "./folder-learn";
 import { toEmailUpsert } from "./email-upsert";
 import { upsertEmailEncrypted, updateEmailEncrypted } from "./encrypted-writer";
+import { persistDecision } from "./apply-decision";
 import { recordExecution } from "./executed-rules";
 import {
   dispatchFolderActions,
