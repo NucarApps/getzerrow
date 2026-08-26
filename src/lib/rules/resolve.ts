@@ -25,7 +25,11 @@ import { MAX_TRACED_FAILED_RULES } from "./types";
 
 function checkCondition(m: EngineMessage, c: Condition): boolean {
   const f = { id: "", folder_id: "", field: c.field, op: c.op, value: c.value };
-  return EXCLUDE_OPS.has(c.op) ? filterVetoes(m, f) : applyFilter(m, f);
+  // Inside a rule, a negative operator is an ordinary positive condition:
+  // "subject does not contain invoice" passes when the subject does NOT
+  // contain it, and "domain is one of …" passes when the domain IS listed.
+  // filterVetoes answers the opposite (folder-level veto), so negate it.
+  return EXCLUDE_OPS.has(c.op) ? !filterVetoes(m, f) : applyFilter(m, f);
 }
 
 type GroupCheck = { matched: boolean; checks: ConditionCheck[] };

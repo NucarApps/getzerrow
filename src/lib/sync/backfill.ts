@@ -204,7 +204,25 @@ export async function tickBackfillJobs(maxJobs = 2) {
     .order("updated_at", { ascending: true })
     .limit(maxJobs);
   const results: Array<{ job_id: string; phase: string; added?: number; error?: string }> = [];
+
+  // Skip accounts whose Google grant is revoked/expired: every Gmail call
+  // would throw NeedsReconnectError until the user reconnects, so ticking
+  // them only produces repeated error logs.
+  const accountIds = Array.from(new Set((jobs ?? []).map((j) => j.gmail_account_id)));
+  const disconnected = new Set<string>();
+  if (accountIds.length > 0) {
+    const { data: accounts } = await supabaseAdmin
+      .from("gmail_accounts")
+      .select("id, needs_reconnect")
+      .in("id", accountIds);
+    for (const a of accounts ?? []) if (a.needs_reconnect) disconnected.add(a.id);
+  }
+
   for (const job of (jobs ?? []) as BackfillJob[]) {
+    if (disconnected.has(job.gmail_account_id)) {
+      results.push({ job_id: job.id, phase: "skipped_needs_reconnect" });
+      continue;
+    }
     try {
       const r = await tickBackfillJob(job);
       results.push({ job_id: job.id, ...r });
