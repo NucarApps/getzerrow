@@ -666,7 +666,10 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
       "id, user_id, email_address, auto_record_meetings, calendar_access, record_declined_meetings",
     )
     .eq("auto_record_meetings", true)
-    .eq("calendar_access", true);
+    .eq("calendar_access", true)
+    // A revoked/expired Google grant is already surfaced to the user through
+    // the reconnect banner; retrying it every 2 minutes only floods the logs.
+    .eq("needs_reconnect", false);
 
   // Cache each user's blocklist once per run (a user can have multiple accounts).
   const blocklistCache = new Map<string, Blocklist>();
