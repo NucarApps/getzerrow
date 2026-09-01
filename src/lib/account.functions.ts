@@ -6,6 +6,52 @@ import { revokeGoogleOAuthForAccount } from "./google-oauth.server";
 import { logError, logAudit } from "./log.server";
 
 /**
+ * Every `user_id`-keyed table that is erased directly on account deletion.
+ * Order matters only where one table references another by uuid in app
+ * code — RLS already scopes everything to user_id.
+ *
+ * `account.functions.test.ts` derives the set of user-data tables from the
+ * migrations and fails if one is missing from this list, from
+ * `ACCOUNT_ERASURE_INDIRECT`, or from an `ON DELETE CASCADE` chain rooted in
+ * one of them — that is how `tasks` (no FK to auth.users) went unerased.
+ */
+export const ACCOUNT_ERASURE_TABLES = [
+  "reply_drafts",
+  "folder_examples",
+  "folder_summary_jobs",
+  "folder_summary_schedules",
+  "folder_write_retries",
+  "folder_write_failures",
+  "message_jobs",
+  "backfill_jobs",
+  "email_search_index",
+  "emails",
+  "folders",
+  "inbox_override_exceptions",
+  "inbox_overrides",
+  "contact_revisions",
+  "contacts",
+  "contact_phones",
+  "contact_groups",
+  "contact_group_members",
+  "contact_cards_sent",
+  "company_aliases",
+  "company_group_assignments",
+  "company_logo_choices",
+  "my_cards",
+  "sync_state",
+  "game_scores",
+  "calendar_contacts",
+  "task_completion_suggestions",
+  "task_extraction_runs",
+  "tasks",
+  "gmail_accounts",
+] as const;
+
+/** Tables erased by a predicate other than `user_id` (see step 2 below). */
+export const ACCOUNT_ERASURE_INDIRECT = ["folder_filters", "card_events", "pubsub_events"] as const;
+
+/**
  * Permanently delete the authenticated user's account and all data we hold
  * about them. Revokes Google OAuth grants at Google, deletes per-user rows
  * across every table that stores user data, then deletes the auth user.
@@ -75,37 +121,8 @@ export const deleteAccount = createServerFn({ method: "POST" })
       }
     }
 
-    // 2b. Delete all per-user rows. Order matters only where one table
-    //    references another by uuid in app code — RLS already scopes
-    //    everything to user_id, and there are no FKs to cascade.
-    const tables = [
-      "reply_drafts",
-      "folder_examples",
-      "folder_summary_jobs",
-      "folder_summary_schedules",
-      "message_jobs",
-      "backfill_jobs",
-      "email_search_index",
-      "emails",
-      "folders",
-      "inbox_override_exceptions",
-      "inbox_overrides",
-      "contacts",
-      "contact_phones",
-      "contact_groups",
-      "contact_group_members",
-      "contact_cards_sent",
-      "company_aliases",
-      "company_group_assignments",
-      "company_logo_choices",
-      "my_cards",
-      "sync_state",
-      "game_scores",
-      "calendar_contacts",
-      "gmail_accounts",
-    ] as const;
-
-    for (const table of tables) {
+    // 2b. Delete all per-user rows (see ACCOUNT_ERASURE_TABLES).
+    for (const table of ACCOUNT_ERASURE_TABLES) {
       const { error } = await (
         supabaseAdmin.from(table) as unknown as {
           delete: () => {
