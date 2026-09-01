@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { escapeLike } from "../escape-like";
+import { emailDomain } from "../company-domains";
 import { loadOlderFromLabel, invalidateAccountContext } from "../sync.server";
 import { modifyMessage } from "../gmail.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -139,14 +140,18 @@ export const reassignDomainToFolder = createServerFn({ method: "POST" })
     }
 
     // Find emails in the source folder matching this domain
-    const { data: matches } = await supabaseAdmin
+    // The ilike is only a prefilter (`%@acme.com%` also matches
+    // `x@acme.com.evil.com`); the exact host check below is what decides,
+    // the same derivation the classifier and reprocess paths use.
+    const { data: candidates } = await supabaseAdmin
       .from("emails")
-      .select("id, gmail_message_id, gmail_account_id")
+      .select("id, gmail_message_id, gmail_account_id, from_addr")
       .eq("user_id", context.userId)
       .eq("folder_id", data.from_folder_id)
       .ilike("from_addr", `%@${escapeLike(domain)}%`);
+    const matches = (candidates ?? []).filter((m) => emailDomain(m.from_addr) === domain);
 
-    const ids = (matches ?? []).map((m) => m.id);
+    const ids = matches.map((m) => m.id);
 
     if (ids.length > 0) {
       const classReason = `Domain rule: ${domain} → ${to.name}`;
@@ -168,7 +173,7 @@ export const reassignDomainToFolder = createServerFn({ method: "POST" })
         const addLabels = to.gmail_label_id ? [to.gmail_label_id] : [];
         const removeLabels = from.gmail_label_id ? [from.gmail_label_id] : [];
         await Promise.all(
-          (matches ?? []).map(async (m) => {
+          matches.map(async (m) => {
             try {
               await modifyMessage(m.gmail_account_id, m.gmail_message_id, addLabels, removeLabels);
             } catch (e) {

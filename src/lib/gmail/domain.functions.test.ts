@@ -187,6 +187,38 @@ describe("reassignDomainToFolder", () => {
     ).rejects.toThrow("Not authorized");
   });
 
+  it("does not reassign a look-alike domain that only passes the ilike prefilter", async () => {
+    // `%@acme.com%` also matches `x@acme.com.evil.com`; the exact host check
+    // must exclude it (regression — this path used to trust the ilike).
+    seedFolders();
+    const LOOKALIKE = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    fake.seed("emails", [
+      {
+        id: EMAIL_1,
+        user_id: TEST_USER,
+        folder_id: FROM,
+        from_addr: "a@acme.com",
+        gmail_message_id: "gm-1",
+        gmail_account_id: ACC,
+      },
+      {
+        id: LOOKALIKE,
+        user_id: TEST_USER,
+        folder_id: FROM,
+        from_addr: "x@acme.com.evil.com",
+        gmail_message_id: "gm-9",
+        gmail_account_id: ACC,
+      },
+    ]);
+    const res = await reassignDomainToFolder({
+      data: { from_folder_id: FROM, to_folder_id: TO, domain: "acme.com" },
+    });
+    expect(res).toEqual({ moved: 1 });
+    const emailUpdates = fake.calls.updates.filter((u) => u.table === "emails");
+    expect(emailUpdates[0]!.filters).toEqual([{ op: "in", col: "id", value: [EMAIL_1] }]);
+    expect(updateEmailEncrypted).toHaveBeenCalledTimes(1);
+  });
+
   it("bulk-reassigns only the caller's rows in the source folder and performs the full bookkeeping", async () => {
     seedFolders();
     seedMatchingEmails();
