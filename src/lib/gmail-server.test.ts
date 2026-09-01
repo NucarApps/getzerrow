@@ -234,6 +234,17 @@ describe("getMessageLabels", () => {
     await expect(getMessageLabels("acc-1", "m-1")).resolves.toBeNull();
   });
 
+  it("a 500 whose message merely CONTAINS '404' (hex id, or body text) is NOT treated as deleted", async () => {
+    // Regression: detection used to be `message.includes("404")`; reconcile
+    // deletes the local row on null, so this was a data-loss path.
+    fetchMock.mockResolvedValueOnce(new Response("boom", { status: 500 }));
+    const byId = await captureError(getMessageLabels("acc-1", "18f404abc"));
+    expect(byId.status).toBe(500);
+    fetchMock.mockResolvedValueOnce(new Response("upstream returned 404", { status: 502 }));
+    const byBody = await captureError(getMessageLabels("acc-1", "m-1"));
+    expect(byBody.status).toBe(502);
+  });
+
   it("rethrows non-404 errors", async () => {
     fetchMock.mockResolvedValueOnce(new Response("boom", { status: 500 }));
     const err = await captureError(getMessageLabels("acc-1", "m-1"));

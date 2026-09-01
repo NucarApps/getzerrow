@@ -187,7 +187,11 @@ export async function getMessageLabels(accountId: string, id: string): Promise<s
     );
     return r.labelIds ?? [];
   } catch (e: unknown) {
-    if (e instanceof Error && e.message.includes("404")) return null;
+    // Only a real HTTP 404 means "gone". Matching on the message text was a
+    // data-loss bug: the message embeds the (hex) Gmail id and the response
+    // body, so a 500 for id `18f404abc` read as deleted and reconcile then
+    // dropped the local row.
+    if (e instanceof GmailApiError && e.status === 404) return null;
     throw e;
   }
 }
