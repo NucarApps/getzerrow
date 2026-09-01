@@ -11,40 +11,10 @@
 import { describe, it, expect } from "vitest";
 import { buildCatchupRow } from "./sync/catchup";
 import type { AccountContext } from "./sync.server";
+import { makeEmailRow, makeFolder, makeRule } from "./__fixtures__/email-row";
 
-type Folder = AccountContext["folders"][number];
-type Filter = AccountContext["filters"][number];
-
-function folder(over: Partial<Folder> = {}): Folder {
-  return {
-    id: over.id ?? "f-default",
-    name: over.name ?? "Default",
-    gmail_label_id: over.gmail_label_id ?? null,
-    ai_rule: over.ai_rule ?? "route mail here",
-    learned_profile: over.learned_profile ?? null,
-    last_learned_at: over.last_learned_at ?? null,
-    auto_archive: over.auto_archive ?? false,
-    auto_mark_read: over.auto_mark_read ?? false,
-    auto_star: over.auto_star ?? false,
-    hide_from_inbox: over.hide_from_inbox ?? false,
-    skip_ai: over.skip_ai ?? false,
-    priority: over.priority ?? 0,
-    gmail_account_id: over.gmail_account_id ?? "acc-1",
-    filter_logic: over.filter_logic ?? "any",
-    filter_tree: over.filter_tree ?? null,
-    forward_to: over.forward_to ?? null,
-    min_ai_confidence: over.min_ai_confidence ?? 0,
-    snooze_hours: over.snooze_hours ?? 0,
-    overrides_inbox_override: over.overrides_inbox_override ?? false,
-    is_cold_email: over.is_cold_email ?? false,
-    surface_ai_rule: over.surface_ai_rule ?? null,
-    surface_names: over.surface_names ?? null,
-  };
-}
-
-function filter(folder_id: string, field: string, op: string, value: string, id = ""): Filter {
-  return { id: id || `${folder_id}-${field}-${value}`, folder_id, field, op, value };
-}
+const folder = makeFolder;
+const filter = makeRule;
 
 function ctx(over: Partial<AccountContext> = {}): AccountContext {
   return {
@@ -60,28 +30,22 @@ function ctx(over: Partial<AccountContext> = {}): AccountContext {
   };
 }
 
-function parsed(over: Partial<ReturnType<typeof import("./gmail.server").parseMessage>> = {}) {
+function parsed(
+  over: Partial<ReturnType<typeof import("./gmail.server").parseMessage>> = {},
+): ReturnType<typeof import("./gmail.server").parseMessage> {
   return {
-    gmail_message_id: over.gmail_message_id ?? "g-1",
-    thread_id: over.thread_id ?? "t-1",
-    from_addr: over.from_addr ?? "sender@example.com",
-    from_name: over.from_name ?? "",
-    to_addrs: over.to_addrs ?? "me@example.com",
+    ...makeEmailRow(over),
     cc: over.cc ?? "",
     list_id: over.list_id ?? "",
     in_reply_to: over.in_reply_to ?? "",
+    raw_labels: over.raw_labels ?? ["INBOX"],
+    gmail_message_id: over.gmail_message_id ?? "g-1",
+    thread_id: over.thread_id ?? "t-1",
     reply_to_addr: over.reply_to_addr ?? null,
     origin_addr: over.origin_addr ?? null,
     origin_name: over.origin_name ?? null,
     is_forwarded: over.is_forwarded ?? false,
-    subject: over.subject ?? "",
-    snippet: over.snippet ?? "",
-    body_text: over.body_text ?? "",
-    body_html: over.body_html ?? "",
-    received_at: over.received_at ?? new Date().toISOString(),
-    has_attachment: over.has_attachment ?? false,
     has_calendar_invite: over.has_calendar_invite ?? false,
-    raw_labels: over.raw_labels ?? ["INBOX"],
     is_read: over.is_read ?? false,
   };
 }

@@ -123,7 +123,7 @@ describe("repullContact additive merge", () => {
     expect(fake.calls.deletes).toHaveLength(0);
     const inserts = writesTo("inserts", "contact_emails");
     expect(inserts).toHaveLength(1);
-    expect(inserts[0].payload).toEqual([
+    expect(inserts[0]!.payload).toEqual([
       {
         user_id: USER,
         contact_id: CT1,
@@ -153,7 +153,7 @@ describe("repullContact additive merge", () => {
     expect(res).toEqual({ ok: true, emailsAdded: 0, phonesAdded: 1 });
     const inserts = writesTo("inserts", "contact_phones");
     expect(inserts).toHaveLength(1);
-    expect(inserts[0].payload).toEqual([
+    expect(inserts[0]!.payload).toEqual([
       {
         user_id: USER,
         contact_id: CT1,
@@ -174,10 +174,10 @@ describe("repullContact additive merge", () => {
     expect(res.ok).toBe(true);
     const updates = writesTo("updates", "google_contact_links");
     expect(updates).toHaveLength(1);
-    const payload = updates[0].payload as Record<string, unknown>;
+    const payload = updates[0]!.payload as Record<string, unknown>;
     expect(payload.etag).toBe("fresh-etag");
     expect(typeof payload.last_synced_at).toBe("string");
-    expect(updates[0].filters).toEqual(
+    expect(updates[0]!.filters).toEqual(
       expect.arrayContaining([
         { op: "eq", col: "gmail_account_id", value: ACC },
         { op: "eq", col: "resource_name", value: RESOURCE },
@@ -214,6 +214,6 @@ describe("backfillMultiEmails", () => {
       (c) => c[0] === "google_contacts.repair.backfill_item_failed",
     );
     expect(itemFailures).toHaveLength(1);
-    expect(itemFailures[0][1]).toMatchObject({ contact_id: "c-boom" });
+    expect(itemFailures[0]![1]).toMatchObject({ contact_id: "c-boom" });
   });
 });

@@ -1,45 +1,61 @@
-// Live integration tests against the deployed public endpoints. These verify
-// that cron and webhook endpoints reject requests without the correct secrets.
+// Live post-deploy smoke: the deployed public endpoints reject requests
+// without the correct secrets.
 //
-// These tests hit a real URL and are skipped unless PUBLIC_BASE_URL is set.
-// Run against the preview (latest build):
-//   PUBLIC_BASE_URL=https://project--9ca78824-55f5-4897-b74d-b5b1d219918a-dev.lovable.app bun run test:integration
-// Run against production after publishing:
+// The CI gate for cron auth is the IN-PROCESS suite at
+// src/routes/api/public/cron-auth.test.ts, which runs on every PR with no
+// deployed URL. This file is the optional live-HTTP complement — run it
+// against a real deployment after publishing:
 //   PUBLIC_BASE_URL=https://getzerrow.lovable.app bun run test:integration
+//
+// Skipped entirely (like the other integration suites) unless
+// PUBLIC_BASE_URL is set, so a bare `bun run test:integration` no longer
+// fires ~80 fetches at "undefined/api/public/...".
+//
+// The endpoint list is DERIVED from src/routes/api/public/ at run time so
+// it can never drift out of sync with the routes dir again (the old
+// hand-maintained list needed a "task 13 audit" to catch back up). Routes
+// with their own auth scheme are excluded below, each with the reason.
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 
 const BASE = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "");
+const enabled = !!BASE;
+const d = enabled ? describe : describe.skip;
 
-// Every /api/public/* endpoint gated by isAuthorizedCronRequest belongs in
-// this list (task 13 audit brought it back in sync with the routes dir).
-const CRON_ENDPOINTS = [
-  "/api/public/gmail-poll",
-  "/api/public/gmail-process-jobs",
-  "/api/public/gmail-renew-watches",
-  "/api/public/gmail-reconcile",
-  "/api/public/gmail-backfill-tick",
-  "/api/public/gmail-dlq-replay",
-  "/api/public/gmail-retention",
-  "/api/public/gmail-rescue-classify",
-  "/api/public/gmail-search-reindex",
-  "/api/public/health",
-  "/api/public/hooks/categorize-senders",
-  "/api/public/hooks/check-folder-retry-alerts",
-  "/api/public/hooks/check-folder-write-alerts",
-  "/api/public/hooks/consolidate-label-duplicates",
-  "/api/public/hooks/enqueue-contact-enrichment",
-  "/api/public/hooks/google-contacts-sync",
-  "/api/public/hooks/reconcile-meetings",
-  "/api/public/hooks/relearn-folders",
-  "/api/public/hooks/run-contact-enrich-jobs",
-  "/api/public/hooks/run-folder-summaries",
-  "/api/public/hooks/run-folder-summary-jobs",
-  "/api/public/hooks/run-scheduled-actions",
-  "/api/public/hooks/schedule-meeting-bots",
-  "/api/public/hooks/send-digest",
-  "/api/public/hooks/sync-calendar-contacts",
-  "/api/public/hooks/tasks-completion-scan",
-];
+// Routes under /api/public that are NOT gated by the shared cron secret.
+// Every entry must name its own auth story; anything not listed here is
+// expected to 401 on the cron sweep below.
+const NON_CRON_ROUTES = new Set([
+  "gmail-webhook", // GMAIL_WEBHOOK_TOKEN query param — covered by its own describe below
+  "google-oauth-callback", // OAuth state round-trip, browser-facing
+  "logo", // public logo proxy with its own guards
+  "meeting-recording", // signed per-meeting stream token (verifyRecordingStreamToken)
+  "recall-realtime", // x-recall-token constant-time compare
+  "recall-webhook", // Svix signature (RECALL_WEBHOOK_SECRET)
+  "carddav", // CardDAV's own auth (carddav/auth.server.ts)
+  "og", // public OG images
+]);
+
+/** Every /api/public route path, derived from the routes dir. */
+function cronEndpoints(): string[] {
+  const root = join(process.cwd(), "src/routes/api/public");
+  const out: string[] = [];
+  for (const entry of readdirSync(root, { withFileTypes: true, recursive: true })) {
+    if (!entry.isFile()) continue;
+    // Test files live beside the routes (cron-auth.test.ts) but are kept
+    // out of the deployed route tree by routeFileIgnorePattern — sweeping
+    // them would 404, not 401.
+    if (/\.test\.tsx?$/.test(entry.name)) continue;
+    const rel = join(entry.parentPath ?? "", entry.name)
+      .slice(root.length + 1)
+      .replace(/\.tsx?$/, "");
+    const top = (rel.split("/")[0] ?? "").replace(/\.\$.*$/, "").replace(/\$$/, "");
+    if (NON_CRON_ROUTES.has(top) || NON_CRON_ROUTES.has(rel)) continue;
+    out.push(`/api/public/${rel}`);
+  }
+  return out.sort();
+}
 
 async function post(path: string, init: RequestInit = {}) {
   return fetch(`${BASE}${path}`, {
@@ -49,8 +65,16 @@ async function post(path: string, init: RequestInit = {}) {
   });
 }
 
-describe("cron endpoints reject unauthenticated calls", () => {
-  for (const path of CRON_ENDPOINTS) {
+d("cron endpoints reject unauthenticated calls", () => {
+  it("enumeration sanity: the sweep found the routes dir", () => {
+    // Guards against a silent empty sweep (e.g. Dirent.parentPath absent
+    // on an old Node, or the dir moving) — mirrors cron-auth.test.ts.
+    const endpoints = cronEndpoints();
+    expect(endpoints).toContain("/api/public/gmail-poll");
+    expect(endpoints.length).toBeGreaterThanOrEqual(20);
+  });
+
+  for (const path of cronEndpoints()) {
     it(`${path} returns 401 with no Authorization header`, async () => {
       const res = await post(path, { body: "{}" });
       expect(res.status, await res.text()).toBe(401);
@@ -74,7 +98,7 @@ describe("cron endpoints reject unauthenticated calls", () => {
   }
 });
 
-describe("gmail-webhook rejects unauthenticated calls", () => {
+d("gmail-webhook rejects unauthenticated calls", () => {
   const path = "/api/public/gmail-webhook";
 
   it("returns 401 when ?token=... is missing", async () => {

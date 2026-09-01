@@ -116,7 +116,7 @@ describe("dispatch enqueues outbound actions", () => {
     expect(outcomes[0]).toMatchObject({ action_type: "reply", status: "pending" });
     const queued = fake.calls.inserts.filter((i) => i.table === "scheduled_actions");
     expect(queued).toHaveLength(1);
-    const runAt = new Date((queued[0].payload as { run_at: string }).run_at).getTime();
+    const runAt = new Date((queued[0]!.payload as { run_at: string }).run_at).getTime();
     expect(runAt - Date.now()).toBeGreaterThan(4 * 60_000);
   });
 
@@ -135,8 +135,8 @@ describe("dispatch enqueues outbound actions", () => {
       emailRowId: "e1",
       userId: "user-1",
     });
-    expect(outcomes[0].status).toBe("error");
-    expect(outcomes[0].error).toContain("to_addr");
+    expect(outcomes[0]!.status).toBe("error");
+    expect(outcomes[0]!.error).toContain("to_addr");
     expect(fake.calls.inserts.filter((i) => i.table === "scheduled_actions")).toHaveLength(0);
   });
 });

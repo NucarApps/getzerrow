@@ -134,11 +134,11 @@ describe("label math and Gmail write-back", () => {
 
     const emailUpdates = fake.calls.updates.filter((u) => u.table === "emails");
     expect(emailUpdates).toHaveLength(1);
-    expect(emailUpdates[0].payload).toEqual({
+    expect(emailUpdates[0]!.payload).toEqual({
       is_archived: true,
       raw_labels: ["KEEP", "L-TO"],
     });
-    expect(emailUpdates[0].filters).toEqual([{ op: "eq", col: "id", value: "email-1" }]);
+    expect(emailUpdates[0]!.filters).toEqual([{ op: "eq", col: "id", value: "email-1" }]);
 
     expect(modifyMessage).toHaveBeenCalledTimes(1);
     expect(modifyMessage).toHaveBeenCalledWith("acc-1", "gm-1", ["L-TO"], ["INBOX", "L-FROM"]);
@@ -211,7 +211,7 @@ describe("training examples and retrain", () => {
 
     const exampleDeletes = fake.calls.deletes.filter((d) => d.table === "folder_examples");
     expect(exampleDeletes).toHaveLength(1);
-    expect(exampleDeletes[0].filters).toEqual([
+    expect(exampleDeletes[0]!.filters).toEqual([
       { op: "eq", col: "folder_id", value: "folder-from" },
       { op: "eq", col: "gmail_message_id", value: "gm-1" },
     ]);

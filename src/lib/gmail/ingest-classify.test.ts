@@ -8,54 +8,23 @@ import {
   type IngestCandidate,
   type IngestClassifyContext,
 } from "./ingest-classify";
-import type { Filter, Folder, RuleNode } from "../sync/types";
+import type { Folder, RuleNode } from "../sync/types";
+import { makeEmailRow, makeFolder, makeRule, type EmailRowFields } from "../__fixtures__/email-row";
 
 function folder(over: Partial<Folder> = {}): Folder {
-  return {
-    id: over.id ?? "f1",
-    name: over.name ?? "Default",
-    gmail_label_id: over.gmail_label_id ?? null,
-    ai_rule: over.ai_rule ?? null,
-    learned_profile: over.learned_profile ?? null,
-    last_learned_at: over.last_learned_at ?? null,
-    auto_archive: over.auto_archive ?? false,
-    auto_mark_read: over.auto_mark_read ?? false,
-    auto_star: over.auto_star ?? false,
-    hide_from_inbox: over.hide_from_inbox ?? false,
-    skip_ai: over.skip_ai ?? false,
-    priority: over.priority ?? 0,
-    gmail_account_id: over.gmail_account_id ?? "acc-1",
-    filter_logic: over.filter_logic ?? "any",
-    filter_tree: over.filter_tree ?? null,
-    forward_to: over.forward_to ?? null,
-    min_ai_confidence: over.min_ai_confidence ?? 0,
-    snooze_hours: over.snooze_hours ?? 0,
-    overrides_inbox_override: over.overrides_inbox_override ?? false,
-    is_cold_email: over.is_cold_email ?? false,
-    surface_ai_rule: over.surface_ai_rule ?? null,
-    surface_names: over.surface_names ?? null,
-  };
+  return makeFolder({ id: "f1", ai_rule: null, ...over });
 }
 
-const filter = (
-  folder_id: string,
-  field: string,
-  op: string,
-  value: string,
-  id?: string,
-): Filter => ({ id: id ?? `${folder_id}-${field}-${value}`, folder_id, field, op, value });
+const filter = makeRule;
 
 function candidate(over: Partial<IngestCandidate> = {}): IngestCandidate {
-  return {
+  return makeEmailRow({
     from_addr: "jane@acme.com",
     from_name: "Jane",
-    to_addrs: "me@example.com",
     subject: "Quarterly report",
     body_text: "body",
-    has_attachment: false,
-    raw_labels: ["INBOX"],
-    ...over,
-  };
+    ...(over as Partial<EmailRowFields>),
+  });
 }
 
 function ctx(over: Partial<IngestClassifyContext> = {}): IngestClassifyContext {

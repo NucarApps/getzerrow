@@ -264,12 +264,14 @@ export function makeSupabaseFake(init?: {
       select() {
         return {
           async single() {
-            await settle();
+            const { error } = await settle();
+            if (error) return { data: null, error };
             const first = Array.isArray(payload) ? payload[0] : payload;
             return { data: (first as FakeRow) ?? null, error: null };
           },
           async maybeSingle() {
-            await settle();
+            const { error } = await settle();
+            if (error) return { data: null, error };
             const first = Array.isArray(payload) ? payload[0] : payload;
             return { data: (first as FakeRow) ?? null, error: null };
           },

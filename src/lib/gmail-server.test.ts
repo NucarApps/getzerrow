@@ -24,7 +24,6 @@ import {
 } from "./gmail.server";
 
 const fetchMock = vi.fn<typeof fetch>();
-vi.stubGlobal("fetch", fetchMock);
 
 const savedTopic = process.env.GMAIL_PUBSUB_TOPIC;
 
@@ -44,6 +43,10 @@ async function captureError(promise: Promise<unknown>): Promise<GmailApiError> {
 
 beforeEach(() => {
   fetchMock.mockReset();
+  // Stubbed per-test: the global teardown in src/test-setup.ts unstubs all
+  // globals after every test, so a module-level stub would only survive the
+  // first test in the file.
+  vi.stubGlobal("fetch", fetchMock);
   delete process.env.GMAIL_PUBSUB_TOPIC;
 });
 
@@ -79,7 +82,7 @@ describe("GmailApiError status mapping", () => {
   it("sends the OAuth token as a Bearer Authorization header", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ labels: [] }));
     await listLabels("acc-1");
-    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok");
   });
 });
@@ -253,10 +256,10 @@ describe("batchModifyMessages", () => {
     const bodies = fetchMock.mock.calls.map(
       (c) => JSON.parse((c[1] as RequestInit).body as string) as { ids: string[] },
     );
-    expect(bodies[0].ids).toHaveLength(1000);
-    expect(bodies[1].ids).toHaveLength(500);
-    expect(bodies[0].ids[0]).toBe("m-0");
-    expect(bodies[1].ids[0]).toBe("m-1000");
+    expect(bodies[0]!.ids).toHaveLength(1000);
+    expect(bodies[1]!.ids).toHaveLength(500);
+    expect(bodies[0]!.ids[0]).toBe("m-0");
+    expect(bodies[1]!.ids[0]).toBe("m-1000");
   });
 
   it("makes zero API calls for an empty id list", async () => {
@@ -269,7 +272,7 @@ describe("sendMessage", () => {
   it("encodes the RFC 822 payload as unpadded base64url", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: "sent-1" }));
     await sendMessage("acc-1", "to@x.com", "Hi", "body text");
-    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string) as {
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string) as {
       raw: string;
       threadId?: string;
     };
@@ -290,7 +293,7 @@ describe("sendMessage", () => {
   it("adds In-Reply-To/References headers and threadId only when replying", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: "sent-2" }));
     await sendMessage("acc-1", "to@x.com", "Re: Hi", "reply", "thread-9", "<msg-id@x.com>");
-    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string) as {
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string) as {
       raw: string;
       threadId?: string;
     };
@@ -327,7 +330,7 @@ describe("ensureWatch", () => {
     await ensureWatch("acc-1", null);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    const [url, init] = fetchMock.mock.calls[0];
+    const [url, init] = fetchMock.mock.calls[0]!;
     expect(String(url)).toContain("/users/me/watch");
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       topicName: "projects/p/topics/t",

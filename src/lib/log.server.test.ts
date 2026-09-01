@@ -13,7 +13,7 @@ function captureLog(fn: () => void): Record<string, unknown> {
   const spy = vi.spyOn(console, "log").mockImplementation(() => {});
   fn();
   expect(spy).toHaveBeenCalledTimes(1);
-  return JSON.parse(spy.mock.calls[0][0] as string) as Record<string, unknown>;
+  return JSON.parse(spy.mock.calls[0]![0] as string) as Record<string, unknown>;
 }
 
 describe("logMetric", () => {

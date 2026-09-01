@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { evaluate } from "./evaluate";
-import type {
-  EngineFolder,
-  EngineMessage,
-  EvaluateContext,
-  Guardrail,
-  Pin,
-  Rule,
-} from "./types";
+import type { EngineFolder, EngineMessage, EvaluateContext, Guardrail, Pin, Rule } from "./types";
 
 const folders: EngineFolder[] = [
   { id: "receipts", name: "Receipts", description: "Order receipts and invoices" },
@@ -92,7 +85,13 @@ describe("evaluate — stage order (Amendment 1)", () => {
 
   it("stage 2 folder pin beats hard rules", () => {
     const pins: Pin[] = [
-      { id: "p", kind: "folder", match: "email", value: "billing@amazon.com", folder_id: "shipping" },
+      {
+        id: "p",
+        kind: "folder",
+        match: "email",
+        value: "billing@amazon.com",
+        folder_id: "shipping",
+      },
     ];
     const res = evaluate(msg(), ctx({ pins, rules: [domainRule] }), opts);
     expect(res.stage).toBe("pin");
@@ -159,11 +158,10 @@ describe("evaluate — stage order (Amendment 1)", () => {
 
   it("AI is disabled for backfill, reprocess and replay", () => {
     for (const trigger of ["backfill", "reprocess", "replay"] as const) {
-      const res = evaluate(
-        msg({ from_addr: "someone@unknown.com" }),
-        ctx(),
-        { trigger, aiEnabled: false },
-      );
+      const res = evaluate(msg({ from_addr: "someone@unknown.com" }), ctx(), {
+        trigger,
+        aiEnabled: false,
+      });
       expect(res.needs_ai).toBe(false);
       expect(res.stage).toBe("inbox");
     }

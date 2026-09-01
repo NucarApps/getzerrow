@@ -89,7 +89,8 @@ describe("signState / verifyState", () => {
   it("rejects a tampered signature", async () => {
     const state = await signState("user-123");
     const [payload, sig] = state.split(".");
-    const flipped = (sig[0] === "A" ? "B" : "A") + sig.slice(1);
+    expect(sig).toBeDefined();
+    const flipped = (sig![0] === "A" ? "B" : "A") + sig!.slice(1);
     await expect(verifyState(`${payload}.${flipped}`)).rejects.toThrow("Invalid state signature");
   });
 
@@ -283,7 +284,7 @@ describe("revokeGoogleOAuthForAccount", () => {
     const fetchMock = stubRevokeFetch(200);
     await revokeGoogleOAuthForAccount("acc-1");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const url = new URL(fetchMock.mock.calls[0][0].toString());
+    const url = new URL(fetchMock.mock.calls[0]![0].toString());
     expect(url.searchParams.get("token")).toBe("rt");
     // Token fetch used the encrypted-token RPC with the server-held key.
     expect(fake.calls.rpcs).toEqual([
@@ -297,7 +298,7 @@ describe("revokeGoogleOAuthForAccount", () => {
     }));
     const fetchMock = stubRevokeFetch(200);
     await revokeGoogleOAuthForAccount("acc-1");
-    const url = new URL(fetchMock.mock.calls[0][0].toString());
+    const url = new URL(fetchMock.mock.calls[0]![0].toString());
     expect(url.searchParams.get("token")).toBe("at");
   });
 

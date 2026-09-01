@@ -100,7 +100,7 @@ describe("getAccessToken", () => {
     const mod = await importSut();
     await expect(mod.getAccessToken(ACC)).rejects.toThrow(mod.NeedsReconnectError);
     expect(fake.calls.updates).toHaveLength(1);
-    const upd = fake.calls.updates[0];
+    const upd = fake.calls.updates[0]!;
     expect(upd.table).toBe("gmail_accounts");
     expect(upd.payload).toMatchObject({ needs_reconnect: true });
     expect(upd.filters).toEqual([{ op: "eq", col: "id", value: ACC }]);
@@ -163,19 +163,19 @@ describe("getAccessToken", () => {
 
     const p1 = mod.getAccessToken(ACC);
     const p2 = mod.getAccessToken(ACC);
-    // Let both callers pass the DB reads and reach the in-flight map before
-    // the (single) refresh resolves.
-    await new Promise((r) => setTimeout(r, 0));
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    resolvers[0](refreshResponse("shared-at"));
+    // Wait until the coalesced refresh reaches Google, however many awaits
+    // the code path grows, then release it.
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    resolvers[0]!(refreshResponse("shared-at"));
     await expect(Promise.all([p1, p2])).resolves.toEqual(["shared-at", "shared-at"]);
+    // Both callers have settled, so the fetch count is final: exactly one.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
     // Map is cleared: a later call (token still expired in the fake) must
     // start a fresh refresh instead of reusing a settled promise.
     const p3 = mod.getAccessToken(ACC);
-    await new Promise((r) => setTimeout(r, 0));
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    resolvers[1](refreshResponse("later-at"));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    resolvers[1]!(refreshResponse("later-at"));
     await expect(p3).resolves.toBe("later-at");
   });
 
@@ -188,7 +188,7 @@ describe("getAccessToken", () => {
     const mod = await importSut();
     await expect(mod.getAccessToken(ACC)).rejects.toThrow(mod.NeedsReconnectError);
     expect(fake.calls.updates).toHaveLength(1);
-    expect(fake.calls.updates[0].payload).toMatchObject({ needs_reconnect: true });
+    expect(fake.calls.updates[0]!.payload).toMatchObject({ needs_reconnect: true });
   });
 
   it("invalid_client throws AppCredentialError WITHOUT flagging the account", async () => {

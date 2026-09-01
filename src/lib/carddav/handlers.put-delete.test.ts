@@ -218,7 +218,7 @@ describe("PUT create", () => {
 
     const inserts = writesTo("inserts", "contacts");
     expect(inserts).toHaveLength(1);
-    const payload = inserts[0].payload as Record<string, unknown>;
+    const payload = inserts[0]!.payload as Record<string, unknown>;
     // Ownership contract: identity comes from the URL + verified auth user,
     // never from what the client typed into the vCard body.
     expect(payload.id).toBe(C_NEW);
@@ -300,7 +300,7 @@ describe("PUT field preservation", () => {
 
     const dels = writesTo("deletes", "contact_phones");
     expect(dels).toHaveLength(1);
-    expect(dels[0].filters).toEqual(
+    expect(dels[0]!.filters).toEqual(
       expect.arrayContaining([
         { op: "eq", col: "contact_id", value: C1 },
         { op: "eq", col: "user_id", value: USER },
@@ -309,7 +309,7 @@ describe("PUT field preservation", () => {
 
     const inserts = writesTo("inserts", "contact_phones");
     expect(inserts).toHaveLength(1);
-    const rows = inserts[0].payload as Array<Record<string, unknown>>;
+    const rows = inserts[0]!.payload as Array<Record<string, unknown>>;
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({
       user_id: USER,
@@ -336,7 +336,7 @@ describe("PUT field preservation", () => {
     expect(res.status).toBe(204);
     expect(writesTo("deletes", "contact_emails")).toHaveLength(0);
     expect(writesTo("inserts", "contact_emails")).toHaveLength(0);
-    const patch = writesTo("updates", "contacts")[0].payload as Record<string, unknown>;
+    const patch = writesTo("updates", "contacts")[0]!.payload as Record<string, unknown>;
     expect(Object.prototype.hasOwnProperty.call(patch, "email")).toBe(false);
   });
 
@@ -359,7 +359,7 @@ describe("PUT field preservation", () => {
       address_line2: "", // absent second line clears, per the ADR-present contract
     });
     // Plaintext city/region ride the contacts patch.
-    const patch = writesTo("updates", "contacts")[0].payload as Record<string, unknown>;
+    const patch = writesTo("updates", "contacts")[0]!.payload as Record<string, unknown>;
     expect(patch).toMatchObject({ city: "Springfield", region: "IL", postal_code: "62704" });
   });
 
@@ -395,10 +395,10 @@ describe("PUT field preservation", () => {
 
     const upserts = writesTo("upserts", "contact_group_members");
     expect(upserts).toHaveLength(1);
-    expect(upserts[0].payload).toEqual([
+    expect(upserts[0]!.payload).toEqual([
       { group_id: G1, contact_id: C1, user_id: USER, auto_added: false },
     ]);
-    expect(upserts[0].options).toEqual({
+    expect(upserts[0]!.options).toEqual({
       onConflict: "group_id,contact_id",
       ignoreDuplicates: true,
     });
@@ -406,7 +406,7 @@ describe("PUT field preservation", () => {
     // Only MANUAL rows are diffed away, scoped by auto_added=false.
     const dels = writesTo("deletes", "contact_group_members");
     expect(dels).toHaveLength(1);
-    expect(dels[0].filters).toEqual(
+    expect(dels[0]!.filters).toEqual(
       expect.arrayContaining([
         { op: "eq", col: "auto_added", value: false },
         { op: "in", col: "group_id", value: [G2] },
@@ -426,8 +426,8 @@ describe("PUT bookkeeping", () => {
     await put(contactPath(C1), vcardBody(["FN:Erica Roy"]));
     const linkUpdates = writesTo("updates", "google_contact_links");
     expect(linkUpdates).toHaveLength(1);
-    expect(linkUpdates[0].payload).toEqual({ last_synced_at: GOOGLE_DIRTY_SENTINEL });
-    expect(linkUpdates[0].filters).toEqual(
+    expect(linkUpdates[0]!.payload).toEqual({ last_synced_at: GOOGLE_DIRTY_SENTINEL });
+    expect(linkUpdates[0]!.filters).toEqual(
       expect.arrayContaining([
         { op: "eq", col: "user_id", value: USER },
         { op: "eq", col: "contact_id", value: C1 },
@@ -456,7 +456,7 @@ describe("PUT group vCard", () => {
 
     const groupInserts = writesTo("inserts", "contact_groups");
     expect(groupInserts).toHaveLength(1);
-    expect(groupInserts[0].payload).toMatchObject({
+    expect(groupInserts[0]!.payload).toMatchObject({
       id: G_NEW,
       user_id: USER,
       name: "VIPs",
@@ -467,7 +467,7 @@ describe("PUT group vCard", () => {
     // contact id must be dropped, never linked across users.
     const memberInserts = writesTo("inserts", "contact_group_members");
     expect(memberInserts).toHaveLength(1);
-    expect(memberInserts[0].payload).toEqual([{ group_id: G_NEW, contact_id: C1, user_id: USER }]);
+    expect(memberInserts[0]!.payload).toEqual([{ group_id: G_NEW, contact_id: C1, user_id: USER }]);
   });
 });
 
@@ -513,12 +513,12 @@ describe("DELETE", () => {
     expect(writesTo("deletes", "contacts")).toHaveLength(1);
     const tombs = writesTo("upserts", "carddav_tombstones");
     expect(tombs).toHaveLength(1);
-    expect(tombs[0].payload).toMatchObject({
+    expect(tombs[0]!.payload).toMatchObject({
       user_id: USER,
       resource_type: "contact",
       resource_id: C1,
     });
-    expect(tombs[0].options).toEqual({ onConflict: "user_id,resource_type,resource_id" });
+    expect(tombs[0]!.options).toEqual({ onConflict: "user_id,resource_type,resource_id" });
   });
 
   it("returns 404 for an unknown contact and 412 for a stale If-Match", async () => {
@@ -545,14 +545,14 @@ describe("DELETE", () => {
 
     const memberDels = writesTo("deletes", "contact_group_members");
     expect(memberDels).toHaveLength(1);
-    expect(memberDels[0].filters).toEqual(
+    expect(memberDels[0]!.filters).toEqual(
       expect.arrayContaining([{ op: "eq", col: "group_id", value: G1 }]),
     );
 
     // Folder rules that referenced the group must not dangle.
     const filterDels = writesTo("deletes", "folder_filters");
     expect(filterDels).toHaveLength(1);
-    expect(filterDels[0].filters).toEqual(
+    expect(filterDels[0]!.filters).toEqual(
       expect.arrayContaining([
         { op: "eq", col: "op", value: "sender_in_group" },
         { op: "eq", col: "value", value: G1 },
@@ -561,6 +561,6 @@ describe("DELETE", () => {
 
     expect(writesTo("deletes", "contact_groups")).toHaveLength(1);
     const tombs = writesTo("upserts", "carddav_tombstones");
-    expect(tombs[0].payload).toMatchObject({ resource_type: "group", resource_id: G1 });
+    expect(tombs[0]!.payload).toMatchObject({ resource_type: "group", resource_id: G1 });
   });
 });

@@ -65,7 +65,7 @@ describe("contactToPerson", () => {
     ]);
     expect(p.emailAddresses?.[0]?.value).toBe("jane@acme.com");
     expect(p.phoneNumbers).toHaveLength(2);
-    expect(p.phoneNumbers?.[0].metadata?.primary).toBe(true);
+    expect(p.phoneNumbers?.[0]?.metadata?.primary).toBe(true);
     expect(p.organizations?.[0]).toEqual({ name: "Acme", title: "VP Sales" });
     expect(p.biographies?.[0]?.value).toBe("Loves coffee");
     expect(p.addresses?.[0]).toMatchObject({
@@ -171,7 +171,7 @@ describe("personToContact", () => {
     expect(parsed.patch.linkedin).toBe("https://linkedin.com/in/jane");
     expect(parsed.patch.primary_phone).toBe("+1 415 555 0100");
     expect(parsed.phones).toHaveLength(2);
-    expect(parsed.phones[0].is_primary).toBe(true);
+    expect(parsed.phones[0]!.is_primary).toBe(true);
     expect(parsed.membershipResourceNames).toEqual(["contactGroups/abc", "contactGroups/xyz"]);
     expect(parsed.updateTime).toBe("2026-01-01T12:00:00Z");
   });

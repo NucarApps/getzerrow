@@ -253,7 +253,7 @@ describe("insertFolderExampleEncrypted retry engine", () => {
     const res = await insertFolderExampleEncrypted(exampleInput);
     expect(res).toEqual({ id: "ex-1", error: null });
     expect(fake.calls.rpcs).toHaveLength(1);
-    expect(fake.calls.rpcs[0].args).toMatchObject({
+    expect(fake.calls.rpcs[0]!.args).toMatchObject({
       p_user_id: "user-1",
       p_gmail_account_id: "acc-1",
       p_folder_id: "folder-1",
@@ -276,8 +276,8 @@ describe("insertFolderExampleEncrypted retry engine", () => {
     expect(fake.calls.rpcs).toHaveLength(2);
     // Idempotency invariant: both attempts carry the same
     // (folder_id, gmail_message_id) natural key and full payload.
-    expect(fake.calls.rpcs[1].args).toEqual(fake.calls.rpcs[0].args);
-    expect(fake.calls.rpcs[0].args).toMatchObject({
+    expect(fake.calls.rpcs[1]!.args).toEqual(fake.calls.rpcs[0]!.args);
+    expect(fake.calls.rpcs[0]!.args).toMatchObject({
       p_folder_id: "folder-1",
       p_gmail_message_id: "msg-1",
       p_source: "manual_move",
@@ -285,7 +285,7 @@ describe("insertFolderExampleEncrypted retry engine", () => {
 
     const retryRecords = fake.calls.inserts.filter((i) => i.table === "folder_write_retries");
     expect(retryRecords).toHaveLength(1);
-    expect(retryRecords[0].payload).toMatchObject({
+    expect(retryRecords[0]!.payload).toMatchObject({
       user_id: "user-1",
       folder_id: "folder-1",
       attempts: 2,
@@ -305,7 +305,7 @@ describe("insertFolderExampleEncrypted retry engine", () => {
 
     const failures = fake.calls.inserts.filter((i) => i.table === "folder_write_failures");
     expect(failures).toHaveLength(1);
-    expect(failures[0].payload).toMatchObject({
+    expect(failures[0]!.payload).toMatchObject({
       user_id: "user-1",
       folder_id: "folder-1",
       error_code: "42703",
@@ -325,7 +325,7 @@ describe("insertFolderExampleEncrypted retry engine", () => {
 
     const retryRecords = fake.calls.inserts.filter((i) => i.table === "folder_write_retries");
     expect(retryRecords).toHaveLength(1);
-    expect(retryRecords[0].payload).toMatchObject({
+    expect(retryRecords[0]!.payload).toMatchObject({
       attempts: 3,
       outcome: "failure",
       error_code: "57014",

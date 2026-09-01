@@ -3,11 +3,24 @@ import { evaluateRule } from "./resolve";
 import type { EngineMessage, Rule } from "./types";
 
 const msg = (subject: string, from = "billing@acme.com"): EngineMessage =>
-  ({ id: "m1", from_addr: from, from_name: "", subject, snippet: "", to: "", cc: "",
-     reply_to: "", list_id: "", has_attachment: false, is_reply: false } as unknown as EngineMessage);
+  ({
+    id: "m1",
+    from_addr: from,
+    from_name: "",
+    subject,
+    snippet: "",
+    to: "",
+    cc: "",
+    reply_to: "",
+    list_id: "",
+    has_attachment: false,
+    is_reply: false,
+  }) as unknown as EngineMessage;
 
 const rule = (op: string, value: string, field = "subject"): Rule => ({
-  id: "r1", folder_id: "f1", created_at: "2020-01-01T00:00:00Z",
+  id: "r1",
+  folder_id: "f1",
+  created_at: "2020-01-01T00:00:00Z",
   groups: [[{ field, op, value }]],
 });
 

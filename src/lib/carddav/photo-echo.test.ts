@@ -8,9 +8,18 @@
 // the SHA determinism hold, the echo guard cannot silently regress.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
 import { parseVCard, contactToVCard } from "./vcard";
 import { sha256Hex } from "@/lib/contacts/photos.server";
 import type { DecryptedContact } from "@/lib/sync/encrypted-reader";
+
+const fake = makeSupabaseFake();
+vi.mock("@/integrations/supabase/client.server", () => ({
+  supabaseAdmin: {
+    from: (table: string) => fake.supabaseAdmin.from(table),
+    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
+  },
+}));
 
 function baseContact(overrides: Partial<DecryptedContact> = {}): DecryptedContact {
   return {
@@ -177,39 +186,6 @@ describe("PHOTO parsing (parseVCard)", () => {
 // ---------------------------------------------------------------------------
 
 const mockLogoFetch = vi.fn();
-const mockChoicesRows: Array<{ domain: string }> = [];
-const mockDomainsRows: Array<{ domain: string }> = [];
-
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from(table: string) {
-      const rows =
-        table === "company_logo_choices"
-          ? mockChoicesRows
-          : table === "company_domains"
-            ? mockDomainsRows
-            : [];
-      return {
-        select() {
-          const result = Promise.resolve({ data: rows, error: null });
-          const chain = {
-            eq() {
-              return {
-                order() {
-                  return { limit: () => result };
-                },
-                limit: () => result,
-                then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
-                  result.then(onF, onR),
-              };
-            },
-          };
-          return chain;
-        },
-      };
-    },
-  },
-}));
 
 vi.mock("@/lib/contacts/logo-photo.server", () => ({
   fetchChosenCompanyLogoBytes: (userId: string, domain: string) => mockLogoFetch(userId, domain),
@@ -218,13 +194,15 @@ vi.mock("@/lib/contacts/logo-photo.server", () => ({
 describe("buildKnownCompanyLogoShaSet", () => {
   beforeEach(() => {
     mockLogoFetch.mockReset();
-    mockChoicesRows.length = 0;
-    mockDomainsRows.length = 0;
+    fake.reset();
   });
 
   it("hashes every fetched logo and dedupes across choices + domains", async () => {
-    mockChoicesRows.push({ domain: "fsg.example" });
-    mockDomainsRows.push({ domain: "FSG.example" }, { domain: "nissan.example" });
+    fake.seed("company_logo_choices", [{ user_id: "user-a", domain: "fsg.example" }]);
+    fake.seed("company_domains", [
+      { user_id: "user-a", domain: "FSG.example" },
+      { user_id: "user-a", domain: "nissan.example" },
+    ]);
     mockLogoFetch.mockImplementation(async (_u: string, domain: string) => ({
       bytes: new TextEncoder().encode(`logo:${domain.toLowerCase()}`),
       mime: "image/png",
@@ -243,7 +221,7 @@ describe("buildKnownCompanyLogoShaSet", () => {
   });
 
   it("serves cached SHAs on the second call within TTL", async () => {
-    mockChoicesRows.push({ domain: "fsg.example" });
+    fake.seed("company_logo_choices", [{ user_id: "user-b", domain: "fsg.example" }]);
     mockLogoFetch.mockResolvedValue({
       bytes: new TextEncoder().encode("logo:fsg.example"),
       mime: "image/png",
@@ -263,7 +241,10 @@ describe("buildKnownCompanyLogoShaSet", () => {
   });
 
   it("swallows provider errors so one bad domain can't poison the set", async () => {
-    mockChoicesRows.push({ domain: "good.example" }, { domain: "bad.example" });
+    fake.seed("company_logo_choices", [
+      { user_id: "user-c", domain: "good.example" },
+      { user_id: "user-c", domain: "bad.example" },
+    ]);
     mockLogoFetch.mockImplementation(async (_u: string, domain: string) => {
       if (domain === "bad.example") throw new Error("provider down");
       return {

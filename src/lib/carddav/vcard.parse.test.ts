@@ -83,7 +83,7 @@ describe("parseVCard", () => {
     expect(p.email).toBe("person@example.com");
     expect(p.presentFields.has("EMAIL")).toBe(true);
     expect(p.phones).toHaveLength(1);
-    expect(p.phones[0].number).toContain("555");
+    expect(p.phones[0]!.number).toContain("555");
     expect(p.presentFields.has("TEL")).toBe(true);
     expect(p.linkedin).toContain("linkedin.com/in/person");
     expect(p.presentFields.has("LINKEDIN")).toBe(true);

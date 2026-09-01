@@ -95,7 +95,9 @@ describe("trace presentation", () => {
   it("names a non-rule stage when that stage decided", () => {
     const result = evaluate(
       message(),
-      context({ pins: [{ id: "p1", kind: "inbox", match: "email", value: "billing@netflix.com" }] }),
+      context({
+        pins: [{ id: "p1", kind: "inbox", match: "email", value: "billing@netflix.com" }],
+      }),
       { trigger: "arrival", aiEnabled: false },
     );
     expect(traceHeadline(result.trace)).toBe("Your pins decided this on arrival");

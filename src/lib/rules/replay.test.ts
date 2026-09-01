@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  autoApplicableIds,
-  buildChangeSet,
-  describeChangeSet,
-  type ReplayMessage,
-} from "./replay";
+import { autoApplicableIds, buildChangeSet, describeChangeSet, type ReplayMessage } from "./replay";
 import type { EvaluateContext, Rule } from "./types";
 
 const context = (rules: Rule[]): EvaluateContext => ({
@@ -56,10 +51,7 @@ describe("buildChangeSet", () => {
   });
 
   it("never moves hand-placed mail", () => {
-    const set = buildChangeSet(
-      [msg({ id: "e1", placed_by_user: true })],
-      context([netflixRule]),
-    );
+    const set = buildChangeSet([msg({ id: "e1", placed_by_user: true })], context([netflixRule]));
     expect(set.entries[0]).toMatchObject({
       action: "keep",
       locked: true,

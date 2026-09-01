@@ -205,13 +205,13 @@ describe("stuck-job reclaim", () => {
     ]);
     await runMessageJobs(10, 2);
     expect(jobUpdates()).toHaveLength(1);
-    expect(jobUpdates()[0].payload).toMatchObject({
+    expect(jobUpdates()[0]!.payload).toMatchObject({
       status: "pending",
       attempt: 2, // unchanged — one accidental worker kill is free
       last_error: "stuck (worker timeout) — auto-reclaimed",
       locked_at: null,
     });
-    expect(jobUpdates()[0].filters).toEqual([{ op: "eq", col: "id", value: "stuck-1" }]);
+    expect(jobUpdates()[0]!.filters).toEqual([{ op: "eq", col: "id", value: "stuck-1" }]);
   });
 
   it("second consecutive reclaim (marker present) burns an attempt", async () => {
@@ -225,7 +225,7 @@ describe("stuck-job reclaim", () => {
       },
     ]);
     await runMessageJobs(10, 2);
-    expect(jobUpdates()[0].payload).toMatchObject({ status: "pending", attempt: 3 });
+    expect(jobUpdates()[0]!.payload).toMatchObject({ status: "pending", attempt: 3 });
   });
 
   it("DLQs a repeatedly-stuck job once attempts reach MAX_JOB_ATTEMPTS", async () => {
@@ -239,7 +239,7 @@ describe("stuck-job reclaim", () => {
       },
     ]);
     await runMessageJobs(10, 2);
-    expect(jobUpdates()[0].payload).toMatchObject({
+    expect(jobUpdates()[0]!.payload).toMatchObject({
       status: "dlq",
       attempt: MAX_JOB_ATTEMPTS,
       last_error: "stuck (worker timeout — exceeded max attempts)",
@@ -270,7 +270,7 @@ describe("handleError matrix", () => {
     const summary = await runMessageJobs(10, 2);
     expect(summary).toMatchObject({ processed: 1, ok: 1, dlq: 0, failed: 0 });
     expect(jobDeletes()).toHaveLength(1);
-    expect(jobDeletes()[0].filters).toEqual([{ op: "eq", col: "id", value: "job-1" }]);
+    expect(jobDeletes()[0]!.filters).toEqual([{ op: "eq", col: "id", value: "job-1" }]);
     expect(jobUpdates()).toHaveLength(0);
   });
 
@@ -283,7 +283,7 @@ describe("handleError matrix", () => {
     processGmailMessage.mockRejectedValue(new Error(longMsg));
     await runMessageJobs(10, 2);
     expect(updateEmailEncrypted).toHaveBeenCalledTimes(1);
-    const arg = updateEmailEncrypted.mock.calls[0][0] as {
+    const arg = updateEmailEncrypted.mock.calls[0]![0] as {
       email_id: string;
       classified_by: string;
       classification_reason: string;
@@ -301,7 +301,7 @@ describe("handleError matrix", () => {
     const summary = await runMessageJobs(10, 2);
     expect(summary).toMatchObject({ processed: 1, ok: 0, dlq: 1 });
     expect(jobUpdates()).toHaveLength(1);
-    const payload = jobUpdates()[0].payload as Record<string, unknown>;
+    const payload = jobUpdates()[0]!.payload as Record<string, unknown>;
     expect(payload).toMatchObject({ status: "dlq", attempt: 1, locked_at: null });
     // Only the truncated error message is persisted — never decrypted
     // subject/sender plaintext.
@@ -314,7 +314,7 @@ describe("handleError matrix", () => {
     processGmailMessage.mockRejectedValue(new GmailApiError("insufficient permission", 403, false));
     const summary = await runMessageJobs(10, 2);
     expect(summary).toMatchObject({ processed: 1, ok: 0, dlq: 1 });
-    expect(jobUpdates()[0].payload).toMatchObject({ status: "dlq", attempt: 1 });
+    expect(jobUpdates()[0]!.payload).toMatchObject({ status: "dlq", attempt: 1 });
   });
 
   it("a quota/rate-limit 403 is retried, NOT dead-lettered", async () => {
@@ -329,7 +329,7 @@ describe("handleError matrix", () => {
     );
     const summary = await runMessageJobs(10, 2);
     expect(summary).toMatchObject({ processed: 1, ok: 0, retryable: 1, dlq: 0 });
-    expect(jobUpdates()[0].payload).toMatchObject({ status: "pending", attempt: 0 });
+    expect(jobUpdates()[0]!.payload).toMatchObject({ status: "pending", attempt: 0 });
   });
 
   it("a daily-quota 403 (isQuotaExceeded) is also retried rather than DLQ'd", async () => {
@@ -339,7 +339,7 @@ describe("handleError matrix", () => {
     );
     const summary = await runMessageJobs(10, 2);
     expect(summary).toMatchObject({ processed: 1, ok: 0, dlq: 0 });
-    expect(jobUpdates()[0].payload).toMatchObject({ status: "pending" });
+    expect(jobUpdates()[0]!.payload).toMatchObject({ status: "pending" });
   });
 
   it("retryable 429 under RETRYABLE_FREE_ATTEMPTS keeps attempt unchanged and honors Retry-After", async () => {
@@ -351,7 +351,7 @@ describe("handleError matrix", () => {
     const before = Date.now();
     const summary = await runMessageJobs(10, 2);
     expect(summary).toMatchObject({ processed: 1, ok: 0, failed: 1, retryable: 1, dlq: 0 });
-    const payload = jobUpdates()[0].payload as Record<string, unknown>;
+    const payload = jobUpdates()[0]!.payload as Record<string, unknown>;
     expect(payload).toMatchObject({ status: "pending", attempt: 0, locked_at: null });
     // Retry-After 120s → jitter → 90–150s from now.
     const nextRun = Date.parse(payload.next_run_at as string);
@@ -360,14 +360,14 @@ describe("handleError matrix", () => {
     // Retryable Gmail errors are surfaced to pubsub_events for operators.
     const events = fake.calls.inserts.filter((i) => i.table === "pubsub_events");
     expect(events).toHaveLength(1);
-    expect(events[0].payload).toMatchObject({ event_type: "gmail_api_error" });
+    expect(events[0]!.payload).toMatchObject({ event_type: "gmail_api_error" });
   });
 
   it("a retryable failure past the free window increments attempt", async () => {
     claim([job({ attempt: RETRYABLE_FREE_ATTEMPTS })]);
     processGmailMessage.mockRejectedValue(new GmailApiError("flaky 500", 500, true));
     await runMessageJobs(10, 2);
-    expect(jobUpdates()[0].payload).toMatchObject({
+    expect(jobUpdates()[0]!.payload).toMatchObject({
       status: "pending",
       attempt: RETRYABLE_FREE_ATTEMPTS + 1,
     });
@@ -379,7 +379,7 @@ describe("handleError matrix", () => {
     const summary = await runMessageJobs(10, 2);
     expect(summary).toMatchObject({ retryable: 1 });
     // Free retry: attempt stays 0.
-    expect(jobUpdates()[0].payload).toMatchObject({ status: "pending", attempt: 0 });
+    expect(jobUpdates()[0]!.payload).toMatchObject({ status: "pending", attempt: 0 });
     // No Gmail status → no pubsub_events alert.
     expect(fake.calls.inserts.filter((i) => i.table === "pubsub_events")).toHaveLength(0);
   });
@@ -389,7 +389,7 @@ describe("handleError matrix", () => {
     processGmailMessage.mockRejectedValue(new Error("parse exploded"));
     const summary = await runMessageJobs(10, 2);
     expect(summary).toMatchObject({ dlq: 1, ok: 0 });
-    expect(jobUpdates()[0].payload).toMatchObject({
+    expect(jobUpdates()[0]!.payload).toMatchObject({
       status: "dlq",
       attempt: MAX_JOB_ATTEMPTS,
       last_error: "parse exploded",
@@ -408,13 +408,13 @@ describe("AI lane routing", () => {
     expect(classifyEmail).not.toHaveBeenCalled();
     expect(classifyEmailsBatch).not.toHaveBeenCalled();
     expect(jobDeletes()).toHaveLength(0);
-    const payload = jobUpdates()[0].payload as Record<string, unknown>;
+    const payload = jobUpdates()[0]!.payload as Record<string, unknown>;
     expect(payload).toMatchObject({ status: "pending", locked_at: null });
     const nextRun = Date.parse(payload.next_run_at as string);
     expect(nextRun).toBeGreaterThanOrEqual(before + WEBHOOK_DEFERRED_AI_REQUEUE_MS - 50);
     expect(nextRun).toBeLessThanOrEqual(Date.now() + WEBHOOK_DEFERRED_AI_REQUEUE_MS + 1000);
     // processGmailMessage ran with skipAi so no inline AI call happened.
-    expect(processGmailMessage.mock.calls[0][3]).toMatchObject({ skipAi: true });
+    expect(processGmailMessage.mock.calls[0]![3]).toMatchObject({ skipAi: true });
   });
 
   it("a live claim below LIVE_BATCH_AI_THRESHOLD keeps the inline AI path", async () => {
@@ -422,7 +422,7 @@ describe("AI lane routing", () => {
     processGmailMessage.mockResolvedValue({ skipped: true });
     const summary = await runMessageJobs(10, 2);
     expect(summary).toMatchObject({ processed: 1, ok: 1 });
-    expect(processGmailMessage.mock.calls[0][3]).toMatchObject({ skipAi: false });
+    expect(processGmailMessage.mock.calls[0]![3]).toMatchObject({ skipAi: false });
     expect(classifyEmailsBatch).not.toHaveBeenCalled();
     expect(jobDeletes()).toHaveLength(1);
   });

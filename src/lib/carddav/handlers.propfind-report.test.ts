@@ -200,7 +200,7 @@ async function extractCTag(): Promise<string> {
   const res = await propfind(`${EMAIL}/contacts`, "0");
   const body = await res.text();
   const m = body.match(/<CS:getctag>([\s\S]*?)<\/CS:getctag>/);
-  if (!m) throw new Error(`no CTag in: ${body}`);
+  if (!m?.[1]) throw new Error(`no CTag in: ${body}`);
   return m[1];
 }
 

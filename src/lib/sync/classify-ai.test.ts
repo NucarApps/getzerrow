@@ -137,7 +137,7 @@ describe("classifyByAi — candidate folder set", () => {
     });
     await classifyByAi(email({ subject: "Hello world" }), context, base());
     expect(classifyEmailMock).toHaveBeenCalledTimes(1);
-    const offered = classifyEmailMock.mock.calls[0][1] as Array<{ id: string }>;
+    const offered = classifyEmailMock.mock.calls[0]![1] as Array<{ id: string }>;
     expect(offered.map((f) => f.id)).toEqual(["f-a"]);
   });
 
@@ -159,7 +159,7 @@ describe("classifyByAi — candidate folder set", () => {
     });
     await classifyByAi(email(), context, base());
     expect(classifyEmailMock).toHaveBeenCalledTimes(1);
-    const offered = classifyEmailMock.mock.calls[0][1] as Array<{ id: string }>;
+    const offered = classifyEmailMock.mock.calls[0]![1] as Array<{ id: string }>;
     expect(offered.map((f) => f.id)).toEqual(["f-b"]);
   });
 });

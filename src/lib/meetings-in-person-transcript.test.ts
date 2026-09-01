@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
 import { collapseRunawayRepeats, maxConsecutiveBlockRepeats } from "./transcript-sanitize";
 
 // The exact hallucination pattern from the reported iOS bug: a short block of
@@ -9,9 +10,11 @@ import { collapseRunawayRepeats, maxConsecutiveBlockRepeats } from "./transcript
 const RUNAWAY_BLOCK = "Why are we doing this later? Okay, hold on. ";
 const HALLUCINATED_TRANSCRIPT = RUNAWAY_BLOCK.repeat(24).trim();
 
-// Shared mutable state the hoisted module mocks read from / write to.
+const fake = makeSupabaseFake();
+// Shared mutable state the hoisted module mock reads from for the storage
+// download — the shared fake doesn't model the storage API, so it's kept as a
+// bespoke sibling property alongside the fake's from/rpc.
 const state = vi.hoisted(() => ({
-  updates: [] as Array<Record<string, unknown>>,
   transcriptResponse: "",
   sampleBytes: new Uint8Array(),
 }));
@@ -21,26 +24,8 @@ const state = vi.hoisted(() => ({
 // row points the finalizer at it.
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: async () => ({
-            data: {
-              id: "meeting-1",
-              user_id: "user-1",
-              audio_storage_path: "user-1/meeting-1.m4a",
-            },
-            error: null,
-          }),
-        }),
-      }),
-      update: (payload: Record<string, unknown>) => ({
-        eq: async () => {
-          state.updates.push(payload);
-          return { error: null };
-        },
-      }),
-    }),
+    from: (table: string) => fake.supabaseAdmin.from(table),
+    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
     storage: {
       from: () => ({
         download: async () => ({
@@ -87,7 +72,10 @@ describe("collapseRunawayRepeats", () => {
 describe("finalizeInPersonMeeting regression — iOS-style problematic recording", () => {
   beforeEach(() => {
     process.env.LOVABLE_API_KEY = "test-key";
-    state.updates = [];
+    fake.reset();
+    fake.seed("meetings", [
+      { id: "meeting-1", user_id: "user-1", audio_storage_path: "user-1/meeting-1.m4a" },
+    ]);
     state.transcriptResponse = HALLUCINATED_TRANSCRIPT;
     state.sampleBytes = new Uint8Array(
       readFileSync(
@@ -119,10 +107,14 @@ describe("finalizeInPersonMeeting regression — iOS-style problematic recording
     const status = await finalizeInPersonMeeting("meeting-1");
     expect(status).toBe("done");
 
-    const saved = state.updates.find((u) => u.status === "done");
+    const saved = fake.calls.updates.find(
+      (u) => u.table === "meetings" && (u.payload as Record<string, unknown>).status === "done",
+    );
     expect(saved, "meeting should be saved as done").toBeTruthy();
 
-    const segments = saved!.transcript as Array<{ text: string }>;
+    const segments = (saved!.payload as Record<string, unknown>).transcript as Array<{
+      text: string;
+    }>;
     const savedText = segments.map((s) => s.text).join(" ");
 
     // The raw model output was a 24x runaway loop; the persisted transcript must
@@ -140,9 +132,13 @@ describe("finalizeInPersonMeeting regression — iOS-style problematic recording
     const status = await finalizeInPersonMeeting("meeting-1");
     expect(status).toBe("done");
 
-    const saved = state.updates.find((u) => u.status === "done");
-    const segments = saved!.transcript as Array<{ text: string }>;
-    expect(segments[0].text).toBe(state.transcriptResponse);
+    const saved = fake.calls.updates.find(
+      (u) => u.table === "meetings" && (u.payload as Record<string, unknown>).status === "done",
+    );
+    const segments = (saved!.payload as Record<string, unknown>).transcript as Array<{
+      text: string;
+    }>;
+    expect(segments[0]!.text).toBe(state.transcriptResponse);
   });
 });
 
@@ -185,8 +181,8 @@ function readFixture(file: string): { bytes: Uint8Array<ArrayBuffer>; fragments:
   let i = 0;
   let fragments = 0;
   while (i + 8 <= bytes.byteLength) {
-    const size = (bytes[i] << 24) | (bytes[i + 1] << 16) | (bytes[i + 2] << 8) | bytes[i + 3];
-    const type = String.fromCharCode(bytes[i + 4], bytes[i + 5], bytes[i + 6], bytes[i + 7]);
+    const size = (bytes[i]! << 24) | (bytes[i + 1]! << 16) | (bytes[i + 2]! << 8) | bytes[i + 3]!;
+    const type = String.fromCharCode(bytes[i + 4]!, bytes[i + 5]!, bytes[i + 6]!, bytes[i + 7]!);
     if (type === "moof") fragments += 1;
     if (size < 8) break;
     i += size;
@@ -197,7 +193,10 @@ function readFixture(file: string): { bytes: Uint8Array<ArrayBuffer>; fragments:
 describe("finalizeInPersonMeeting regression — fragmentation lengths", () => {
   beforeEach(() => {
     process.env.LOVABLE_API_KEY = "test-key";
-    state.updates = [];
+    fake.reset();
+    fake.seed("meetings", [
+      { id: "meeting-1", user_id: "user-1", audio_storage_path: "user-1/meeting-1.m4a" },
+    ]);
 
     vi.stubGlobal(
       "fetch",
@@ -234,10 +233,14 @@ describe("finalizeInPersonMeeting regression — fragmentation lengths", () => {
         const status = await finalizeInPersonMeeting("meeting-1");
         expect(status).toBe("done");
 
-        const saved = state.updates.find((u) => u.status === "done");
+        const saved = fake.calls.updates.find(
+          (u) => u.table === "meetings" && (u.payload as Record<string, unknown>).status === "done",
+        );
         expect(saved, "meeting should be saved as done").toBeTruthy();
 
-        const segments = saved!.transcript as Array<{ text: string }>;
+        const segments = (saved!.payload as Record<string, unknown>).transcript as Array<{
+          text: string;
+        }>;
         const savedText = segments.map((s) => s.text).join(" ");
 
         // Persisted transcript must not carry the loop through to the UI.

@@ -43,8 +43,8 @@ describe("groupRetries", () => {
     ];
     const groups = groupRetries(rows);
     expect(groups).toHaveLength(1);
-    expect(groups[0].folder_id).toBeNull();
-    expect(groups[0].retry_count).toBe(2);
+    expect(groups[0]!.folder_id).toBeNull();
+    expect(groups[0]!.retry_count).toBe(2);
   });
 });
 
@@ -60,7 +60,7 @@ describe("selectRetryAlertsToFire", () => {
     }));
     const fired = evaluateFolderRetryAlerts(rows, [], config);
     expect(fired).toHaveLength(1);
-    expect(fired[0].folder_id).toBe("f1");
+    expect(fired[0]!.folder_id).toBe("f1");
   });
 
   it("does not fire below threshold", () => {

@@ -34,15 +34,15 @@ describe("clusterLabels", () => {
     ];
     const clusters = clusterLabels(labels);
     expect(clusters).toHaveLength(1);
-    expect(clusters[0].labels.map((l) => l.id).sort()).toEqual(["a", "b", "c", "d"]);
-    expect(clusters[0].reason).toBe("company");
+    expect(clusters[0]!.labels.map((l) => l.id).sort()).toEqual(["a", "b", "c", "d"]);
+    expect(clusters[0]!.reason).toBe("company");
   });
 
   it("folds a merged-away company name via aliases", () => {
     const labels = [label("a", "Kia"), label("b", "Kia America Inc")];
     const clusters = clusterLabels(labels, new Map([["kia america", "Kia"]]));
     expect(clusters).toHaveLength(1);
-    expect(clusters[0].reason).toBe("alias");
+    expect(clusters[0]!.reason).toBe("alias");
   });
 
   it("clusters brand-name variants by aggressive normalization", () => {
@@ -53,8 +53,8 @@ describe("clusterLabels", () => {
     ];
     const clusters = clusterLabels(labels);
     expect(clusters).toHaveLength(1);
-    expect(clusters[0].labels.map((l) => l.id).sort()).toEqual(["a", "b"]);
-    expect(clusters[0].reason).toBe("name");
+    expect(clusters[0]!.labels.map((l) => l.id).sort()).toEqual(["a", "b"]);
+    expect(clusters[0]!.reason).toBe("name");
   });
 
   it("clusters national-distributor variants like American Honda with the brand", () => {
@@ -65,8 +65,8 @@ describe("clusterLabels", () => {
     ];
     const clusters = clusterLabels(labels);
     expect(clusters).toHaveLength(1);
-    expect(clusters[0].labels.map((l) => l.id).sort()).toEqual(["a", "b"]);
-    expect(clusters[0].reason).toBe("name");
+    expect(clusters[0]!.labels.map((l) => l.id).sort()).toEqual(["a", "b"]);
+    expect(clusters[0]!.reason).toBe("name");
   });
 
   it("unions name-matched and company-matched labels into one cluster", () => {
@@ -77,7 +77,7 @@ describe("clusterLabels", () => {
     ];
     const clusters = clusterLabels(labels);
     expect(clusters).toHaveLength(1);
-    expect(clusters[0].labels.map((l) => l.id).sort()).toEqual(["a", "b", "c"]);
+    expect(clusters[0]!.labels.map((l) => l.id).sort()).toEqual(["a", "b", "c"]);
   });
 
   it("keeps parent scopes isolated", () => {

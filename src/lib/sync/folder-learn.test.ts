@@ -203,7 +203,7 @@ describe("recordManualMove — genuine move", () => {
     expect(buildFolderProfile).toHaveBeenCalledTimes(1);
     const folderUpdates = fake.calls.updates.filter((u) => u.table === "folders");
     expect(folderUpdates).toHaveLength(1);
-    expect(folderUpdates[0].payload).toMatchObject({
+    expect(folderUpdates[0]!.payload).toMatchObject({
       learned_profile: "PROFILE",
       emails_since_learn: 0,
     });
@@ -260,12 +260,12 @@ describe("regenerateFolderProfile", () => {
 
     const folderUpdates = fake.calls.updates.filter((u) => u.table === "folders");
     expect(folderUpdates).toHaveLength(1);
-    expect(folderUpdates[0].payload).toMatchObject({
+    expect(folderUpdates[0]!.payload).toMatchObject({
       learned_profile: "PROFILE",
       emails_since_learn: 0,
     });
-    expect(folderUpdates[0].payload).toHaveProperty("last_learned_at");
-    expect(folderUpdates[0].filters).toEqual([{ op: "eq", col: "id", value: FOLDER_ID }]);
+    expect(folderUpdates[0]!.payload).toHaveProperty("last_learned_at");
+    expect(folderUpdates[0]!.filters).toEqual([{ op: "eq", col: "id", value: FOLDER_ID }]);
   });
 });
 
@@ -290,7 +290,7 @@ describe("bumpEmailsSinceLearn", () => {
     await bumpEmailsSinceLearn(FOLDER_ID);
     const folderUpdates = fake.calls.updates.filter((u) => u.table === "folders");
     expect(folderUpdates).toHaveLength(1);
-    expect(folderUpdates[0].payload).toEqual({ emails_since_learn: 5 });
+    expect(folderUpdates[0]!.payload).toEqual({ emails_since_learn: 5 });
     errSpy.mockRestore();
   });
 
@@ -427,7 +427,7 @@ describe("loadOlderFromLabel", () => {
     });
     // The oldest received_at we saw becomes the new backfill anchor.
     const folderUpdates = fake.calls.updates.filter((u) => u.table === "folders");
-    expect(folderUpdates[0].payload).toEqual({
+    expect(folderUpdates[0]!.payload).toEqual({
       gmail_backfill_page_token: null,
       gmail_backfill_oldest_received_at: "2026-02-01T00:00:00Z",
     });
@@ -459,7 +459,7 @@ describe("loadOlderFromLabel", () => {
     expect(res).toEqual({ ingested: 0, claimed: 0, hasMore: true });
     const folderUpdates = fake.calls.updates.filter((u) => u.table === "folders");
     expect(folderUpdates).toHaveLength(1);
-    expect(folderUpdates[0].payload).toEqual({
+    expect(folderUpdates[0]!.payload).toEqual({
       gmail_backfill_page_token: null,
       gmail_backfill_oldest_received_at: "2026-03-01T00:00:00Z",
     });

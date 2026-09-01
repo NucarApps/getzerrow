@@ -243,7 +243,7 @@ describe("recordExecution via the classify path", () => {
     });
 
     expect(recordCalls()).toHaveLength(1);
-    expect(recordCalls()[0].args).toMatchObject({
+    expect(recordCalls()[0]!.args).toMatchObject({
       p_user_id: USER,
       p_gmail_account_id: ACC,
       p_email_id: "email-1",
@@ -278,7 +278,7 @@ describe("recordExecution via the classify path", () => {
     });
 
     expect(recordCalls()).toHaveLength(1);
-    expect(recordCalls()[0].args).toMatchObject({
+    expect(recordCalls()[0]!.args).toMatchObject({
       p_matched_filter_ids: ["flt-1"],
       p_matched_leaf_json: [{ field: "from", op: "contains", value: "sender@x.com" }],
     });
@@ -296,7 +296,7 @@ describe("recordExecution via the classify path", () => {
     });
 
     expect(recordCalls()).toHaveLength(1);
-    expect(recordCalls()[0].args).toMatchObject({
+    expect(recordCalls()[0]!.args).toMatchObject({
       p_folder_id: "folder-A",
       p_classified_by: "ai",
       p_ai_confidence: 0.87,
@@ -320,7 +320,7 @@ describe("recordExecution via the classify path", () => {
     });
 
     expect(recordCalls()).toHaveLength(1);
-    expect(recordCalls()[0].args).toMatchObject({
+    expect(recordCalls()[0]!.args).toMatchObject({
       p_folder_id: null,
       p_classified_by: "excluded",
       p_status: "skipped",
@@ -339,7 +339,7 @@ describe("recordExecution via the classify path", () => {
 
     expect(res).toEqual({ id: "email-1", classify_failed: true });
     expect(recordCalls()).toHaveLength(1);
-    expect(recordCalls()[0].args).toMatchObject({
+    expect(recordCalls()[0]!.args).toMatchObject({
       p_classified_by: "unclassified",
       p_status: "error",
       p_error: "ai gateway down",
@@ -358,7 +358,7 @@ describe("recordExecution via the classify path", () => {
 
     expect(classifyByAi).not.toHaveBeenCalled();
     expect(recordCalls()).toHaveLength(1);
-    expect(recordCalls()[0].args).toMatchObject({
+    expect(recordCalls()[0]!.args).toMatchObject({
       p_classified_by: "pending_ai",
       p_status: "pending",
       p_folder_id: null,
@@ -407,7 +407,7 @@ describe("recordExecution via the classify path", () => {
 
     expect(res).toMatchObject({ id: "row-1", reclassified: true });
     expect(recordCalls()).toHaveLength(1);
-    expect(recordCalls()[0].args).toMatchObject({
+    expect(recordCalls()[0]!.args).toMatchObject({
       p_email_id: "row-1",
       p_classified_by: "ai",
       p_status: "applied",

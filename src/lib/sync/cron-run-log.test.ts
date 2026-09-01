@@ -34,7 +34,7 @@ describe("logCronRunEvent", () => {
 
     const rows = fake.calls.inserts.filter((i) => i.table === "pubsub_events");
     expect(rows).toHaveLength(1);
-    expect(rows[0].payload).toMatchObject({
+    expect(rows[0]!.payload).toMatchObject({
       event_type: "scheduled_actions_run",
       details: "claimed=3 done=2 retried=0 failed=1",
       error: "1 action failed terminally",
@@ -47,7 +47,7 @@ describe("logCronRunEvent", () => {
 
     const rows = fake.calls.inserts.filter((i) => i.table === "pubsub_events");
     expect(rows).toHaveLength(1);
-    const payload = rows[0].payload as { details: string; error: string | null };
+    const payload = rows[0]!.payload as { details: string; error: string | null };
     expect(payload.details).toHaveLength(2000);
     expect(payload.error).toBeNull();
   });

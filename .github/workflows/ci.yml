@@ -8,6 +8,14 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Manual post-deploy smoke: runs the live-HTTP auth sweep in tests/
+  # against a deployed URL (see tests/public-endpoints-auth.test.ts).
+  workflow_dispatch:
+    inputs:
+      public_base_url:
+        description: "Deployed base URL for the live endpoint-auth smoke (optional)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -28,8 +36,22 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Typecheck
         run: bun run typecheck
+      # Runs the full unit suite with V8 coverage. The ratchet floor lives
+      # in vitest.config.ts `coverage.thresholds` — a miss fails this step.
+      # Raise the floor as coverage grows; never lower it to pass a PR.
       - name: Unit tests
-        run: bun run test
+        run: bun run test:coverage
+      - name: Coverage summary
+        if: always()
+        run: |
+          if [ -f coverage/coverage-summary.json ]; then
+            node -e '
+              const t = require("./coverage/coverage-summary.json").total;
+              const row = (k) => `| ${k} | ${t[k].pct}% | ${t[k].covered}/${t[k].total} |`;
+              console.log("## Coverage\n\n| Metric | % | Covered |\n|---|---|---|");
+              for (const k of ["statements","branches","functions","lines"]) console.log(row(k));
+            ' >> "$GITHUB_STEP_SUMMARY"
+          fi
       # Schema drift gate: replays the migrations and asserts the
       # insert_folder_example_encrypted RPC only writes columns that still
       # exist on folder_examples. Catches column mismatches (Postgres 42703)
@@ -56,6 +78,32 @@ jobs:
       # that way — lint failures block the PR.
       - name: Lint
         run: bun run lint --max-warnings=0
+
+  # DB-backed integration tests (tests/*.integration.test.ts) — the only
+  # suites that verify RLS / SECURITY DEFINER authorization (IDOR guards)
+  # against a real Postgres. Runs the migrations via the Supabase CLI local
+  # db, then the suite with TEST_DATABASE_URL pointed at it. The live-HTTP
+  # endpoint sweep in the same dir stays skipped here (no PUBLIC_BASE_URL)
+  # unless this run was dispatched manually with a deployed URL.
+  integration:
+    name: Integration tests (Postgres)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - uses: supabase/setup-cli@v1
+      - run: bun install --frozen-lockfile
+      # `db start` boots only the Postgres container; `db reset --no-seed`
+      # then applies every migration in supabase/migrations/.
+      - name: Start local Postgres and apply migrations
+        run: supabase db start && supabase db reset --no-seed
+      - name: Run integration suite
+        run: bun run test:integration
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+          PUBLIC_BASE_URL: ${{ inputs.public_base_url }}
 
   audit:
     name: Dependency audit

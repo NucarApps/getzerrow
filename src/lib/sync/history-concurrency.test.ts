@@ -23,12 +23,14 @@
 // count RPC/enqueue invocations deterministically.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
 
 // ─────────────── Supabase admin fake ─────────────────────────────────
 //
-// A very small chainable builder: enough to satisfy the query shapes
+// The shared chainable fake: enough to satisfy the query shapes
 // history.ts actually issues. Every .single()/.maybeSingle() resolves
-// from the seeded per-account row; every write returns { error: null }.
+// from the seeded per-account row; every write returns { error: null }
+// and is recorded in fake.calls (updates/rpcs) for the assertions below.
 
 type AccountRow = {
   id: string;
@@ -38,102 +40,16 @@ type AccountRow = {
   watch_expiration: string | null;
 };
 
-const accountsById = new Map<string, AccountRow>();
-const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
-const updateCalls: Array<{ table: string; patch: Record<string, unknown>; where: string }> = [];
+const fake = makeSupabaseFake();
 
-function makeBuilder(table: string) {
-  const state: { filters: Record<string, unknown>; op: string; payload?: unknown } = {
-    filters: {},
-    op: "select",
-  };
-  const chain: Record<string, unknown> = {
-    select() {
-      state.op = "select";
-      return chain;
-    },
-    eq(col: string, val: unknown) {
-      state.filters[col] = val;
-      return chain;
-    },
-    in() {
-      return chain;
-    },
-    not() {
-      return chain;
-    },
-    order() {
-      return chain;
-    },
-    limit() {
-      return chain;
-    },
-    update(patch: Record<string, unknown>) {
-      state.op = "update";
-      state.payload = patch;
-      // Update returns a thenable directly (no terminal call in history.ts).
-      const where = Object.entries(state.filters)
-        .map(([k, v]) => `${k}=${String(v)}`)
-        .join("&");
-      updateCalls.push({ table, patch, where });
-      return {
-        then<T>(resolve: (v: { error: null }) => T) {
-          return Promise.resolve({ error: null }).then(resolve);
-        },
-        eq(col: string, val: unknown) {
-          state.filters[col] = val;
-          const w = Object.entries(state.filters)
-            .map(([k, v]) => `${k}=${String(v)}`)
-            .join("&");
-          updateCalls[updateCalls.length - 1].where = w;
-          return this;
-        },
-      };
-    },
-    delete() {
-      state.op = "delete";
-      return {
-        eq() {
-          return this;
-        },
-        in() {
-          return Promise.resolve({ error: null });
-        },
-      };
-    },
-    async single() {
-      if (table === "gmail_accounts") {
-        const id = String(state.filters.id ?? "");
-        const row = accountsById.get(id);
-        return row ? { data: row, error: null } : { data: null, error: new Error("not found") };
-      }
-      return { data: null, error: null };
-    },
-    async maybeSingle() {
-      if (table === "gmail_accounts") {
-        const id = String(state.filters.id ?? "");
-        const row = accountsById.get(id);
-        return { data: row ?? null, error: null };
-      }
-      return { data: null, error: null };
-    },
-  };
-  return chain;
-}
-
-vi.mock("@/integrations/supabase/client.server", () => {
-  return {
-    supabaseAdmin: {
-      from(table: string) {
-        return makeBuilder(table);
-      },
-      async rpc(fn: string, args: Record<string, unknown>) {
-        rpcCalls.push({ fn, args });
-        return { data: null, error: null };
-      },
-    },
-  };
-});
+// Property accesses are deferred into method bodies so the hoisted factory
+// never touches `fake` before its initializer runs.
+vi.mock("@/integrations/supabase/client.server", () => ({
+  supabaseAdmin: {
+    from: (table: string) => fake.supabaseAdmin.from(table),
+    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
+  },
+}));
 
 // ─────────────── Gmail SDK fake ──────────────────────────────────────
 //
@@ -239,14 +155,16 @@ vi.mock("../log.server", () => ({
 
 import { syncSinceHistory } from "./history";
 
+const seededAccounts: AccountRow[] = [];
+
 function seedAccount(row: AccountRow) {
-  accountsById.set(row.id, row);
+  seededAccounts.push(row);
+  fake.seed("gmail_accounts", seededAccounts);
 }
 
 beforeEach(() => {
-  accountsById.clear();
-  rpcCalls.length = 0;
-  updateCalls.length = 0;
+  fake.reset();
+  seededAccounts.length = 0;
   listHistoryCalls.length = 0;
   listHistoryQueue.clear();
   enqueueCalls.length = 0;
@@ -286,8 +204,11 @@ describe("syncSinceHistory concurrency (withAccountLock contract)", () => {
 
     // Fire 5 concurrent callers.
     const promises = Array.from({ length: 5 }, () => syncSinceHistory("acc-A"));
-    // Give the first caller a tick to install the lock.
-    await new Promise((r) => setTimeout(r, 0));
+    // Wait until the in-flight run has reached the gated history page —
+    // observable proof the lock is installed and the followers have piled
+    // onto it — then release. (No timer-based ordering: this stays correct
+    // however many awaits the code path grows.)
+    await vi.waitFor(() => expect(listHistoryCalls.length).toBeGreaterThanOrEqual(1));
     release();
     const results = await Promise.all(promises);
 
@@ -312,15 +233,19 @@ describe("syncSinceHistory concurrency (withAccountLock contract)", () => {
     // history_id advanced exactly once, via the monotonic RPC (never a
     // raw UPDATE to gmail_accounts.history_id). The fake records carry no
     // per-record id, so only the end-of-walk head bump fires.
-    const bumpCalls = rpcCalls.filter((c) => c.fn === "bump_history_id_if_greater");
+    const bumpCalls = fake.calls.rpcs.filter((c) => c.fn === "bump_history_id_if_greater");
     expect(bumpCalls.length).toBeGreaterThanOrEqual(1);
     for (const c of bumpCalls) expect(c.args.p_account_id).toBe("acc-A");
     // The in-flight run stamps its drained head. (The follow-up run also
     // stamps its own — possibly stale — head; the RPC's monotonic guard is
     // what makes that a safe no-op in production.)
-    expect(bumpCalls[0].args.p_new_history_id).toBe("1050");
-    const rawHistoryUpdates = updateCalls.filter(
-      (u) => u.table === "gmail_accounts" && "history_id" in u.patch,
+    expect(bumpCalls[0]!.args.p_new_history_id).toBe("1050");
+    const rawHistoryUpdates = fake.calls.updates.filter(
+      (u) =>
+        u.table === "gmail_accounts" &&
+        typeof u.payload === "object" &&
+        u.payload !== null &&
+        "history_id" in u.payload,
     );
     expect(rawHistoryUpdates).toHaveLength(0);
   });
@@ -363,9 +288,10 @@ describe("syncSinceHistory concurrency (withAccountLock contract)", () => {
     const pA = syncSinceHistory("acc-A");
     const pB = syncSinceHistory("acc-B");
 
-    // Both callers are in-flight simultaneously; releasing them in
-    // reverse order proves the second one wasn't queued behind the first.
-    await new Promise((r) => setTimeout(r, 0));
+    // Wait until BOTH runs have reached their gated pages — direct proof
+    // they are in flight simultaneously — then release in reverse order to
+    // prove the second wasn't queued behind the first.
+    await vi.waitFor(() => expect(listHistoryCalls).toHaveLength(2));
     releaseB();
     releaseA();
     const [rA, rB] = await Promise.all([pA, pB]);
@@ -460,7 +386,7 @@ describe("syncSinceHistory concurrency (withAccountLock contract)", () => {
 
     // Page 1 bumps to its max record id (560), page 2 to 650, then the
     // completed walk stamps the head (700). Ordering must be monotonic.
-    const bumps = rpcCalls
+    const bumps = fake.calls.rpcs
       .filter((c) => c.fn === "bump_history_id_if_greater")
       .map((c) => String(c.args.p_new_history_id));
     expect(bumps).toEqual(["560", "650", "700"]);

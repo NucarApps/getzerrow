@@ -254,7 +254,7 @@ describe("existing-row paths", () => {
     });
     // …and the plaintext base columns update directly.
     expect(emailUpdates()).toHaveLength(1);
-    expect(emailUpdates()[0].payload).toEqual({
+    expect(emailUpdates()[0]!.payload).toEqual({
       from_addr: parsed.from_addr,
       received_at: parsed.received_at,
       has_attachment: parsed.has_attachment,
@@ -319,7 +319,7 @@ describe("existing-row paths", () => {
     // persistFlags=true: the archive flag is patched onto the existing row.
     expect(modifyMessage).toHaveBeenCalledWith(ACC, GMAIL_ID, ["L-A"], ["INBOX"]);
     expect(emailUpdates()).toHaveLength(1);
-    expect(emailUpdates()[0].payload).toEqual({ is_archived: true });
+    expect(emailUpdates()[0]!.payload).toEqual({ is_archived: true });
     expect(updateEmailEncrypted).toHaveBeenCalledWith({
       email_id: "row-1",
       folder_id: "folder-A",
@@ -615,7 +615,7 @@ describe("applyFolderActions (direct)", () => {
       expect.stringContaining("---------- Forwarded message ----------"),
     );
     expect(emailUpdates()).toHaveLength(1);
-    expect(emailUpdates()[0].payload).toMatchObject({
+    expect(emailUpdates()[0]!.payload).toMatchObject({
       forwarded_to: "fwd@x.com",
       forward_attempts: 0,
       forward_last_error: null,
@@ -636,7 +636,7 @@ describe("applyFolderActions (direct)", () => {
       { persistFlags: false },
     );
     expect(emailUpdates()).toHaveLength(1);
-    const patch = emailUpdates()[0].payload as Record<string, unknown>;
+    const patch = emailUpdates()[0]!.payload as Record<string, unknown>;
     expect(patch).toMatchObject({ forward_attempts: 1, forward_last_error: "smtp down" });
     const retryAt = Date.parse(patch.forward_next_retry_at as string);
     // jitter(60) → 45–75s from now.
@@ -656,7 +656,7 @@ describe("applyFolderActions (direct)", () => {
       { persistFlags: true },
     );
     expect(emailUpdates()).toHaveLength(1);
-    expect(emailUpdates()[0].payload).toEqual({ is_archived: true });
+    expect(emailUpdates()[0]!.payload).toEqual({ is_archived: true });
   });
 
   it("writes nothing at all when there is no label change, no flags, and no forward", async () => {

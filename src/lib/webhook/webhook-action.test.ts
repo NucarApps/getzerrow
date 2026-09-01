@@ -157,8 +157,9 @@ describe("deliverWebhook", () => {
     expect(calledUrl).toBe("https://hooks.example.com/z");
     const headers = init.headers as Record<string, string>;
     const ts = headers["X-Atzro-Timestamp"];
+    expect(ts).toBeDefined();
     expect(headers["X-Atzro-Signature"]).toBe(
-      `sha256=${signWebhookBody("whsec_test", ts, '{"a":1}')}`,
+      `sha256=${signWebhookBody("whsec_test", ts!, '{"a":1}')}`,
     );
     expect(headers["X-Atzro-Delivery"]).toBe("d1");
     expect(init.redirect).toBe("error");
@@ -264,9 +265,8 @@ describe("runner retry logic", () => {
       vi.fn(async () => new Response("ok", { status: 200 })),
     );
     const result = await runScheduledActions(5);
-    vi.unstubAllGlobals();
     expect(result).toMatchObject({ claimed: 1, done: 1, retried: 0, failed: 0 });
-    expect(scheduledUpdates()[0].payload).toMatchObject({ status: "done" });
+    expect(scheduledUpdates()[0]!.payload).toMatchObject({ status: "done" });
   });
 
   it("reschedules with backoff on failure (attempt below the cap)", async () => {
@@ -277,12 +277,16 @@ describe("runner retry logic", () => {
     );
     const before = Date.now();
     const result = await runScheduledActions(5);
-    vi.unstubAllGlobals();
+    const after = Date.now();
     expect(result).toMatchObject({ retried: 1 });
-    const patch = scheduledUpdates()[0].payload as { status: string; run_at: string };
+    const patch = scheduledUpdates()[0]!.payload as { status: string; run_at: string };
     expect(patch.status).toBe("pending");
-    // attempt 1 → first backoff step (1 minute).
-    expect(Date.parse(patch.run_at)).toBeGreaterThanOrEqual(before + 55_000);
+    // attempt 1 → first backoff step, exactly Date.now() + 1 minute (no
+    // jitter). Bracketing with before/after keeps this exact yet immune to
+    // a stalled runner.
+    const runAt = Date.parse(patch.run_at);
+    expect(runAt).toBeGreaterThanOrEqual(before + 60_000);
+    expect(runAt).toBeLessThanOrEqual(after + 60_000);
   });
 
   it("fails terminally at the attempt cap", async () => {
@@ -292,9 +296,8 @@ describe("runner retry logic", () => {
       vi.fn(async () => new Response("bad", { status: 503 })),
     );
     const result = await runScheduledActions(5);
-    vi.unstubAllGlobals();
     expect(result).toMatchObject({ failed: 1 });
-    expect(scheduledUpdates()[0].payload).toMatchObject({ status: "error" });
+    expect(scheduledUpdates()[0]!.payload).toMatchObject({ status: "error" });
   });
 
   it("fails terminally right away when the action config is gone", async () => {
@@ -304,7 +307,7 @@ describe("runner retry logic", () => {
     getEmailsDecrypted.mockResolvedValue({ rows: [], error: null });
     const result = await runScheduledActions(5);
     expect(result).toMatchObject({ failed: 1 });
-    expect(scheduledUpdates()[0].payload).toMatchObject({ status: "error" });
+    expect(scheduledUpdates()[0]!.payload).toMatchObject({ status: "error" });
   });
 
   it("runs a delayed label-type action against fresh email state", async () => {

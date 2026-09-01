@@ -21,11 +21,27 @@ bun run dev
 Verification (all must be green before a PR):
 
 ```sh
-bun run test                    # vitest unit suite
-bunx tsc --noEmit               # typecheck
+bun run test                    # vitest: node unit suite + jsdom component suite
+bunx tsc --noEmit               # typecheck (covers src/, tests/, vitest configs)
 bun run lint                    # eslint (CI enforces --max-warnings=0)
 bun run build                   # Cloudflare Workers bundle
 ```
+
+More test lanes:
+
+```sh
+bun run test:coverage           # unit suite + V8 coverage (CI posts the summary)
+bun run test:integration        # DB-backed suites in tests/ — skip without env;
+                                # CI runs them against a migrated local Supabase
+                                # Postgres (supabase db start && supabase db reset)
+```
+
+Test conventions: shared fixtures live in `src/lib/__fixtures__/`
+(`supabase-fake`, `server-fn-stub` + `impersonate`, `email-row`, `idor`);
+component tests are `*.test.tsx` (jsdom project, setup in
+`src/test-setup.dom.ts`); every decider that files mail is held to the
+oracle by `src/lib/sync/folder-write-agreement.test.ts`; cron-route auth is
+swept in-process by `src/routes/api/public/cron-auth.test.ts`.
 
 Database changes live in `supabase/migrations/` (append-only —
 `YYYYMMDDHHMMSS_slug.sql`, one logical change per file, never edit an

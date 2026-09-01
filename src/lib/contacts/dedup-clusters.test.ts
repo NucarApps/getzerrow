@@ -78,7 +78,7 @@ describe("buildClusters", () => {
     ]);
     const forPair = clusters.filter((c) => c.contacts.length === 2);
     expect(forPair).toHaveLength(1);
-    expect(forPair[0].signal).toBe("exact_phone");
+    expect(forPair[0]!.signal).toBe("exact_phone");
   });
 
   it("never emits singleton clusters", () => {
@@ -161,13 +161,13 @@ describe("truncateMembers", () => {
       }),
     );
     const shuffled = [
-      members[4],
-      members[1],
-      members[6],
-      members[0],
-      members[3],
-      members[5],
-      members[2],
+      members[4]!,
+      members[1]!,
+      members[6]!,
+      members[0]!,
+      members[3]!,
+      members[5]!,
+      members[2]!,
     ];
     const t1 = truncateMembers(members, 6);
     const t2 = truncateMembers(shuffled, 6);

@@ -290,8 +290,8 @@ describe("applyPendingOpsToList — coalesced flush", () => {
     ];
     const { next } = applyPendingOpsToList(existing, ops, ["emails", "inbox"]);
     expect(next).toHaveLength(2);
-    expect(next?.[0].id).toBe("b");
-    expect(next?.[0].classified_by).toBe("ai");
+    expect(next?.[0]?.id).toBe("b");
+    expect(next?.[0]?.classified_by).toBe("ai");
   });
 });
 
@@ -328,8 +328,8 @@ describe("applyPendingOpsToList — pending_ai settle dwell", () => {
     );
     expect(hasSettledOut).toBe(true);
     expect(next).toHaveLength(1);
-    expect(next?.[0]._settledOut).toBe(true);
-    expect(next?.[0].folder_id).toBe("f-hidden");
+    expect(next?.[0]?._settledOut).toBe(true);
+    expect(next?.[0]?.folder_id).toBe("f-hidden");
   });
 
   it("patches in place with no tag when classification lands in a visible folder", () => {
@@ -346,8 +346,8 @@ describe("applyPendingOpsToList — pending_ai settle dwell", () => {
       KEY,
     );
     expect(hasSettledOut).toBe(false);
-    expect(next?.[0]._settledOut).toBeUndefined();
-    expect(next?.[0].folder_id).toBe("f-visible");
+    expect(next?.[0]?._settledOut).toBeUndefined();
+    expect(next?.[0]?.folder_id).toBe("f-visible");
   });
 
   it("removes immediately when a non-pending row is archived (user action)", () => {

@@ -43,13 +43,13 @@ describe("matchRules", () => {
       rules,
     );
     expect(m.map((x) => x.groupId)).toEqual(["g1"]);
-    expect(m[0].autoApply).toBe(true);
+    expect(m[0]!.autoApply).toBe(true);
   });
 
   it("matches by ai_category and preserves suggest-only", () => {
     const m = matchRules({ companyId: null, aiCategory: "Software", emailDomains: [] }, rules);
     expect(m.map((x) => x.groupId)).toEqual(["g2"]);
-    expect(m[0].autoApply).toBe(false);
+    expect(m[0]!.autoApply).toBe(false);
   });
 
   it("matches by company_id", () => {

@@ -255,8 +255,8 @@ describe("attempt accounting", () => {
     await rescueStrandedEmails();
     const bumps = attemptBumps();
     expect(bumps).toHaveLength(1);
-    expect(bumps[0].payload).toEqual({ classify_attempts: 2 });
-    expect(bumps[0].filters).toEqual([{ op: "eq", col: "id", value: "e1" }]);
+    expect(bumps[0]!.payload).toEqual({ classify_attempts: 2 });
+    expect(bumps[0]!.filters).toEqual([{ op: "eq", col: "id", value: "e1" }]);
   });
 });
 
@@ -388,7 +388,7 @@ describe("batched AI pass", () => {
     const res = await rescueStrandedEmails();
     expect(res).toEqual({ scanned: 2, rescued: 2, failed: 0, skipped: 0 });
     expect(classifyEmail).toHaveBeenCalledTimes(1);
-    expect(classifyEmail.mock.calls[0][0]).toMatchObject({ subject: "subject-e2" });
+    expect(classifyEmail.mock.calls[0]![0]).toMatchObject({ subject: "subject-e2" });
     expect(updateEmailEncrypted).toHaveBeenCalledWith(
       expect.objectContaining({ email_id: "e2", classified_by: "ai", ai_confidence: 0.8 }),
     );

@@ -79,17 +79,17 @@ function resolveTableColumns(migrations: { sql: string }[], table: string): Set<
 
     createRe.lastIndex = 0;
     while ((m = createRe.exec(sql))) {
-      for (const c of parseCreateTableColumns(m[1])) columns.add(c);
+      for (const c of parseCreateTableColumns(m[1]!)) columns.add(c);
     }
 
     alterRe.lastIndex = 0;
     while ((m = alterRe.exec(sql))) {
-      const clause = m[1];
+      const clause = m[1]!;
       let a: RegExpExecArray | null;
       const addRe = /ADD COLUMN\s+(?:IF NOT EXISTS\s+)?"?([a-z_][a-z0-9_]*)"?/gi;
-      while ((a = addRe.exec(clause))) columns.add(a[1].toLowerCase());
+      while ((a = addRe.exec(clause))) columns.add(a[1]!.toLowerCase());
       const dropRe = /DROP COLUMN\s+(?:IF EXISTS\s+)?"?([a-z_][a-z0-9_]*)"?/gi;
-      while ((a = dropRe.exec(clause))) columns.delete(a[1].toLowerCase());
+      while ((a = dropRe.exec(clause))) columns.delete(a[1]!.toLowerCase());
     }
   }
   return columns;
@@ -122,7 +122,7 @@ function parseInsertColumns(body: string, table: string): string[] {
   const re = new RegExp(`INSERT INTO public\\.${table}\\s*\\(([\\s\\S]*?)\\)\\s*VALUES`, "i");
   const m = body.match(re);
   if (!m) return [];
-  return m[1]
+  return m[1]!
     .split(",")
     .map((c) => c.trim().replace(/"/g, "").toLowerCase())
     .filter(Boolean);
@@ -133,7 +133,7 @@ function parseOnConflictSetColumns(body: string): string[] {
   const m = body.match(/ON CONFLICT[\s\S]*?DO UPDATE SET\s+([\s\S]*?)(?:RETURNING|WHERE|;|$)/i);
   if (!m) return [];
   const cols: string[] = [];
-  for (const assignment of m[1].split(",")) {
+  for (const assignment of m[1]!.split(",")) {
     const left = assignment.split("=")[0]?.trim().replace(/"/g, "").toLowerCase();
     if (left && /^[a-z_][a-z0-9_]*$/.test(left)) cols.push(left);
   }

@@ -215,8 +215,8 @@ describe("classifyEmailsBatch prompt hardening", () => {
     expect(prompt).not.toContain("</system>");
 
     expect(res[0]).toMatchObject({ folder_id: "f-news", confidence: 0.95, reason: "ra" });
-    expect(res[1].confidence).toBe(AI_CONFIDENCE_CAP_ON_SANITIZE);
-    expect(res[1].reason).toContain("close_tag");
+    expect(res[1]!.confidence).toBe(AI_CONFIDENCE_CAP_ON_SANITIZE);
+    expect(res[1]!.reason).toContain("close_tag");
   });
 });
 

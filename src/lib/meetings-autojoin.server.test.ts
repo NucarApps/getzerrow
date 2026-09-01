@@ -1,11 +1,19 @@
 // Tests for the pure event-filter / meeting-URL / resend predicates in
-// src/lib/meetings-autojoin.server.ts. These decide what the notetaker records
-// and whether a bot may be re-sent, so their edge cases matter. The module's
-// heavy server dependencies are stubbed since only the pure functions are used.
+// src/lib/meetings-autojoin.server.ts, plus characterization of the
+// scheduleUpcomingMeetingBots cron pass (bot dispatch, per-event dedup, and
+// the Recall-failure path). Recall, Google OAuth, and the calendar API are all
+// stubbed — no live HTTP.
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
 
-vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {} }));
+const fake = makeSupabaseFake();
+vi.mock("@/integrations/supabase/client.server", () => ({
+  supabaseAdmin: {
+    from: (table: string) => fake.supabaseAdmin.from(table),
+    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
+  },
+}));
 vi.mock("./google-oauth.server", () => ({ getAccessToken: vi.fn() }));
 vi.mock("./recall.server", () => ({ createBot: vi.fn(), detectPlatform: vi.fn() }));
 vi.mock("./meetings.server", () => ({ loadBotConfig: vi.fn() }));
@@ -18,8 +26,12 @@ import {
   isDeclinedByUser,
   extractMeetingUrl,
   computeCanResendBot,
+  scheduleUpcomingMeetingBots,
   type EventFilterPrefs,
 } from "./meetings-autojoin.server";
+import { createBot, detectPlatform, type RecallBot } from "./recall.server";
+import { getAccessToken } from "./google-oauth.server";
+import { loadBotConfig } from "./meetings.server";
 
 const prefs = (hidden: string[] = [], colors: string[] = []): EventFilterPrefs => ({
   hiddenEventTypes: new Set(hidden),
@@ -155,5 +167,118 @@ describe("computeCanResendBot", () => {
   });
   it("resends when there is no scheduled start to gate on", () => {
     expect(computeCanResendBot({ ...base, status: "scheduled", scheduledStart: null })).toBe(true);
+  });
+});
+
+describe("scheduleUpcomingMeetingBots", () => {
+  const ACCOUNT = {
+    id: "acct-1",
+    user_id: "u1",
+    email_address: "me@acme.com",
+    auto_record_meetings: true,
+    calendar_access: true,
+    record_declined_meetings: false,
+    needs_reconnect: false,
+  };
+  const EVENT = {
+    id: "evt-1",
+    summary: "Design review",
+    start: { dateTime: "2026-09-01T12:10:00.000Z" },
+    hangoutLink: "https://meet.google.com/abc-defg-hij",
+    attendees: [
+      { email: "me@acme.com", self: true, responseStatus: "accepted" },
+      { email: "Guest@Client.com", displayName: "Guest", responseStatus: "accepted" },
+    ],
+    organizer: { email: "boss@acme.com", displayName: "Boss" },
+  };
+
+  beforeEach(() => {
+    // The global setup's restoreAllMocks doesn't clear vi.mock-factory fns.
+    vi.clearAllMocks();
+    fake.reset();
+    fake.seed("gmail_accounts", [ACCOUNT]);
+    vi.mocked(getAccessToken).mockResolvedValue("google-token");
+    vi.mocked(loadBotConfig).mockResolvedValue({
+      botName: "Atzro Notetaker",
+      chatMessage: null,
+      chatResendOnJoin: true,
+      imageB64: null,
+      autoLeaveEnabled: true,
+      autoLeaveMinutes: 30,
+    });
+    vi.mocked(createBot).mockResolvedValue({ id: "bot-new" } as RecallBot);
+    vi.mocked(detectPlatform).mockReturnValue("google_meet");
+    // Google Calendar events.list for the account's primary calendar.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ items: [EVENT] }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+      ),
+    );
+  });
+
+  it("sends a bot for an eligible event and records the meeting with its participants", async () => {
+    const { scheduled } = await scheduleUpcomingMeetingBots("run-1");
+
+    expect(scheduled).toBe(1);
+    expect(createBot).toHaveBeenCalledTimes(1);
+    expect(createBot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        meetingUrl: "https://meet.google.com/abc-defg-hij",
+        joinAt: "2026-09-01T12:10:00.000Z",
+        botName: "Atzro Notetaker",
+        everyoneLeftTimeoutSec: 1800,
+        inCallNotRecordingTimeoutSec: 1800,
+      }),
+    );
+
+    const meetingInsert = fake.calls.inserts.find((i) => i.table === "meetings");
+    expect(meetingInsert?.payload).toMatchObject({
+      user_id: "u1",
+      gmail_account_id: "acct-1",
+      recall_bot_id: "bot-new",
+      calendar_event_id: "evt-1",
+      meeting_url: "https://meet.google.com/abc-defg-hij",
+      platform: "google_meet",
+      status: "scheduled",
+      source: "calendar",
+      scheduled_start: "2026-09-01T12:10:00.000Z",
+    });
+
+    // Participants exclude the account owner and are lowercased.
+    const partInsert = fake.calls.inserts.find((i) => i.table === "meeting_participants");
+    const emails = (partInsert?.payload as Array<{ email: string }>).map((p) => p.email).sort();
+    expect(emails).toEqual(["boss@acme.com", "guest@client.com"]);
+  });
+
+  it("never sends a second bot for a calendar event that already has a meeting row", async () => {
+    fake.seed("meetings", [{ id: "m-old", user_id: "u1", calendar_event_id: "evt-1" }]);
+
+    const { scheduled } = await scheduleUpcomingMeetingBots("run-2");
+
+    expect(scheduled).toBe(0);
+    expect(createBot).not.toHaveBeenCalled();
+    expect(fake.calls.inserts).toHaveLength(0);
+  });
+
+  it("skips excluded events and does not insert a meeting when Recall bot creation fails", async () => {
+    // Explicit per-event exclusion keeps the bot out entirely.
+    fake.seed("meeting_autojoin_exclusions", [
+      { id: "x1", user_id: "u1", calendar_event_id: "evt-1" },
+    ]);
+    expect((await scheduleUpcomingMeetingBots("run-3")).scheduled).toBe(0);
+    expect(createBot).not.toHaveBeenCalled();
+
+    // Recall failure: no meeting row lands, so the next cron pass retries.
+    fake.reset();
+    fake.seed("gmail_accounts", [ACCOUNT]);
+    vi.mocked(createBot).mockRejectedValue(new Error("recall 502"));
+    const { scheduled } = await scheduleUpcomingMeetingBots("run-4");
+    expect(scheduled).toBe(0);
+    expect(fake.calls.inserts).toHaveLength(0);
   });
 });

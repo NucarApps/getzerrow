@@ -190,14 +190,14 @@ describe("startBackfillJob", () => {
     await startBackfillJob(ACC, USER, { months: 999 });
 
     expect(fake.calls.inserts).toHaveLength(2);
-    expect(fake.calls.inserts[0].payload).toEqual({
+    expect(fake.calls.inserts[0]!.payload).toEqual({
       user_id: USER,
       gmail_account_id: ACC,
       query: "after:2026/06/15 -in:chats -in:trash -in:spam",
       months: 1,
       status: "listing",
     });
-    expect(fake.calls.inserts[1].payload).toEqual(
+    expect(fake.calls.inserts[1]!.payload).toEqual(
       expect.objectContaining({
         months: 120,
         query: "after:2016/09/05 -in:chats -in:trash -in:spam",
@@ -242,7 +242,7 @@ describe("tickBackfillJobs", () => {
 
     const jobUpdates = fake.calls.updates.filter((u) => u.table === "backfill_jobs");
     expect(jobUpdates).toHaveLength(1);
-    expect(jobUpdates[0].payload).toEqual({
+    expect(jobUpdates[0]!.payload).toEqual({
       next_page_token: null,
       total_found: 12,
       total_enqueued: 8,
@@ -267,7 +267,7 @@ describe("tickBackfillJobs", () => {
       added: BACKFILL_LIST_PAGES_PER_TICK,
     });
     const jobUpdates = fake.calls.updates.filter((u) => u.table === "backfill_jobs");
-    expect(jobUpdates[0].payload).toMatchObject({
+    expect(jobUpdates[0]!.payload).toMatchObject({
       status: "listing",
       next_page_token: `tok-${BACKFILL_LIST_PAGES_PER_TICK}`,
       total_found: 10 + BACKFILL_LIST_PAGES_PER_TICK,
@@ -282,8 +282,8 @@ describe("tickBackfillJobs", () => {
     expect(res.results[0]).toEqual({ job_id: "job-1", phase: "done" });
     const jobUpdates = fake.calls.updates.filter((u) => u.table === "backfill_jobs");
     expect(jobUpdates).toHaveLength(1);
-    expect(jobUpdates[0].payload).toMatchObject({ status: "done" });
-    expect(jobUpdates[0].payload).toHaveProperty("finished_at");
+    expect(jobUpdates[0]!.payload).toMatchObject({ status: "done" });
+    expect(jobUpdates[0]!.payload).toHaveProperty("finished_at");
   });
 
   it("reports draining and touches updated_at while jobs remain", async () => {
@@ -294,7 +294,7 @@ describe("tickBackfillJobs", () => {
     expect(res.results[0]).toEqual({ job_id: "job-1", phase: "draining" });
     const jobUpdates = fake.calls.updates.filter((u) => u.table === "backfill_jobs");
     expect(jobUpdates).toHaveLength(1);
-    expect(Object.keys(jobUpdates[0].payload as Record<string, unknown>)).toEqual(["updated_at"]);
+    expect(Object.keys(jobUpdates[0]!.payload as Record<string, unknown>)).toEqual(["updated_at"]);
   });
 
   it("records a job error on the row and keeps the tick alive", async () => {
@@ -309,7 +309,7 @@ describe("tickBackfillJobs", () => {
     });
     const jobUpdates = fake.calls.updates.filter((u) => u.table === "backfill_jobs");
     expect(jobUpdates).toHaveLength(1);
-    expect(jobUpdates[0].payload).toEqual({ last_error: "Gmail API error 500" });
+    expect(jobUpdates[0]!.payload).toEqual({ last_error: "Gmail API error 500" });
     expect(logError).toHaveBeenCalledWith(
       "sync.tick_backfill_job_failed",
       expect.objectContaining({ job_id: "job-1" }),

@@ -266,13 +266,13 @@ describe("pushContacts clobber guard", () => {
     // Trust-remote flip: epoch last_synced_at makes the next pull win.
     const linkUpdates = writesTo("updates", "google_contact_links");
     expect(linkUpdates).toHaveLength(1);
-    expect(linkUpdates[0].payload).toEqual({ etag: "etag-remote", last_synced_at: EPOCH });
+    expect(linkUpdates[0]!.payload).toEqual({ etag: "etag-remote", last_synced_at: EPOCH });
 
     // The remote-only address lands immediately, lowercased and additive:
     // the existing primary keeps its flag, position continues after max.
     const inserts = writesTo("inserts", "contact_emails");
     expect(inserts).toHaveLength(1);
-    expect(inserts[0].payload).toEqual([
+    expect(inserts[0]!.payload).toEqual([
       {
         user_id: USER,
         contact_id: CT1,
@@ -451,14 +451,14 @@ describe("pushContacts create + note preference", () => {
     expect(people.createPerson).toHaveBeenCalledTimes(1);
     const upserts = writesTo("upserts", "google_contact_links");
     expect(upserts).toHaveLength(1);
-    expect(upserts[0].payload).toMatchObject({
+    expect(upserts[0]!.payload).toMatchObject({
       user_id: USER,
       gmail_account_id: ACC,
       contact_id: CT1,
       resource_name: "people/new",
       etag: "etag-created",
     });
-    expect(upserts[0].options).toEqual({ onConflict: "gmail_account_id,contact_id" });
+    expect(upserts[0]!.options).toEqual({ onConflict: "gmail_account_id,contact_id" });
     expect(res.contactsPushed).toBe(1);
 
     // Default preference: the AI summary IS folded into the pushed note.
@@ -509,7 +509,7 @@ describe("pushContacts photo push", () => {
     );
     expect(photoUpdates).toHaveLength(1);
     // A successful upload records the new etag and clears the failure state.
-    expect(photoUpdates[0].payload).toMatchObject({
+    expect(photoUpdates[0]!.payload).toMatchObject({
       photo_etag: "avatars/a.png",
       photo_push_attempts: 0,
       last_photo_error: null,
@@ -546,8 +546,8 @@ describe("pushContacts photo push", () => {
     // A sentinel etag retires the photo-dirty flag; without it the contact
     // would be re-visited by the photo lane on every single cron tick.
     expect(photoUpdates).toHaveLength(1);
-    expect(photoUpdates[0].payload).toMatchObject({ photo_push_attempts: 0 });
-    expect((photoUpdates[0].payload as Record<string, unknown>).photo_etag).toBeTruthy();
+    expect(photoUpdates[0]!.payload).toMatchObject({ photo_push_attempts: 0 });
+    expect((photoUpdates[0]!.payload as Record<string, unknown>).photo_etag).toBeTruthy();
   });
 
   it("bumps the attempt counter and keeps photo_etag when the upload fails", async () => {
@@ -564,11 +564,11 @@ describe("pushContacts photo push", () => {
     expect(photoUpdates).toHaveLength(1);
     // photo_etag stays unset so the next run retries; the counter advances
     // toward the give-up cap.
-    expect(photoUpdates[0].payload).toMatchObject({
+    expect(photoUpdates[0]!.payload).toMatchObject({
       photo_push_attempts: 2,
       last_photo_status: 500,
     });
-    expect((photoUpdates[0].payload as Record<string, unknown>).photo_etag).toBeUndefined();
+    expect((photoUpdates[0]!.payload as Record<string, unknown>).photo_etag).toBeUndefined();
   });
 });
 
@@ -585,7 +585,7 @@ describe("pushGroups", () => {
     expect(people.createContactGroup).toHaveBeenCalledWith(ACC, "Clients");
     const inserts = writesTo("inserts", "google_group_links");
     expect(inserts).toHaveLength(1);
-    expect(inserts[0].payload).toMatchObject({
+    expect(inserts[0]!.payload).toMatchObject({
       user_id: USER,
       gmail_account_id: ACC,
       contact_group_id: G1,
@@ -660,12 +660,12 @@ describe("pushGroups", () => {
     // The local link is re-pointed to the pre-existing Google group...
     const upserts = writesTo("upserts", "google_group_links");
     expect(upserts).toHaveLength(1);
-    expect(upserts[0].payload).toMatchObject({
+    expect(upserts[0]!.payload).toMatchObject({
       contact_group_id: G1,
       gmail_account_id: ACC,
       resource_name: "contactGroups/existing",
     });
-    expect(upserts[0].options).toEqual({ onConflict: "gmail_account_id,contact_group_id" });
+    expect(upserts[0]!.options).toEqual({ onConflict: "gmail_account_id,contact_group_id" });
     // ...the run counts it as pushed and never logs group_failed.
     expect(res.groupsPushed).toBe(1);
     expect(logErrorMock).not.toHaveBeenCalledWith(

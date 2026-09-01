@@ -2,7 +2,7 @@
 // This file also establishes the harness for testing `createServerFn` modules:
 // @tanstack/react-start is mocked with the __fixtures__/server-fn-stub so each
 // exported server function becomes a directly-callable async function whose
-// zod inputValidator still runs, with `context.userId = TEST_USER`.
+// zod validator still runs, with `context.userId = TEST_USER`.
 //
 // The destructive move core (performMove) is covered by move-email.server.test.ts;
 // here we pin the wrapper contracts: ownership checks before any mutation,
@@ -161,7 +161,7 @@ describe("moveEmailToFolder", () => {
     expect(performMove).not.toHaveBeenCalled();
   });
 
-  it("runs the zod inputValidator (non-uuid ids never reach the handler)", async () => {
+  it("runs the zod validator (non-uuid ids never reach the handler)", async () => {
     await expect(
       moveEmailToFolder({ data: { email_id: "not-a-uuid", to_folder_id: FOLDER_TO } }),
     ).rejects.toThrow();
@@ -254,7 +254,7 @@ describe("bulkMoveEmails", () => {
 
     const filterInserts = fake.calls.inserts.filter((i) => i.table === "folder_filters");
     expect(filterInserts).toHaveLength(1);
-    expect(filterInserts[0].payload).toEqual({
+    expect(filterInserts[0]!.payload).toEqual({
       folder_id: FOLDER_TO,
       field: "domain",
       op: "contains",
@@ -264,8 +264,8 @@ describe("bulkMoveEmails", () => {
     // Audit retag: only rows that actually landed in the destination folder.
     const retags = fake.calls.updates.filter((u) => u.table === "emails");
     expect(retags).toHaveLength(1);
-    expect(retags[0].payload).toEqual({ classified_by: "domain_rule" });
-    expect(retags[0].filters).toEqual([
+    expect(retags[0]!.payload).toEqual({ classified_by: "domain_rule" });
+    expect(retags[0]!.filters).toEqual([
       { op: "eq", col: "user_id", value: TEST_USER },
       { op: "in", col: "id", value: [EMAIL_1, EMAIL_2] },
       { op: "eq", col: "folder_id", value: FOLDER_TO },
@@ -319,7 +319,7 @@ describe("moveEmailToInbox", () => {
 
     const emailUpdates = fake.calls.updates.filter((u) => u.table === "emails");
     expect(emailUpdates).toHaveLength(1);
-    expect(emailUpdates[0].payload).toEqual({
+    expect(emailUpdates[0]!.payload).toEqual({
       folder_id: null,
       is_archived: false,
       classified_by: "manual_inbox",
@@ -333,7 +333,7 @@ describe("moveEmailToInbox", () => {
     // Stop training the AI on the mistaken filing.
     const exampleDeletes = fake.calls.deletes.filter((d) => d.table === "folder_examples");
     expect(exampleDeletes).toHaveLength(1);
-    expect(exampleDeletes[0].filters).toEqual([
+    expect(exampleDeletes[0]!.filters).toEqual([
       { op: "eq", col: "folder_id", value: FOLDER_OLD },
       { op: "eq", col: "gmail_message_id", value: "gm-1" },
     ]);
@@ -354,7 +354,7 @@ describe("moveEmailToInbox", () => {
 
     const overrideInserts = fake.calls.inserts.filter((i) => i.table === "inbox_overrides");
     expect(overrideInserts).toHaveLength(1);
-    expect(overrideInserts[0].payload).toEqual({
+    expect(overrideInserts[0]!.payload).toEqual({
       user_id: TEST_USER,
       gmail_account_id: null,
       match_type: "domain",
@@ -382,8 +382,8 @@ describe("moveEmailToInbox", () => {
     expect(fake.calls.inserts.filter((i) => i.table === "inbox_overrides")).toHaveLength(0);
     const promotions = fake.calls.updates.filter((u) => u.table === "inbox_overrides");
     expect(promotions).toHaveLength(1);
-    expect(promotions[0].payload).toEqual({ gmail_account_id: null });
-    expect(promotions[0].filters).toEqual([{ op: "eq", col: "id", value: "ov-1" }]);
+    expect(promotions[0]!.payload).toEqual({ gmail_account_id: null });
+    expect(promotions[0]!.filters).toEqual([{ op: "eq", col: "id", value: "ov-1" }]);
     expect(invalidateAccountContextForUser).toHaveBeenCalledWith(TEST_USER);
     expect(res).toMatchObject({ override_added: "email" });
   });
@@ -397,14 +397,14 @@ describe("addInboxOverride", () => {
 
     const upserts = fake.calls.upserts.filter((u) => u.table === "inbox_overrides");
     expect(upserts).toHaveLength(1);
-    expect(upserts[0].payload).toEqual({
+    expect(upserts[0]!.payload).toEqual({
       user_id: TEST_USER,
       gmail_account_id: null,
       match_type: "domain",
       value: "foo.com",
     });
     // Race safety net: duplicate-key errors are swallowed by ignoreDuplicates.
-    expect(upserts[0].options).toEqual({
+    expect(upserts[0]!.options).toEqual({
       onConflict: "user_id,match_type,value",
       ignoreDuplicates: true,
     });

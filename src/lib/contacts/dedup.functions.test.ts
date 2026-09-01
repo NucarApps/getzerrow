@@ -165,7 +165,7 @@ describe("mergeContactDuplicate — Google link collisions", () => {
     const linkUpdates = fake.calls.updates.filter((u) => u.table === "google_contact_links");
     // Exactly one link moved: the acct-2 one. The acct-1 collision is skipped.
     expect(linkUpdates).toHaveLength(1);
-    const filters = linkUpdates[0].filters;
+    const filters = linkUpdates[0]!.filters;
     expect(filters).toContainEqual({ op: "eq", col: "gmail_account_id", value: "acct-2" });
     expect(filters).toContainEqual({ op: "eq", col: "resource_name", value: "people/dup2" });
   });

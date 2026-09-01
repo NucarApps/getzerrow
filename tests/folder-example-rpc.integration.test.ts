@@ -126,9 +126,9 @@ d("insert_folder_example_encrypted (live RPC regression)", () => {
 
     const rows = await decryptedRows();
     expect(rows).toHaveLength(1);
-    expect(rows[0].subject).toBe("Subject One");
-    expect(rows[0].snippet).toBe("Snippet One");
-    expect(rows[0].source).toBe("seed");
+    expect(rows[0]!.subject).toBe("Subject One");
+    expect(rows[0]!.snippet).toBe("Snippet One");
+    expect(rows[0]!.source).toBe("seed");
   });
 
   it("ON CONFLICT path UPDATES the same row's encrypted columns", async () => {
@@ -142,9 +142,9 @@ d("insert_folder_example_encrypted (live RPC regression)", () => {
 
     const rows = await decryptedRows();
     expect(rows).toHaveLength(1);
-    expect(rows[0].subject).toBe("Subject Two");
-    expect(rows[0].snippet).toBe("Snippet Two");
-    expect(rows[0].source).toBe("correction");
+    expect(rows[0]!.subject).toBe("Subject Two");
+    expect(rows[0]!.snippet).toBe("Snippet Two");
+    expect(rows[0]!.source).toBe("correction");
   });
 
   it("is idempotent under a retry storm: repeated identical writes never duplicate", async () => {
@@ -172,7 +172,7 @@ d("insert_folder_example_encrypted (live RPC regression)", () => {
 
     const rows = await decryptedRows();
     expect(rows).toHaveLength(1);
-    expect(rows[0].subject).toBe("Retry Subject");
-    expect(rows[0].snippet).toBe("Retry Snippet");
+    expect(rows[0]!.subject).toBe("Retry Subject");
+    expect(rows[0]!.snippet).toBe("Retry Snippet");
   });
 });

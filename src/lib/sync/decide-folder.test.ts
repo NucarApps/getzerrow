@@ -116,9 +116,13 @@ describe("decideFolder precedence", () => {
 
   it("rung 3: an always-inbox override wins over a filter match", () => {
     const overrides = [{ id: "o1", match_type: "domain", value: "stripe.com" }];
-    const r = decideFolder(parsed, context({ folders: [invoices], filters: [invoiceFilter], overrides }), {
-      trigger: "arrival",
-    });
+    const r = decideFolder(
+      parsed,
+      context({ folders: [invoices], filters: [invoiceFilter], overrides }),
+      {
+        trigger: "arrival",
+      },
+    );
     expect(r.folder_id).toBeNull();
     expect(r.classified_by).toBe("inbox_override");
   });
@@ -126,9 +130,13 @@ describe("decideFolder precedence", () => {
   it("rung 3: a folder with overrides_inbox_override opts out of the override", () => {
     const overrides = [{ id: "o1", match_type: "domain", value: "stripe.com" }];
     const strong = folder({ ...invoices, overrides_inbox_override: true });
-    const r = decideFolder(parsed, context({ folders: [strong], filters: [invoiceFilter], overrides }), {
-      trigger: "arrival",
-    });
+    const r = decideFolder(
+      parsed,
+      context({ folders: [strong], filters: [invoiceFilter], overrides }),
+      {
+        trigger: "arrival",
+      },
+    );
     expect(r.folder_id).toBe("f-inv");
   });
 

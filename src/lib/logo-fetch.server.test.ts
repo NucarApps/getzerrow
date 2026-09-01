@@ -126,8 +126,8 @@ describe("fetchLogoBytes — guards", () => {
     fetchMock.mockResolvedValue(imageResponse(1000));
     await fetchLogoBytes("https://acme.com/logo.png");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][1]).toMatchObject({ redirect: "manual" });
-    expect(fetchMock.mock.calls[0][1].signal).toBeDefined();
+    expect(fetchMock.mock.calls[0]![1]).toMatchObject({ redirect: "manual" });
+    expect(fetchMock.mock.calls[0]![1].signal).toBeDefined();
   });
 });
 

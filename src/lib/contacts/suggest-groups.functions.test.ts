@@ -108,7 +108,7 @@ describe("applySuggestionImpl — resolve a new label", () => {
     expect(resolveOrCreateCompanyLabel).toHaveBeenCalled();
 
     const upsert = fake.calls.upserts.find((u) => u.table === "contact_group_members");
-    expect((upsert?.payload as Array<Record<string, unknown>>)[0].group_id).toBe("resolved-group");
+    expect((upsert?.payload as Array<Record<string, unknown>>)[0]!.group_id).toBe("resolved-group");
   });
 });
 

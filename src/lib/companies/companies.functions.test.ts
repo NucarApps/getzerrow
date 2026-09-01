@@ -97,7 +97,7 @@ describe("clusterCompanies", () => {
       co("c", "Toyota Financial"),
     ]);
     expect(clusters).toHaveLength(1);
-    const ids = clusters[0].map((c) => c.id).sort();
+    const ids = clusters[0]!.map((c) => c.id).sort();
     expect(ids).toEqual(["a", "b"]);
   });
 
@@ -113,7 +113,7 @@ describe("clusterCompanies", () => {
       co("n2", "NMAC", ["mail.nissanusa.com"]),
     ]);
     expect(clusters).toHaveLength(1);
-    expect(clusters[0].map((c) => c.id).sort()).toEqual(["n1", "n2"]);
+    expect(clusters[0]!.map((c) => c.id).sort()).toEqual(["n1", "n2"]);
   });
 
   it("excludes singletons — a cluster needs at least two companies", () => {

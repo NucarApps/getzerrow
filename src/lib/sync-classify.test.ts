@@ -6,40 +6,12 @@
 // touches Supabase, and use skipAi=true so we never hit the AI Gateway.
 import { describe, it, expect } from "vitest";
 import { classifyParsedEmail, classifyByRules, type AccountContext } from "./sync.server";
+import { makeEmailRow, makeFolder, makeRule } from "./__fixtures__/email-row";
 
-type Folder = AccountContext["folders"][number];
 type Filter = AccountContext["filters"][number];
 
-function folder(over: Partial<Folder> = {}): Folder {
-  return {
-    id: over.id ?? "f-default",
-    name: over.name ?? "Default",
-    gmail_label_id: over.gmail_label_id ?? null,
-    ai_rule: over.ai_rule ?? "route mail here",
-    learned_profile: over.learned_profile ?? null,
-    last_learned_at: over.last_learned_at ?? null,
-    auto_archive: over.auto_archive ?? false,
-    auto_mark_read: over.auto_mark_read ?? false,
-    auto_star: over.auto_star ?? false,
-    hide_from_inbox: over.hide_from_inbox ?? false,
-    skip_ai: over.skip_ai ?? false,
-    priority: over.priority ?? 0,
-    gmail_account_id: over.gmail_account_id ?? "acc-1",
-    filter_logic: over.filter_logic ?? "any",
-    filter_tree: over.filter_tree ?? null,
-    forward_to: over.forward_to ?? null,
-    min_ai_confidence: over.min_ai_confidence ?? 0,
-    snooze_hours: over.snooze_hours ?? 0,
-    overrides_inbox_override: over.overrides_inbox_override ?? false,
-    is_cold_email: over.is_cold_email ?? false,
-    surface_ai_rule: over.surface_ai_rule ?? null,
-    surface_names: over.surface_names ?? null,
-  };
-}
-
-function filter(folder_id: string, field: string, op: string, value: string, id = ""): Filter {
-  return { id: id || `${folder_id}-${field}-${value}`, folder_id, field, op, value };
-}
+const folder = makeFolder;
+const filter = makeRule;
 
 function ctx(over: Partial<AccountContext> = {}): AccountContext {
   return {
@@ -58,21 +30,7 @@ function ctx(over: Partial<AccountContext> = {}): AccountContext {
 function email(
   over: Partial<Parameters<typeof classifyParsedEmail>[0]> = {},
 ): Parameters<typeof classifyParsedEmail>[0] {
-  return {
-    from_addr: over.from_addr ?? "sender@example.com",
-    from_name: over.from_name ?? "",
-    to_addrs: over.to_addrs ?? "me@example.com",
-    cc: over.cc,
-    list_id: over.list_id,
-    in_reply_to: over.in_reply_to,
-    subject: over.subject ?? "",
-    snippet: over.snippet ?? "",
-    body_text: over.body_text ?? "",
-    body_html: over.body_html ?? "",
-    has_attachment: over.has_attachment ?? false,
-    received_at: over.received_at ?? new Date().toISOString(),
-    raw_labels: over.raw_labels ?? ["INBOX"],
-  };
+  return makeEmailRow(over);
 }
 
 const opts = { context: undefined as AccountContext | undefined, skipAi: true };

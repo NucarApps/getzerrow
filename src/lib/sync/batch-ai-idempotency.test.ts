@@ -20,6 +20,7 @@
 // honor it.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
 
 // ─────────────── State captured by mocks ─────────────────────────────
 
@@ -42,7 +43,6 @@ type EmailRow = {
 const claimedQueue: ClaimedJob[] = [];
 const emailsById = new Map<string, EmailRow>();
 const jobRowById = new Map<string, ClaimedJob>();
-const jobDeletes: string[] = [];
 const applyCalls: Array<{ gmailMessageId: string; emailRowId: string; folderId: string }> = [];
 const updateCalls: Array<{
   email_id: string;
@@ -61,86 +61,34 @@ async function flushMicrotasks() {
 }
 
 // ─────────────── supabaseAdmin fake ──────────────────────────────────
+//
+// The shared chainable fake. `emails` reads resolve from seeded rows
+// (re-seeded from emailsById whenever a mock mutates one); the
+// message_jobs stuck-check resolves empty from the unseeded table; job
+// deletes are read back from fake.calls.deletes. claim_message_jobs
+// drains claimedQueue via an onRpc handler.
 
-function emailsSelectBuilder() {
-  let idFilter: string | null = null;
-  const chain = {
-    select() {
-      return chain;
-    },
-    eq(col: string, val: string) {
-      if (col === "id") idFilter = val;
-      return chain;
-    },
-    async maybeSingle() {
-      if (!idFilter) return { data: null, error: null };
-      const row = emailsById.get(idFilter) ?? null;
-      return { data: row, error: null };
-    },
-    limit() {
-      return Promise.resolve({ data: [], error: null });
-    },
-  };
-  return chain;
-}
+const fake = makeSupabaseFake();
 
-function messageJobsBuilder() {
-  const state: { op: string; filterId: string | null } = { op: "select", filterId: null };
-  const chain: Record<string, unknown> = {
-    select() {
-      state.op = "select";
-      return chain;
-    },
-    // The stuck-check queries: .select().eq('status','running').lt('locked_at', …)
-    eq() {
-      return chain;
-    },
-    lt() {
-      // stuck query terminates with an await on the chain — resolve to []
-      return Promise.resolve({ data: [], error: null });
-    },
-    delete() {
-      state.op = "delete";
-      return {
-        eq(_col: string, id: string) {
-          state.filterId = id;
-          jobDeletes.push(id);
-          return Promise.resolve({ error: null });
-        },
-      };
-    },
-    update() {
-      return {
-        eq() {
-          return Promise.resolve({ error: null });
-        },
-      };
-    },
-  };
-  return chain;
-}
-
+// Property accesses are deferred into method bodies so the hoisted factory
+// never touches `fake` before its initializer runs.
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
-    from(table: string) {
-      if (table === "emails") return emailsSelectBuilder();
-      if (table === "message_jobs") return messageJobsBuilder();
-      // pubsub_events insert etc. — no-op.
-      return {
-        insert: () => Promise.resolve({ error: null }),
-        select: () => ({ eq: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }),
-      };
-    },
-    async rpc(fn: string) {
-      if (fn === "claim_message_jobs") {
-        const rows = [...claimedQueue];
-        claimedQueue.length = 0;
-        return { data: rows, error: null };
-      }
-      return { data: null, error: null };
-    },
+    from: (table: string) => fake.supabaseAdmin.from(table),
+    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
   },
 }));
+
+function reseedEmails() {
+  fake.seed("emails", [...emailsById.values()]);
+}
+
+/** Job ids deleted from message_jobs, in call order. */
+function jobDeletes(): string[] {
+  return fake.calls.deletes
+    .filter((d) => d.table === "message_jobs")
+    .map((d) => String(d.filters.find((f) => f.op === "eq" && f.col === "id")?.value));
+}
 
 // ─────────────── Other module fakes ──────────────────────────────────
 
@@ -254,6 +202,7 @@ vi.mock("./encrypted-writer", () => ({
         classified_by: patch.classified_by ?? existing.classified_by,
         folder_id: patch.folder_id ?? existing.folder_id,
       });
+      reseedEmails();
     }
   },
 }));
@@ -296,13 +245,19 @@ function seedJob(opts: {
   jobRowById.set(`${job.gmail_account_id}:${job.gmail_message_id}`, job);
   emailRowForJob.set(opts.jobId, opts.emailRowId);
   emailsById.set(opts.emailRowId, opts.emailState);
+  reseedEmails();
 }
 
 beforeEach(() => {
+  fake.reset();
+  fake.onRpc("claim_message_jobs", () => {
+    const rows = [...claimedQueue];
+    claimedQueue.length = 0;
+    return { data: rows };
+  });
   claimedQueue.length = 0;
   emailsById.clear();
   jobRowById.clear();
-  jobDeletes.length = 0;
   applyCalls.length = 0;
   updateCalls.length = 0;
   bumpCalls.length = 0;
@@ -338,10 +293,10 @@ describe("batch-AI second pass idempotency", () => {
     expect(applyCalls[0]).toMatchObject({ emailRowId: "email-X", folderId: "folder-A" });
     expect(bumpCalls).toEqual(["folder-A"]);
     expect(updateCalls).toHaveLength(1);
-    expect(updateCalls[0].email_id).toBe("email-X");
+    expect(updateCalls[0]!.email_id).toBe("email-X");
 
     // Both job rows still get deleted — the queue must drain either way.
-    expect(new Set(jobDeletes)).toEqual(new Set(["job-1", "job-2"]));
+    expect(new Set(jobDeletes())).toEqual(new Set(["job-1", "job-2"]));
 
     // One batch AI call covering both messages.
     expect(batchCalls).toEqual([2]);
@@ -370,11 +325,11 @@ describe("batch-AI second pass idempotency", () => {
     await flushMicrotasks();
 
     expect(applyCalls).toHaveLength(1);
-    expect(applyCalls[0].emailRowId).toBe("email-fresh");
+    expect(applyCalls[0]!.emailRowId).toBe("email-fresh");
     expect(bumpCalls).toEqual(["folder-A"]);
     expect(updateCalls).toHaveLength(1);
-    expect(updateCalls[0].email_id).toBe("email-fresh");
-    expect(new Set(jobDeletes)).toEqual(new Set(["job-1", "job-2"]));
+    expect(updateCalls[0]!.email_id).toBe("email-fresh");
+    expect(new Set(jobDeletes())).toEqual(new Set(["job-1", "job-2"]));
   });
 
   it("batch-fallback single path also honors the idempotency gate", async () => {
@@ -401,10 +356,10 @@ describe("batch-AI second pass idempotency", () => {
     // job-1 (fresh) goes through the fallback single classifier + apply;
     // job-2 (retry) is gated out before either step runs.
     expect(applyCalls).toHaveLength(1);
-    expect(applyCalls[0].emailRowId).toBe("email-X");
+    expect(applyCalls[0]!.emailRowId).toBe("email-X");
     expect(bumpCalls).toEqual(["folder-A"]);
     expect(updateCalls).toHaveLength(1);
-    expect(updateCalls[0].email_id).toBe("email-X");
-    expect(new Set(jobDeletes)).toEqual(new Set(["job-1", "job-2"]));
+    expect(updateCalls[0]!.email_id).toBe("email-X");
+    expect(new Set(jobDeletes())).toEqual(new Set(["job-1", "job-2"]));
   });
 });

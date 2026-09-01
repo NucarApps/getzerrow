@@ -116,11 +116,11 @@ describe("healthy-row label mirroring (pass 1)", () => {
     const res = await reconcileLocalInbox(ACC, 10);
     expect(res).toMatchObject({ checked: 1, updated: 1, archived: 0, deleted: 0, failed: 0 });
     expect(emailUpdates()).toHaveLength(1);
-    expect(emailUpdates()[0].payload).toEqual({
+    expect(emailUpdates()[0]!.payload).toEqual({
       raw_labels: ["INBOX", "UNREAD"],
       is_read: false,
     });
-    expect(emailUpdates()[0].filters).toEqual([{ op: "eq", col: "id", value: "e1" }]);
+    expect(emailUpdates()[0]!.filters).toEqual([{ op: "eq", col: "id", value: "e1" }]);
   });
 
   it("archives locally when Gmail no longer shows INBOX", async () => {
@@ -130,7 +130,7 @@ describe("healthy-row label mirroring (pass 1)", () => {
 
     const res = await reconcileLocalInbox(ACC, 10);
     expect(res).toMatchObject({ checked: 1, archived: 1, updated: 0 });
-    expect(emailUpdates()[0].payload).toEqual({
+    expect(emailUpdates()[0]!.payload).toEqual({
       is_archived: true,
       raw_labels: ["Label_7"],
       is_read: true,
@@ -145,7 +145,7 @@ describe("healthy-row label mirroring (pass 1)", () => {
     const res = await reconcileLocalInbox(ACC, 10);
     expect(res).toMatchObject({ checked: 1, deleted: 1, failed: 0 });
     expect(emailDeletes()).toHaveLength(1);
-    expect(emailDeletes()[0].filters).toEqual([{ op: "eq", col: "id", value: "e1" }]);
+    expect(emailDeletes()[0]!.filters).toEqual([{ op: "eq", col: "id", value: "e1" }]);
     expect(emailUpdates()).toHaveLength(0);
   });
 
@@ -185,7 +185,7 @@ describe("broken-row repair (pass 1)", () => {
     });
     // ...and the plaintext columns via a plain update.
     expect(emailUpdates()).toHaveLength(1);
-    expect(emailUpdates()[0].payload).toEqual({
+    expect(emailUpdates()[0]!.payload).toEqual({
       from_addr: "repaired@x.com",
       received_at: "2026-07-09T00:00:00Z",
       has_attachment: true,
@@ -203,7 +203,7 @@ describe("broken-row repair (pass 1)", () => {
 
     const res = await reconcileLocalInbox(ACC, 10);
     expect(res).toMatchObject({ repaired: 1, archived: 1 });
-    expect(emailUpdates()[0].payload).toMatchObject({ is_archived: true });
+    expect(emailUpdates()[0]!.payload).toMatchObject({ is_archived: true });
   });
 
   it("deletes instead of repairing when the re-fetched message is in TRASH", async () => {
@@ -247,7 +247,7 @@ describe("broken-row repair (pass 1)", () => {
     );
     // The healthy second row was still mirrored.
     expect(emailUpdates()).toHaveLength(1);
-    expect(emailUpdates()[0].filters).toEqual([{ op: "eq", col: "id", value: "e2" }]);
+    expect(emailUpdates()[0]!.filters).toEqual([{ op: "eq", col: "id", value: "e2" }]);
   });
 });
 
@@ -287,7 +287,7 @@ describe("cursor walk", () => {
       value: "2026-07-08T00:00:00Z",
     });
     expect(cursorUpdates()).toHaveLength(1);
-    expect(cursorUpdates()[0].payload).toEqual({ reconcile_cursor: "2026-07-03T00:00:00Z" });
+    expect(cursorUpdates()[0]!.payload).toEqual({ reconcile_cursor: "2026-07-03T00:00:00Z" });
   });
 
   it("falls back to the head's oldest received_at as tail anchor when cursor is null", async () => {
@@ -317,7 +317,89 @@ describe("cursor walk", () => {
 
     await reconcileLocalInbox(ACC, 100);
     expect(cursorUpdates()).toHaveLength(1);
-    expect(cursorUpdates()[0].payload).toEqual({ reconcile_cursor: null });
+    expect(cursorUpdates()[0]!.payload).toEqual({ reconcile_cursor: null });
+  });
+});
+
+describe("folder_id contract (audit §1 path 11)", () => {
+  // DIVERGENCE (audit §1 path 11): docs/rules-engine-audit.md lists
+  // reconcile.ts:141/184/237 as a path that "mirrors Gmail state, can strip
+  // folder". The current code never writes folder_id at all — it only
+  // selects it. Label-removal stripping lives in history.ts (path 3), not
+  // here. These tests pin the actual contract: reconcile mirrors
+  // raw_labels / is_archived / is_read (or deletes the row), and neither
+  // strips nor invents a folder assignment, nor touches provenance.
+
+  it("pass 1 mirroring never touches folder_id even when the folder's Gmail label vanished", async () => {
+    seedAccount();
+    fake.seed("emails", [emailRow("e1", { folder_id: "f-1", raw_labels: ["INBOX", "L-F1"] })]);
+    // Gmail no longer shows the folder's label — a strip-tempting state.
+    getMessageLabels.mockResolvedValue(["INBOX"]);
+
+    await reconcileLocalInbox(ACC, 10);
+    expect(emailUpdates()).toHaveLength(1);
+    expect(emailUpdates()[0]!.payload).toEqual({ raw_labels: ["INBOX"], is_read: true });
+    expect(emailUpdates()[0]!.payload).not.toHaveProperty("folder_id");
+    expect(emailUpdates()[0]!.payload).not.toHaveProperty("classified_by");
+  });
+
+  it("archive drift (pass 1) and un-archive drift (pass 2) both keep the folder assignment", async () => {
+    seedAccount();
+    fake.seed("emails", [
+      emailRow("e1", { folder_id: "f-1", received_at: "2026-07-10T00:00:00Z" }),
+      emailRow("a1", {
+        folder_id: "f-2",
+        is_archived: true,
+        is_read: true,
+        received_at: "2026-07-09T00:00:00Z",
+      }),
+    ]);
+    getMessageLabels.mockImplementation(async (_acc: string, gmailId: string) =>
+      // e1 left the inbox in Gmail; a1 came back to it.
+      gmailId === "gm-e1" ? ["Label_7"] : ["INBOX"],
+    );
+
+    const res = await reconcileLocalInbox(ACC, 10);
+    expect(res).toMatchObject({ archived: 1, unarchived: 1, failed: 0 });
+    for (const u of emailUpdates()) {
+      expect(u.payload).not.toHaveProperty("folder_id");
+      expect(u.payload).not.toHaveProperty("classified_by");
+    }
+    // Both drift directions were actually exercised.
+    expect(emailUpdates().map((u) => (u.payload as { is_archived?: boolean }).is_archived)).toEqual(
+      [true, false],
+    );
+  });
+
+  it("the full re-fetch repair rewrites content fields only — folder_id and provenance stay untouched", async () => {
+    seedAccount();
+    fake.seed("emails", [emailRow("e1", { folder_id: "f-1", from_addr: null })]);
+    getMessage.mockResolvedValue({ raw: true });
+    parseMessage.mockReturnValue(parsedMessage({ raw_labels: ["INBOX"] }));
+
+    const res = await reconcileLocalInbox(ACC, 10);
+    expect(res).toMatchObject({ repaired: 1, failed: 0 });
+    // The encrypted write carries content only.
+    const enc = updateEmailEncrypted.mock.calls[0]![0] as Record<string, unknown>;
+    expect(Object.keys(enc).sort()).toEqual([
+      "body_html",
+      "body_text",
+      "email_id",
+      "from_name",
+      "snippet",
+      "subject",
+      "to_addrs",
+    ]);
+    // The plain patch mirrors Gmail state — no folder, no provenance.
+    expect(emailUpdates()).toHaveLength(1);
+    expect(Object.keys(emailUpdates()[0]!.payload as object).sort()).toEqual([
+      "from_addr",
+      "has_attachment",
+      "is_archived",
+      "is_read",
+      "raw_labels",
+      "received_at",
+    ]);
   });
 });
 
@@ -330,7 +412,7 @@ describe("archived pass (pass 2)", () => {
     const res = await reconcileLocalInbox(ACC, 10);
     expect(res).toMatchObject({ archived_checked: 1, unarchived: 1, checked: 0 });
     expect(emailUpdates()).toHaveLength(1);
-    expect(emailUpdates()[0].payload).toEqual({
+    expect(emailUpdates()[0]!.payload).toEqual({
       raw_labels: ["INBOX", "UNREAD"],
       is_archived: false,
       is_read: false,
@@ -351,10 +433,10 @@ describe("archived pass (pass 2)", () => {
     expect(res).toMatchObject({ archived_checked: 2, unarchived: 0, deleted: 1 });
     // a1: still archived + already read → raw_labels-only patch.
     expect(emailUpdates()).toHaveLength(1);
-    expect(emailUpdates()[0].payload).toEqual({ raw_labels: ["Label_7"] });
+    expect(emailUpdates()[0]!.payload).toEqual({ raw_labels: ["Label_7"] });
     // a2: trashed in Gmail → local delete.
     expect(emailDeletes()).toHaveLength(1);
-    expect(emailDeletes()[0].filters).toEqual([{ op: "eq", col: "id", value: "a2" }]);
+    expect(emailDeletes()[0]!.filters).toEqual([{ op: "eq", col: "id", value: "a2" }]);
   });
 
   it("isolates a pass-2 failure per row", async () => {
@@ -376,6 +458,6 @@ describe("archived pass (pass 2)", () => {
       expect.any(Error),
     );
     expect(emailUpdates()).toHaveLength(1);
-    expect(emailUpdates()[0].filters).toEqual([{ op: "eq", col: "id", value: "a2" }]);
+    expect(emailUpdates()[0]!.filters).toEqual([{ op: "eq", col: "id", value: "a2" }]);
   });
 });

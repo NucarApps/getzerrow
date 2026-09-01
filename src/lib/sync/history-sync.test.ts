@@ -195,7 +195,7 @@ describe("history event handling", () => {
     await syncSinceHistory(ACC);
     const deletes = fake.calls.deletes.filter((d) => d.table === "emails");
     expect(deletes).toHaveLength(1);
-    expect(deletes[0].filters).toEqual([
+    expect(deletes[0]!.filters).toEqual([
       { op: "eq", col: "gmail_account_id", value: ACC },
       { op: "in", col: "gmail_message_id", value: ["d1", "d2", "d3"] },
     ]);
@@ -214,7 +214,7 @@ describe("history event handling", () => {
     await syncSinceHistory(ACC);
     const deletes = fake.calls.deletes.filter((d) => d.table === "emails");
     expect(deletes).toHaveLength(1);
-    expect(deletes[0].filters).toEqual([
+    expect(deletes[0]!.filters).toEqual([
       { op: "eq", col: "gmail_account_id", value: ACC },
       { op: "eq", col: "gmail_message_id", value: "m-trash" },
     ]);
@@ -257,7 +257,7 @@ describe("history event handling", () => {
     });
     await syncSinceHistory(ACC);
     expect(emailUpdates()).toHaveLength(1);
-    expect(emailUpdates()[0].payload).toEqual({
+    expect(emailUpdates()[0]!.payload).toEqual({
       raw_labels: ["INBOX", "L-A"],
       folder_id: "folder-A",
       classified_by: "gmail_labeled",
@@ -332,7 +332,7 @@ describe("history event handling", () => {
     const res = await syncSinceHistory(ACC);
     expect(res).toEqual({ synced: 1 });
     expect(enqueueCalls).toHaveLength(1);
-    expect(enqueueCalls[0].ids).toEqual(["m-new"]);
+    expect(enqueueCalls[0]!.ids).toEqual(["m-new"]);
     // The queued processGmailMessage will read the final labels itself; an
     // UPDATE now would silently no-op against a row that doesn't exist.
     expect(emailUpdates()).toHaveLength(0);
@@ -370,8 +370,8 @@ describe("history event handling", () => {
     // Per-page enqueue (not one bulk enqueue at the end): each page's ids land
     // in their own call, in page order.
     expect(enqueueCalls).toHaveLength(2);
-    expect(enqueueCalls[0].ids).toEqual(["m1"]);
-    expect(enqueueCalls[1].ids).toEqual(["m2"]);
+    expect(enqueueCalls[0]!.ids).toEqual(["m1"]);
+    expect(enqueueCalls[1]!.ids).toEqual(["m2"]);
 
     // The cursor is bumped to the per-record ids 1010 then 1020 (not 1100),
     // and the end-of-walk head bump to 1100 lands last. bump_history_id_if_greater
@@ -421,7 +421,7 @@ describe("bootstrap (history_id null)", () => {
     });
     // Locally-present ids are filtered; duplicates collapse to one.
     expect(enqueueCalls).toHaveLength(1);
-    expect(enqueueCalls[0].ids).toEqual(["new-1", "new-2"]);
+    expect(enqueueCalls[0]!.ids).toEqual(["new-1", "new-2"]);
     // historyId probe uses the light metadata fetch and the monotonic RPC.
     expect(getMessageMetadataCalls).toEqual(["probe"]);
     const bump = fake.calls.rpcs.find((r) => r.fn === "bump_history_id_if_greater");
@@ -451,7 +451,7 @@ describe("history_id bump fallback and stamping", () => {
     // under concurrency, but strictly better than a blind UPDATE).
     const raw = accountUpdates().filter((u) => "history_id" in (u.payload as object));
     expect(raw.length).toBeGreaterThanOrEqual(1);
-    expect(raw[0].payload).toMatchObject({ history_id: "2000" });
+    expect(raw[0]!.payload).toMatchObject({ history_id: "2000" });
   });
 
   it("does not regress history_id via the JS fallback when the stored id is higher", async () => {

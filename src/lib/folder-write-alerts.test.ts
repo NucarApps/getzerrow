@@ -41,14 +41,14 @@ describe("groupFailures", () => {
     expect(a42703?.first_at).toBe(new Date(T0).toISOString());
     expect(a42703?.last_at).toBe(new Date(T0 + 3 * 60_000).toISOString());
     // sorted by count desc → the 2-count group is first
-    expect(groups[0].failure_count).toBe(2);
+    expect(groups[0]!.failure_count).toBe(2);
   });
 
   it("treats missing error codes as 'unknown'", () => {
     const groups = groupFailures([fail(null, "folder-a", 0), fail("", "folder-a", 1)]);
     expect(groups).toHaveLength(1);
-    expect(groups[0].error_code).toBe("unknown");
-    expect(groups[0].failure_count).toBe(2);
+    expect(groups[0]!.error_code).toBe("unknown");
+    expect(groups[0]!.failure_count).toBe(2);
   });
 });
 
@@ -64,8 +64,8 @@ describe("selectAlertsToFire", () => {
     ]);
     const fired = selectAlertsToFire(groups, [], config);
     expect(fired).toHaveLength(1);
-    expect(fired[0].error_code).toBe("42703");
-    expect(fired[0].folder_id).toBe("folder-a");
+    expect(fired[0]!.error_code).toBe("42703");
+    expect(fired[0]!.folder_id).toBe("folder-a");
   });
 
   it("suppresses groups within the cooldown window", () => {

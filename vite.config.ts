@@ -28,6 +28,10 @@ const supabasePublishableKey =
 export default defineConfig({
   tanstackStart: {
     server: { entry: "server" },
+    // Test files live beside routes (src/routes/api/public/cron-auth.test.ts
+    // sweeps every public route in-process); keep them out of the generated
+    // route tree.
+    router: { routeFileIgnorePattern: "\\.test\\." },
   },
   vite: {
     define: {

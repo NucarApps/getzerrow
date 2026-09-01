@@ -112,7 +112,7 @@ describe("mergeFlagActions", () => {
     );
     expect(merged.map((a) => a.action_type)).toEqual(["label", "mark_read", "star", "archive"]);
     expect(merged.every((a) => a.id === null)).toBe(true);
-    expect(merged[0].label_id).toBe("L-A");
+    expect(merged[0]!.label_id).toBe("L-A");
   });
 
   it("hide_from_inbox maps to archive exactly like auto_archive", () => {
@@ -143,7 +143,7 @@ describe("archive", () => {
     });
     expect(plan.removeLabels).toEqual([]);
     expect(plan.patch).toEqual({});
-    expect(outcomes[0].status).toBe("skipped");
+    expect(outcomes[0]!.status).toBe("skipped");
   });
 
   it("running the same action twice contributes one mutation", async () => {
@@ -170,7 +170,7 @@ describe("mark_read", () => {
     );
     // First run still converges local state; the second is a pure no-op.
     expect(plan.removeLabels).toEqual([]);
-    expect(outcomes[1].status).toBe("skipped");
+    expect(outcomes[1]!.status).toBe("skipped");
   });
 });
 
@@ -182,7 +182,7 @@ describe("star", () => {
       parsed: { raw_labels: ["INBOX", "STARRED"] },
     });
     expect(already.plan.addLabels).toEqual([]);
-    expect(already.outcomes[0].status).toBe("skipped");
+    expect(already.outcomes[0]!.status).toBe("skipped");
   });
 });
 
@@ -192,16 +192,16 @@ describe("label", () => {
       explicitRow({ action_type: "label", label_id: "L-X" }),
     ]);
     expect(plan.addLabels).toEqual(["L-X"]);
-    expect(outcomes[0].payload).toEqual({ label_id: "L-X" });
+    expect(outcomes[0]!.payload).toEqual({ label_id: "L-X" });
   });
 
   it("skips when the label is already on the message or unset", async () => {
     const present = await dispatch([explicitRow({ action_type: "label", label_id: "L-X" })], {
       parsed: { raw_labels: ["L-X"] },
     });
-    expect(present.outcomes[0].status).toBe("skipped");
+    expect(present.outcomes[0]!.status).toBe("skipped");
     const unset = await dispatch([explicitRow({ action_type: "label", label_id: null })]);
-    expect(unset.outcomes[0].status).toBe("skipped");
+    expect(unset.outcomes[0]!.status).toBe("skipped");
   });
 });
 
@@ -221,7 +221,7 @@ describe("move_folder", () => {
 
   it("skips without a target and dedupes a repeated move", async () => {
     const noTarget = await dispatch([explicitRow({ action_type: "move_folder" })]);
-    expect(noTarget.outcomes[0].status).toBe("skipped");
+    expect(noTarget.outcomes[0]!.status).toBe("skipped");
     const twice = await dispatch([
       explicitRow({ action_type: "move_folder", move_to_folder_id: "folder-B" }),
       explicitRow({ id: "a2", action_type: "move_folder", move_to_folder_id: "folder-B" }),
@@ -235,10 +235,10 @@ describe("delayed actions", () => {
     const before = Date.now();
     const { plan, outcomes } = await dispatch([explicitRow({ delay_minutes: 30 })]);
     expect(plan.removeLabels).toEqual([]);
-    expect(outcomes[0].status).toBe("pending");
+    expect(outcomes[0]!.status).toBe("pending");
     const inserts = fake.calls.inserts.filter((i) => i.table === "scheduled_actions");
     expect(inserts).toHaveLength(1);
-    const row = inserts[0].payload as { user_id: string; run_at: string };
+    const row = inserts[0]!.payload as { user_id: string; run_at: string };
     expect(row.user_id).toBe("user-1");
     expect(Date.parse(row.run_at)).toBeGreaterThanOrEqual(before + 29 * 60_000);
   });
@@ -247,7 +247,7 @@ describe("delayed actions", () => {
     const { outcomes } = await dispatch([explicitRow({ delay_minutes: 30 })], {
       userId: undefined,
     });
-    expect(outcomes[0].status).toBe("error");
+    expect(outcomes[0]!.status).toBe("error");
     expect(fake.calls.inserts.filter((i) => i.table === "scheduled_actions")).toHaveLength(0);
   });
 });
@@ -261,8 +261,8 @@ describe("unimplemented types + synthetic patch gating", () => {
       explicitRow({ id: "a2", action_type: "archive" }),
     ]);
     expect(outcomes[0]).toMatchObject({ action_type: "notify_channel", status: "error" });
-    expect(outcomes[0].error).toContain("not implemented");
-    expect(outcomes[1].status).toBe("applied");
+    expect(outcomes[0]!.error).toContain("not implemented");
+    expect(outcomes[1]!.status).toBe("applied");
     expect(plan.removeLabels).toEqual(["INBOX"]);
   });
 

@@ -80,7 +80,7 @@ describe("simulateAgainstEmails", () => {
     expect(a).toEqual(b);
     expect(a.moves).toBe(1);
     expect(a.would_route.map((h) => h.email_id)).toEqual(["e1"]);
-    expect(a.would_route[0].matched_leaves).toEqual([
+    expect(a.would_route[0]!.matched_leaves).toEqual([
       { field: "subject", op: "contains", value: "invoice" },
     ]);
     expect(a.no_change).toBe(2);
@@ -98,7 +98,7 @@ describe("simulateAgainstEmails", () => {
     });
     expect(r.excluded).toBe(1);
     expect(r.moves).toBe(0);
-    expect(r.would_exclude[0].matched_leaves[0].value).toBe("refund");
+    expect(r.would_exclude[0]!.matched_leaves[0]!.value).toBe("refund");
   });
 
   it("editing an existing folder replaces its config instead of duplicating it", () => {

@@ -71,7 +71,7 @@ describe("digest dispatch", () => {
     expect(outcomes[0]).toMatchObject({ action_type: "digest", status: "applied" });
     const inserts = fake.calls.inserts.filter((i) => i.table === "digest_items");
     expect(inserts).toHaveLength(1);
-    expect(inserts[0].payload).toMatchObject({
+    expect(inserts[0]!.payload).toMatchObject({
       user_id: "user-1",
       email_id: "e1",
       bucket: "weekly",
@@ -142,7 +142,7 @@ describe("digest sending", () => {
     expect(body).toContain("Inbox (1)");
     const marks = fake.calls.updates.filter((u) => u.table === "digest_items");
     expect(marks).toHaveLength(1);
-    expect(marks[0].filters).toEqual([{ op: "in", col: "id", value: ["d1", "d2"] }]);
+    expect(marks[0]!.filters).toEqual([{ op: "in", col: "id", value: ["d1", "d2"] }]);
   });
 
   it("outside digest time nothing sends", async () => {

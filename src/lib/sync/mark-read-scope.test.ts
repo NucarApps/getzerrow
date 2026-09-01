@@ -33,7 +33,9 @@ describe("resolveAutoMarkRead", () => {
   });
 
   it("defaults to 'all' when the mode is missing", () => {
-    expect(resolveAutoMarkRead({ auto_mark_read: true }, mine, { from_addr: "a@b.com" })).toBe(true);
+    expect(resolveAutoMarkRead({ auto_mark_read: true }, mine, { from_addr: "a@b.com" })).toBe(
+      true,
+    );
   });
 
   it("keeps listed addresses unread in 'except' mode", () => {
@@ -67,9 +69,9 @@ describe("resolveAutoMarkRead", () => {
 
   it("handles empty lists at both extremes", () => {
     const sender = { from_addr: "a@b.com" };
-    expect(resolveAutoMarkRead({ auto_mark_read: true, mark_read_mode: "except" }, [], sender)).toBe(
-      true,
-    );
+    expect(
+      resolveAutoMarkRead({ auto_mark_read: true, mark_read_mode: "except" }, [], sender),
+    ).toBe(true);
     expect(resolveAutoMarkRead({ auto_mark_read: true, mark_read_mode: "only" }, [], sender)).toBe(
       false,
     );
