@@ -19,6 +19,7 @@
     "test:meetings-transcript:update": "vitest run src/lib/transcript-sanitize.snapshot.test.ts -u",
     "test:carddav": "vitest run src/lib/carddav/sync.regression.test.ts src/lib/carddav/merge.test.ts src/lib/carddav/vcard.parse.test.ts src/lib/carddav/vcard.roundtrip.test.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:live": "vitest run --config vitest.live.config.ts",
     "db:start": "supabase db start",
     "db:reset": "supabase db reset"
   },
@@ -81,6 +82,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
     "@vitest/coverage-v8": "4.1.10",
+    "@vitest/eslint-plugin": "^1.6.27",
     "@vitest/ui": "^4.1.10",
     "eslint": "^10.7.0",
     "eslint-config-prettier": "^10.1.8",

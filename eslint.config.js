@@ -4,6 +4,7 @@ import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
+import vitest from "@vitest/eslint-plugin";
 
 export default tseslint.config(
   { ignores: ["dist", ".output", ".vinxi"] },
@@ -70,6 +71,47 @@ export default tseslint.config(
     files: ["src/components/ui/**/*.{ts,tsx}"],
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
+    },
+  },
+  {
+    // Test-only rules. The assertion helpers in __fixtures__ count as
+    // assertions for expect-expect; direct process.env mutation is banned
+    // in favour of vi.stubEnv (the global teardown only unstubs).
+    files: ["src/**/*.test.{ts,tsx}", "tests/**/*.ts", "src/**/__fixtures__/**/*.ts"],
+    plugins: { vitest },
+    rules: {
+      ...vitest.configs.recommended.rules,
+      "vitest/no-focused-tests": "error",
+      "vitest/no-disabled-tests": "warn",
+      "vitest/expect-expect": [
+        "error",
+        {
+          assertFunctionNames: ["expect", "expect*", "assert*"],
+        },
+      ],
+      // `if (r?.kind === "match") expect(r.folder_id)…` after asserting the
+      // kind is the idiomatic TS-narrowing shape here, not a hidden branch.
+      "vitest/no-conditional-expect": "off",
+      // vitest's expect(actual, message) form is used throughout.
+      "vitest/valid-expect": ["error", { maxArgs: 2 }],
+      "vitest/no-standalone-expect": "error",
+      "vitest/valid-title": "error",
+      "vitest/no-identical-title": "error",
+      "vitest/no-import-node-test": "error",
+      "vitest/prefer-hooks-in-order": "warn",
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "AssignmentExpression[left.type='MemberExpression'][left.object.type='MemberExpression'][left.object.object.name='process'][left.object.property.name='env']",
+          message: "Use vi.stubEnv(name, value) — the global teardown only restores stubbed env.",
+        },
+        {
+          selector:
+            "UnaryExpression[operator='delete'][argument.object.type='MemberExpression'][argument.object.object.name='process'][argument.object.property.name='env']",
+          message: "Use vi.stubEnv(name, undefined) instead of delete process.env.X.",
+        },
+      ],
     },
   },
   eslintPluginPrettier,
