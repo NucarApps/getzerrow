@@ -5,10 +5,10 @@
 // src/routes/api/public/cron-auth.test.ts, which runs on every PR with no
 // deployed URL. This file is the optional live-HTTP complement — run it
 // against a real deployment after publishing:
-//   PUBLIC_BASE_URL=https://getzerrow.lovable.app bun run test:integration
+//   PUBLIC_BASE_URL=https://getzerrow.lovable.app bun run test:live
 //
 // Skipped entirely (like the other integration suites) unless
-// PUBLIC_BASE_URL is set, so a bare `bun run test:integration` no longer
+// PUBLIC_BASE_URL is set, so a bare `bun run test:live` no longer
 // fires ~80 fetches at "undefined/api/public/...".
 //
 // The endpoint list is DERIVED from src/routes/api/public/ at run time so

@@ -52,28 +52,9 @@ jobs:
               for (const k of ["statements","branches","functions","lines"]) console.log(row(k));
             ' >> "$GITHUB_STEP_SUMMARY"
           fi
-      # Schema drift gate: replays the migrations and asserts the
-      # insert_folder_example_encrypted RPC only writes columns that still
-      # exist on folder_examples. Catches column mismatches (Postgres 42703)
-      # before deploy. Also covered by "Unit tests" above; kept as a named,
-      # required step so the failure is obvious in the PR checks.
-      - name: Schema consistency (folder_examples RPC)
-        run: bun run test:schema
-      # Regression gate for the in-person meeting transcript pipeline. Runs the
-      # STT sanitizer golden-output snapshots plus the iOS-recording finalizer
-      # regression. Fails the PR if the sanitizer output changes unexpectedly
-      # (e.g. a runaway hallucination loop slips through, or normal speech gets
-      # mangled). Update intentionally with: bun run test:meetings-transcript:update
-      - name: Meetings transcript regression
-        run: bun run test:meetings-transcript
-      # Regression gate for the CardDAV iOS sync loop. Replays the exact PUT
-      # shapes iOS sends (empty EMAIL, blank PREF EMAIL, grouped item labels,
-      # missing EMAIL, legacy placeholders) through the parser + merge pipeline
-      # and asserts the server never nulls a saved email. Required check —
-      # failures block the PR so we can't regress the "iPhone wiped my email"
-      # bug again.
-      - name: CardDAV sync regression
-        run: bun run test:carddav
+      # The schema-drift, meetings-transcript and CardDAV regression suites
+      # are part of the unit run above (their `test:*` scripts exist for
+      # local focus); a failure in any of them fails "Unit tests".
       # Enforced: the codebase is ESLint-clean (0 errors, 0 warnings). Keep it
       # that way — lint failures block the PR.
       - name: Lint
@@ -82,9 +63,7 @@ jobs:
   # DB-backed integration tests (tests/*.integration.test.ts) — the only
   # suites that verify RLS / SECURITY DEFINER authorization (IDOR guards)
   # against a real Postgres. Runs the migrations via the Supabase CLI local
-  # db, then the suite with TEST_DATABASE_URL pointed at it. The live-HTTP
-  # endpoint sweep in the same dir stays skipped here (no PUBLIC_BASE_URL)
-  # unless this run was dispatched manually with a deployed URL.
+  # db, then the suite with TEST_DATABASE_URL pointed at it.
   integration:
     name: Integration tests (Postgres)
     runs-on: ubuntu-latest
@@ -103,7 +82,25 @@ jobs:
         run: bun run test:integration
         env:
           TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+
+  # Live-HTTP smokes (tests/*.live.test.ts) against a deployed URL. Only
+  # runs on manual dispatch with public_base_url set; the cron-flow smoke
+  # additionally needs CRON_SECRET (provide it as a repository secret).
+  live:
+    name: Live endpoint smoke
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.public_base_url != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - run: bun install --frozen-lockfile
+      - name: Run live smoke
+        run: bun run test:live
+        env:
           PUBLIC_BASE_URL: ${{ inputs.public_base_url }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
 
   audit:
     name: Dependency audit

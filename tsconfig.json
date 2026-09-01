@@ -6,6 +6,7 @@
     "vite.config.ts",
     "vitest.config.ts",
     "vitest.integration.config.ts",
+    "vitest.live.config.ts",
     "eslint.config.js"
   ],
   "compilerOptions": {

@@ -12,7 +12,7 @@
 // Run:
 //   PUBLIC_BASE_URL=https://preview.example.com \
 //     CRON_SECRET=$(op read op://...) \
-//     bun run test:integration
+//     bun run test:live
 import { describe, it, expect } from "vitest";
 
 const BASE = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "");

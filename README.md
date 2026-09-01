@@ -30,18 +30,44 @@ bun run build                   # Cloudflare Workers bundle
 More test lanes:
 
 ```sh
-bun run test:coverage           # unit suite + V8 coverage (CI posts the summary)
-bun run test:integration        # DB-backed suites in tests/ — skip without env;
-                                # CI runs them against a migrated local Supabase
-                                # Postgres (supabase db start && supabase db reset)
+bun run test:coverage           # unit suite + V8 coverage; per-area floors in
+                                # vitest.config.ts (lib / routes/api / components)
+bun run test:integration        # tests/*.integration.test.ts — DB-backed; skip
+                                # without TEST_DATABASE_URL. CI runs them against
+                                # a migrated local Supabase Postgres.
+bun run test:live               # tests/*.live.test.ts — HTTP smokes against a
+                                # deployed PUBLIC_BASE_URL (manual dispatch in CI)
 ```
 
-Test conventions: shared fixtures live in `src/lib/__fixtures__/`
-(`supabase-fake`, `server-fn-stub` + `impersonate`, `email-row`, `idor`);
-component tests are `*.test.tsx` (jsdom project, setup in
-`src/test-setup.dom.ts`); every decider that files mail is held to the
-oracle by `src/lib/sync/folder-write-agreement.test.ts`; cron-route auth is
-swept in-process by `src/routes/api/public/cron-auth.test.ts`.
+Test conventions (see `docs/test-suite-plan.md` for the backlog):
+
+- **Placement / naming.** `<module>.test.ts` beside the module. Two suffix
+  classes only: `<module>.<topic>.test.ts` for a split of a long file, and
+  `<module>.<kind>.test.ts` with kind ∈ `snapshot | regression | security |
+  edge | property`. `tests/` holds `*.integration.test.ts` (Postgres) and
+  `*.live.test.ts` (deployed URL).
+- **Fixtures.** `src/lib/__fixtures__/`: `supabase-fake` (typed against the
+  generated `Database`; real `ilike`/`contains`/`or`; `applyWrites` for
+  read-after-write; `onSelect`/`onInsert`/…/`onAuth` handlers; mount with
+  `supabaseAdmin: mockSupabaseAdmin(() => fake)` — the thunk is required
+  because `vi.mock` factories are hoisted), `server-fn-stub` +
+  `impersonate`, `email-row`, `idor` (`expectDeniedCrossUser`). Prefer
+  typed row factories over `Record<string, unknown>` seeds; `satisfies`
+  over `as`.
+- **Env, time, randomness.** `vi.stubEnv` only (lint forbids assigning
+  `process.env` in tests). `vi.useFakeTimers` + `vi.setSystemTime` instead
+  of `Date.now()` windows; `vi.spyOn(Math, "random")` instead of ranges.
+- **Mocks.** `vi.hoisted` + `vi.fn<typeof import("./x").fn>()`; enumerated
+  module factories should `satisfies Partial<typeof import("./x")>`; no
+  per-test `mockClear` — `clearMocks: true` does it.
+- **Known bugs.** Pin current behaviour with a
+  `// CHARACTERIZATION(<slug>): …` comment above the `it`; flip the test
+  with the fix.
+- **Ownership.** Every server fn that takes a client id gets an
+  `expectDeniedCrossUser` case. Every writer of `emails.folder_id` is
+  registered in `AUDIT_FOLDER_WRITE_PATHS` and held to the oracle by
+  `src/lib/sync/folder-write-agreement.test.ts`; cron-route auth is swept
+  in-process by `src/routes/api/public/cron-auth.test.ts`.
 
 Database changes live in `supabase/migrations/` (append-only —
 `YYYYMMDDHHMMSS_slug.sql`, one logical change per file, never edit an
