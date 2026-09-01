@@ -103,7 +103,7 @@ async function finishJob(
   const backoffMin =
     SCHEDULED_ACTION_BACKOFF_MINUTES[
       Math.min(job.attempt - 1, SCHEDULED_ACTION_BACKOFF_MINUTES.length - 1)
-    ];
+    ]!;
   await admin()
     .from("scheduled_actions")
     .update({
@@ -137,7 +137,6 @@ async function runOne(job: ClaimedJob): Promise<RunOutcome> {
     // Folder paused since enqueue — quiet no-op, same as a disabled action.
     if (folder && folder.processing_enabled === false) return { ok: true };
   }
-
 
   const { rows, error: emailErr } = await getEmailsDecrypted([job.email_id]);
   if (emailErr) return { ok: false, error: emailErr };

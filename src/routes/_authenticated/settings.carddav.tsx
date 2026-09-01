@@ -45,10 +45,7 @@ import {
 
 export const Route = createFileRoute("/_authenticated/settings/carddav")({
   head: () => ({
-    meta: [
-      { title: "iPhone contacts — Settings — Atzro" },
-      { name: "robots", content: "noindex" },
-    ],
+    meta: [{ title: "iPhone contacts — Settings — Atzro" }, { name: "robots", content: "noindex" }],
   }),
   component: CardDavSettings,
 });

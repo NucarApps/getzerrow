@@ -750,7 +750,7 @@ export function useInvaderGame(): UseInvaderGameResult {
         const arr = bulletsRef.current;
         let w = 0;
         for (let i = 0; i < arr.length; i++) {
-          const b = arr[i];
+          const b = arr[i]!; // i < arr.length, dense array
           b.x += (b.vx ?? 0) * dts;
           b.y -= BULLET_SPEED * dts;
           if (b.y > -2 && b.x > -2 && b.x < FIELD_W + 2) arr[w++] = b;
@@ -896,7 +896,8 @@ export function useInvaderGame(): UseInvaderGameResult {
         // urgent enemies double their chance
         const urgentBoost = liveEnemies.some((e) => e.kind === "urgent") ? 1.4 : 1;
         if (Math.random() < fireChance * urgentBoost) {
-          const shooter = liveEnemies[Math.floor(Math.random() * liveEnemies.length)];
+          // liveEnemies.length > 0 checked above; random index is always in bounds.
+          const shooter = liveEnemies[Math.floor(Math.random() * liveEnemies.length)]!;
           const ex =
             formationXRef.current +
             shooter.col * COL_GAP +
@@ -911,7 +912,7 @@ export function useInvaderGame(): UseInvaderGameResult {
         const arr = enemyBulletsRef.current;
         let w = 0;
         for (let i = 0; i < arr.length; i++) {
-          const b = arr[i];
+          const b = arr[i]!; // i < arr.length, dense array
           b.x += (b.vx ?? 0) * dts;
           b.y += eBulletSpeed * dts;
           if (b.y < FIELD_H + 2) arr[w++] = b;
@@ -1077,7 +1078,10 @@ export function useInvaderGame(): UseInvaderGameResult {
       {
         const a = burstsRef.current;
         let w = 0;
-        for (let i = 0; i < a.length; i++) if (now - a[i].startedAt < BURST_MS) a[w++] = a[i];
+        for (let i = 0; i < a.length; i++) {
+          const burst = a[i]!; // i < a.length, dense array
+          if (now - burst.startedAt < BURST_MS) a[w++] = burst;
+        }
         a.length = w;
         if (a.length > MAX_BURSTS) a.splice(0, a.length - MAX_BURSTS);
       }
@@ -1085,7 +1089,7 @@ export function useInvaderGame(): UseInvaderGameResult {
         const a = particlesRef.current;
         let w = 0;
         for (let i = 0; i < a.length; i++) {
-          const p = a[i];
+          const p = a[i]!; // i < a.length, dense array
           p.x += p.vx * dts;
           p.y += p.vy * dts;
           p.life += dt;
@@ -1097,7 +1101,7 @@ export function useInvaderGame(): UseInvaderGameResult {
         const a = floatsRef.current;
         let w = 0;
         for (let i = 0; i < a.length; i++) {
-          const f = a[i];
+          const f = a[i]!; // i < a.length, dense array
           f.y -= 8 * dts;
           if (now - f.startedAt < 900) a[w++] = f;
         }

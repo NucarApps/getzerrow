@@ -154,7 +154,8 @@ export function pickPrimary(cluster: ContactWithPhones[]): ContactWithPhones {
     // Oldest wins as tiebreaker (stable id)
     return a.created_at.localeCompare(b.created_at);
   });
-  return sorted[0];
+  // Callers only pass clusters with at least one member.
+  return sorted[0]!;
 }
 
 /**

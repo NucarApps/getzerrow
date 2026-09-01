@@ -63,7 +63,7 @@ export const getCardDavSettings = createServerFn({ method: "GET" })
 
 export const updateCardDavSettings = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
+  .validator(
     (d: {
       group_name_style?: GroupNameStyle;
       include_summary_in_notes?: boolean;

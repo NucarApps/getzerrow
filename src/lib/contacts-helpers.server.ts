@@ -1,6 +1,6 @@
 // Shared server-only helpers and constants used by src/lib/contacts/*.functions.ts.
 // Anything referenced from more than one split file — or from a createServerFn
-// handler / inputValidator — belongs here so the `?tss-serverfn-split`
+// handler / validator — belongs here so the `?tss-serverfn-split`
 // transform never has to reach across sibling module scope for it.
 import { z } from "zod";
 import { getModel } from "./ai-gateway";
@@ -136,7 +136,7 @@ export function normalizeName(input: string | null | undefined): string | null {
       .map((tok) =>
         tok
           .split("-")
-          .map((p) => (p ? p[0].toUpperCase() + p.slice(1) : p))
+          .map((p) => (p ? p.charAt(0).toUpperCase() + p.slice(1) : p))
           .join("-"),
       )
       .join(" ");
@@ -148,7 +148,7 @@ export function normalizeName(input: string | null | undefined): string | null {
 /** Sort key: first token of normalized name, falling back to email local-part. */
 export function firstNameKey(name: string | null | undefined, email: string): string {
   const n = normalizeName(name ?? null);
-  const tok = n ? n.split(" ")[0] : email.split("@")[0] || "";
+  const tok = (n ? n.split(" ")[0] : email.split("@")[0]) ?? "";
   return tok.toLowerCase();
 }
 

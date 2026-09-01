@@ -45,7 +45,7 @@ export function parseMultigetHrefs(body: string): string[] {
   const re = /<(?:\w+:)?href[^>]*>([\s\S]*?)<\/(?:\w+:)?href>/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(body))) {
-    const href = m[1].trim();
+    const href = m[1]?.trim();
     if (href) out.push(href);
   }
   return out;
@@ -63,10 +63,10 @@ export function parseSyncCollection(body: string): {
   const tokenMatch = body.match(/<(?:\w+:)?sync-token[^>]*>([\s\S]*?)<\/(?:\w+:)?sync-token>/i);
   const levelMatch = body.match(/<(?:\w+:)?sync-level[^>]*>([\s\S]*?)<\/(?:\w+:)?sync-level>/i);
   const limitMatch = body.match(/<(?:\w+:)?nresults[^>]*>([\s\S]*?)<\/(?:\w+:)?nresults>/i);
-  const rawLimit = limitMatch ? Number.parseInt(limitMatch[1].trim(), 10) : NaN;
+  const rawLimit = Number.parseInt(limitMatch?.[1]?.trim() ?? "", 10);
   return {
-    syncToken: tokenMatch ? tokenMatch[1].trim() : "",
-    syncLevel: levelMatch ? levelMatch[1].trim() : "1",
+    syncToken: tokenMatch?.[1]?.trim() ?? "",
+    syncLevel: levelMatch?.[1]?.trim() ?? "1",
     limit: Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : null,
   };
 }

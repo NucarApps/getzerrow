@@ -24,30 +24,32 @@ function autoDetectRect(imgW: number, imgH: number, imageData: ImageData): Rect 
   const { data, width: w, height: h } = imageData;
   // Sobel-like horizontal+vertical gradient magnitude per pixel (grayscale).
   const gray = new Float32Array(w * h);
+  // Index math below is guaranteed in-bounds by the loop conditions (RGBA
+  // stride of 4; interior pixels only), so non-null assertions are safe.
   for (let i = 0, j = 0; i < data.length; i += 4, j++) {
-    gray[j] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    gray[j] = 0.299 * data[i]! + 0.587 * data[i + 1]! + 0.114 * data[i + 2]!;
   }
   const rowE = new Float32Array(h);
   const colE = new Float32Array(w);
   for (let y = 1; y < h - 1; y++) {
     for (let x = 1; x < w - 1; x++) {
       const i = y * w + x;
-      const gx = Math.abs(gray[i + 1] - gray[i - 1]);
-      const gy = Math.abs(gray[i + w] - gray[i - w]);
+      const gx = Math.abs(gray[i + 1]! - gray[i - 1]!);
+      const gy = Math.abs(gray[i + w]! - gray[i - w]!);
       const g = gx + gy;
-      rowE[y] += g;
-      colE[x] += g;
+      rowE[y]! += g;
+      colE[x]! += g;
     }
   }
   const tighten = (energy: Float32Array, len: number): [number, number] => {
     let total = 0;
-    for (let i = 0; i < len; i++) total += energy[i];
+    for (let i = 0; i < len; i++) total += energy[i]!;
     if (total <= 0) return [0, len - 1];
     const drop = total * 0.025; // chop 2.5% off each end
     let acc = 0;
     let lo = 0;
     for (let i = 0; i < len; i++) {
-      acc += energy[i];
+      acc += energy[i]!;
       if (acc >= drop) {
         lo = i;
         break;
@@ -56,7 +58,7 @@ function autoDetectRect(imgW: number, imgH: number, imageData: ImageData): Rect 
     acc = 0;
     let hi = len - 1;
     for (let i = len - 1; i >= 0; i--) {
-      acc += energy[i];
+      acc += energy[i]!;
       if (acc >= drop) {
         hi = i;
         break;

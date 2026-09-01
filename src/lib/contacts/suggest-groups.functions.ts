@@ -81,7 +81,7 @@ async function loadLatestSuggestions(supabase: DB, userId: string): Promise<Sugg
   if (latestErr) throw new Error(latestErr.message);
   if (!latest || latest.length === 0) return [];
 
-  const runId = latest[0].run_id;
+  const runId = latest[0]!.run_id;
   const { data: rows, error: rowsErr } = await supabase
     .from("contact_group_suggestions")
     .select(
@@ -144,7 +144,7 @@ export async function runContactGroupSuggestionsImpl(
       .order("created_at", { ascending: false })
       .limit(1);
     if (last && last.length > 0) {
-      const age = Date.now() - new Date(last[0].created_at).getTime();
+      const age = Date.now() - new Date(last[0]!.created_at).getTime();
       if (age < RESCAN_COOLDOWN_MS) {
         const wait = Math.ceil((RESCAN_COOLDOWN_MS - age) / 1000);
         if (opts.source === "background") {
@@ -595,15 +595,14 @@ export async function applySuggestionImpl(
 
 export const applyContactGroupSuggestion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
-    (d: { id: string; group_name_override?: string; target_group_id?: string | null }) =>
-      z
-        .object({
-          id: z.string().uuid(),
-          group_name_override: z.string().min(1).max(60).optional(),
-          target_group_id: z.string().uuid().nullable().optional(),
-        })
-        .parse(d),
+  .validator((d: { id: string; group_name_override?: string; target_group_id?: string | null }) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        group_name_override: z.string().min(1).max(60).optional(),
+        target_group_id: z.string().uuid().nullable().optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) =>
     applySuggestionImpl(context.supabase, context.userId, data),
@@ -611,7 +610,7 @@ export const applyContactGroupSuggestion = createServerFn({ method: "POST" })
 
 export const dismissContactGroupSuggestion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { error } = await supabase

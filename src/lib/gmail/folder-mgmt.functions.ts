@@ -13,7 +13,7 @@ import { getEmailsDecrypted } from "../sync/encrypted-reader";
 
 export const listFolderHistory = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string; limit?: number; offset?: number }) =>
+  .validator((d: { folder_id: string; limit?: number; offset?: number }) =>
     z
       .object({
         folder_id: z.string().uuid(),
@@ -81,7 +81,7 @@ export const listFolderHistory = createServerFn({ method: "POST" })
 // aggregated from existing columns — no schema changes.
 export const getFolderHealth = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
+  .validator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: folder } = await supabaseAdmin
       .from("folders")
@@ -179,7 +179,7 @@ export const getFolderHealth = createServerFn({ method: "POST" })
 // Rebuild a folder's learned profile on demand from its collected examples.
 export const relearnFolderNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
+  .validator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: folder } = await supabaseAdmin
       .from("folders")
@@ -194,7 +194,7 @@ export const relearnFolderNow = createServerFn({ method: "POST" })
 
 export const suggestRecategorization = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email_id: string; to_folder_id: string }) =>
+  .validator((d: { email_id: string; to_folder_id: string }) =>
     z.object({ email_id: z.string().uuid(), to_folder_id: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -285,7 +285,7 @@ export const suggestRecategorization = createServerFn({ method: "POST" })
 
 export const applyRecategorization = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
+  .validator(
     (d: {
       email_id: string;
       to_folder_id: string;
@@ -408,7 +408,7 @@ export const applyRecategorization = createServerFn({ method: "POST" })
 
 export const listFolderSummaries = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
+  .validator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await getOwnedFolder(context.userId, data.folder_id);
     const { data: rows } = await supabaseAdmin
@@ -441,7 +441,7 @@ export function deriveFolderAiDefaults(_gmailLabelId: string | null | undefined)
 // the rest of the app and surfaces failures as server-function errors.
 export const createFolder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
+  .validator(
     (d: {
       account_id: string;
       name: string;
@@ -504,7 +504,7 @@ export const createFolder = createServerFn({ method: "POST" })
 
 export const createFolderSummary = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
+  .validator(
     (d: {
       folder_id: string;
       name: string;
@@ -548,7 +548,7 @@ export const createFolderSummary = createServerFn({ method: "POST" })
 
 export const updateFolderSummary = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
+  .validator(
     (d: {
       id: string;
       name?: string;
@@ -608,7 +608,7 @@ export const updateFolderSummary = createServerFn({ method: "POST" })
 
 export const deleteFolderSummary = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await getOwnedSchedule(context.userId, data.id);
     await supabaseAdmin.from("folder_summary_schedules").delete().eq("id", data.id);
@@ -617,7 +617,7 @@ export const deleteFolderSummary = createServerFn({ method: "POST" })
 
 export const runFolderSummaryNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await getOwnedSchedule(context.userId, data.id);
     // Enqueue a background job so the UI request never has to wait on the
@@ -631,7 +631,7 @@ export const runFolderSummaryNow = createServerFn({ method: "POST" })
 
 export const getFolderSummaryJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: job, error } = await supabaseAdmin
       .from("folder_summary_jobs")

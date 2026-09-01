@@ -31,7 +31,7 @@ import {
 
 export const getSyncLatencyStats = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) =>
+  .validator((d) =>
     z
       .object({
         lookback_hours: z
@@ -99,7 +99,7 @@ export const getSyncLatencyStats = createServerFn({ method: "POST" })
  */
 export const pingPubsubWebhook = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ realistic: z.boolean().optional() }).parse(d ?? {}))
+  .validator((d) => z.object({ realistic: z.boolean().optional() }).parse(d ?? {}))
   .handler(async ({ data, context }) => {
     const host = getRequestHost();
     const url = `https://${host}/api/public/gmail-webhook`;
@@ -170,7 +170,7 @@ export const pingPubsubWebhook = createServerFn({ method: "POST" })
 /** List processing jobs (queue + DLQ) for the current user. */
 export const listMessageJobs = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) =>
+  .validator((input) =>
     z
       .object({
         status: z.enum(["pending", "running", "dlq", "all"]).optional(),
@@ -209,7 +209,7 @@ export const listMessageJobs = createServerFn({ method: "POST" })
 /** Manually retry a DLQ or pending job. */
 export const retryJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: job } = await supabaseAdmin
       .from("message_jobs")
@@ -224,7 +224,7 @@ export const retryJob = createServerFn({ method: "POST" })
 /** Run the worker now (drains up to N jobs). Useful for "Retry now" UI button. */
 export const runJobsNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) =>
+  .validator((input) =>
     z.object({ limit: z.number().min(1).max(100).optional() }).parse(input ?? {}),
   )
   .handler(async ({ data }) => {
@@ -233,7 +233,7 @@ export const runJobsNow = createServerFn({ method: "POST" })
 
 export const addFolderRule = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
+  .validator(
     (d: {
       folder_id: string;
       field: SimpleRuleField;
@@ -292,7 +292,7 @@ export const addFolderRule = createServerFn({ method: "POST" })
  */
 export const countMatchingForRule = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
+  .validator(
     (d: {
       account_id: string;
       field: SimpleRuleField;
@@ -331,7 +331,7 @@ export const countMatchingForRule = createServerFn({ method: "POST" })
  */
 export const applyFilterRuleToPast = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
+  .validator(
     (d: {
       account_id: string;
       to_folder_id: string;
@@ -474,7 +474,7 @@ export const applyFilterRuleToPast = createServerFn({ method: "POST" })
  */
 export const applyFolderBehaviorRetroactive = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) =>
+  .validator((input) =>
     z
       .object({
         folderId: z.string().uuid(),
@@ -558,7 +558,7 @@ export const applyFolderBehaviorRetroactive = createServerFn({ method: "POST" })
 
 export const listFolderEmailIds = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
+  .validator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     // Verify the folder belongs to the caller before listing its emails.
     const { data: folder, error: folderError } = await supabaseAdmin
@@ -582,7 +582,7 @@ export const listFolderEmailIds = createServerFn({ method: "GET" })
 
 export const reclassifyEmails = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email_ids: string[] }) =>
+  .validator((d: { email_ids: string[] }) =>
     z.object({ email_ids: z.array(z.string().uuid()).min(1).max(50) }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -703,7 +703,7 @@ export const reclassifyEmails = createServerFn({ method: "POST" })
 
 export const suggestFolderFromSelection = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email_ids: string[] }) =>
+  .validator((d: { email_ids: string[] }) =>
     z.object({ email_ids: z.array(z.string().uuid()).min(1).max(50) }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -727,7 +727,7 @@ export const suggestFolderFromSelection = createServerFn({ method: "POST" })
 
 export const createFolderAndAssign = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
+  .validator(
     (d: {
       account_id: string;
       name: string;
@@ -804,7 +804,7 @@ export const createFolderAndAssign = createServerFn({ method: "POST" })
 
 export const setFolderAutoRelearn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string; auto_relearn: boolean; threshold?: number }) =>
+  .validator((d: { folder_id: string; auto_relearn: boolean; threshold?: number }) =>
     z
       .object({
         folder_id: z.string().uuid(),
@@ -833,7 +833,7 @@ export const setFolderAutoRelearn = createServerFn({ method: "POST" })
 // matchFilters path so they get classified into this folder on insert.
 export const scanGmailForFolder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string; months?: 1 | 3 | 6 | 12 }) =>
+  .validator((d: { folder_id: string; months?: 1 | 3 | 6 | 12 }) =>
     z
       .object({
         folder_id: z.string().uuid(),
@@ -950,7 +950,7 @@ export const scanGmailForFolder = createServerFn({ method: "POST" })
               truncated = true;
               return;
             }
-            const id = todo[i++];
+            const id = todo[i++]!;
             try {
               const raw = await getMessage(accountId, id);
               const p = parseMessage(raw);

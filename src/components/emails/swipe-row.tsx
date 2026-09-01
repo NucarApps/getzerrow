@@ -13,12 +13,14 @@ export function SwipeRow({
 
   function onTouchStart(e: React.TouchEvent) {
     const t = e.touches[0];
+    if (!t) return;
     startRef.current = { x: t.clientX, y: t.clientY, active: true, locked: false };
   }
   function onTouchMove(e: React.TouchEvent) {
     const s = startRef.current;
     if (!s || !s.active) return;
     const t = e.touches[0];
+    if (!t) return;
     const dxRaw = t.clientX - s.x;
     const dyRaw = t.clientY - s.y;
     if (!s.locked) {

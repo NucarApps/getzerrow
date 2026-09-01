@@ -77,7 +77,7 @@ export function emailDomain(addr: string | null | undefined): string | null {
   // Prefer the first angle-bracketed address: a multi-address or
   // trailing-comment header must not drag the extra text into the domain.
   const angle = String(addr).match(/<([^>]*)>/);
-  const raw = (angle ? angle[1] : String(addr)).trim().toLowerCase();
+  const raw = (angle?.[1] ?? String(addr)).trim().toLowerCase();
   const at = raw.lastIndexOf("@");
   if (at < 0) return null;
   const domain = raw
@@ -116,7 +116,8 @@ export function isPersonalDomain(domain: string | null | undefined): boolean {
 export function prettyCompanyName(domain: string): string {
   const parts = domain.toLowerCase().split(".").filter(Boolean);
   if (parts.length === 0) return domain;
-  let core = parts[parts.length - 2] ?? parts[0];
+  // parts.length > 0 is guaranteed by the early return above.
+  let core = parts[parts.length - 2] ?? parts[0]!;
   if (parts.length >= 3) {
     const lastTwo = parts.slice(-2).join(".");
     if (TWO_PART_TLDS.has(lastTwo)) {
@@ -165,7 +166,8 @@ export function logoCandidates(domain: string, size = 64, provider?: number | nu
 
 /** First-choice logo URL (kept for back-compat). */
 export function logoUrl(domain: string, size = 64): string {
-  return logoCandidates(domain, size)[0];
+  // logoCandidates always returns a single-element array.
+  return logoCandidates(domain, size)[0]!;
 }
 
 /** Resolve a domain through a user-defined alias map (alias -> primary). */

@@ -287,8 +287,9 @@ export function hitBunker(b: Bunker, px: number, py: number): boolean {
   const c = Math.floor((px - left) / BUNKER_CELL);
   const r = Math.floor((py - top) / BUNKER_CELL);
   if (r < 0 || r >= BUNKER_ROWS || c < 0 || c >= BUNKER_COLS) return false;
-  if (!b.cells[r][c]) return false;
-  b.cells[r][c] = false;
+  const row = b.cells[r];
+  if (!row || !row[c]) return false;
+  row[c] = false;
   return true;
 }
 

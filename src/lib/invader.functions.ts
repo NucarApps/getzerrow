@@ -67,7 +67,7 @@ const submitSchema = z.object({
 
 export const submitInvaderScore = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => submitSchema.parse(input))
+  .validator((input: unknown) => submitSchema.parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 

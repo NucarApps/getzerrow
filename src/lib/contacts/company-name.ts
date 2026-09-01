@@ -80,19 +80,19 @@ export function companyBrandKey(raw: string | null | undefined): string | null {
   if (!s) return null;
   let tokens = s.split(" ");
   // Strip trailing legal suffixes repeatedly (e.g. "Honda Motor Co Ltd")
-  while (tokens.length > 1 && LEGAL_SUFFIXES.has(tokens[tokens.length - 1])) {
+  while (tokens.length > 1 && LEGAL_SUFFIXES.has(tokens[tokens.length - 1]!)) {
     tokens = tokens.slice(0, -1);
   }
   // Strip trailing qualifiers repeatedly ("Nissan North America" -> "Nissan")
-  while (tokens.length > 1 && QUALIFIERS.has(tokens[tokens.length - 1])) {
+  while (tokens.length > 1 && QUALIFIERS.has(tokens[tokens.length - 1]!)) {
     tokens = tokens.slice(0, -1);
     // A legal suffix may re-surface after removing a qualifier.
-    while (tokens.length > 1 && LEGAL_SUFFIXES.has(tokens[tokens.length - 1])) {
+    while (tokens.length > 1 && LEGAL_SUFFIXES.has(tokens[tokens.length - 1]!)) {
       tokens = tokens.slice(0, -1);
     }
   }
   // Strip leading qualifiers ("The Honda Company" -> "honda")
-  while (tokens.length > 1 && QUALIFIERS.has(tokens[0])) {
+  while (tokens.length > 1 && QUALIFIERS.has(tokens[0]!)) {
     tokens = tokens.slice(1);
   }
   const out = tokens.join(" ").trim();

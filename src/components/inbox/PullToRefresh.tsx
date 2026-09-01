@@ -29,14 +29,16 @@ export function PullToRefresh({ onRefresh, children, className, onClick }: Props
         startYRef.current = null;
         return;
       }
-      startYRef.current = e.touches[0].clientY;
+      startYRef.current = e.touches[0]?.clientY ?? null;
       pullingRef.current = false;
     };
 
     const onTouchMove = (e: TouchEvent) => {
       if (startYRef.current == null) return;
       if (phase === "launching" || phase === "returning") return;
-      const dy = e.touches[0].clientY - startYRef.current;
+      const touch = e.touches[0];
+      if (!touch) return;
+      const dy = touch.clientY - startYRef.current;
       if (dy <= 0) {
         if (pullingRef.current) {
           pullingRef.current = false;

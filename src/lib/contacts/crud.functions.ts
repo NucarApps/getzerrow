@@ -128,7 +128,7 @@ export const listContacts = createServerFn({ method: "GET" })
 /** Get a single contact + their last few emails + phones. */
 export const getContact = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     // Decrypt via SECURITY DEFINER RPC; returns the full contact row including
@@ -354,7 +354,7 @@ export const getContact = createServerFn({ method: "POST" })
   });
 export const updateContact = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         id: z.string().uuid(),
@@ -552,7 +552,7 @@ export const updateContact = createServerFn({ method: "POST" })
 /** Delete a contact. */
 export const deleteContact = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase } = context;
     const { error } = await supabase.from("contacts").delete().eq("id", data.id);
@@ -563,7 +563,7 @@ export const deleteContact = createServerFn({ method: "POST" })
 /** Rename the `company` field on a set of contacts (used by the company bucket editor). */
 export const renameCompanyForContacts = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         contactIds: z.array(z.string().uuid()).min(1).max(1000),
@@ -592,7 +592,7 @@ export const renameCompanyForContacts = createServerFn({ method: "POST" })
 /** Manually create a contact. */
 export const createContactManual = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         email: z.string().trim().toLowerCase().email().max(255),
@@ -659,7 +659,7 @@ export const createContactManual = createServerFn({ method: "POST" })
 /** Bulk-create contacts from a list of {email, name?}. */
 export const bulkCreateContactsFromEmails = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         items: z
@@ -696,7 +696,7 @@ export const bulkCreateContactsFromEmails = createServerFn({ method: "POST" })
  */
 export const clearContactManualOverrides = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         id: z.string().uuid(),

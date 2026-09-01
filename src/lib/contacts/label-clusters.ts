@@ -85,10 +85,10 @@ export function clusterLabels<L extends LabelClusterInput>(
   for (const ids of companyBuckets.values()) {
     if (ids.length < 2) continue;
     for (const id of ids) companyJoinedIds.add(id);
-    for (let i = 1; i < ids.length; i++) union(ids[0], ids[i]);
+    for (let i = 1; i < ids.length; i++) union(ids[0]!, ids[i]!);
   }
   for (const ids of nameBuckets.values()) {
-    for (let i = 1; i < ids.length; i++) union(ids[0], ids[i]);
+    for (let i = 1; i < ids.length; i++) union(ids[0]!, ids[i]!);
   }
 
   const byId = new Map(labels.map((l) => [l.id, l]));

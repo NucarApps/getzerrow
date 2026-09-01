@@ -51,7 +51,7 @@ export type PreviewRuleChange = {
 
 export const previewRuleChange = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => previewInput.parse(d))
+  .validator((d: unknown) => previewInput.parse(d))
   .handler(async ({ data, context }): Promise<PreviewRuleChange> => {
     const { supabase, userId } = context;
 
@@ -85,10 +85,7 @@ export const previewRuleChange = createServerFn({ method: "POST" })
     };
     candidate.specificity_level = deriveRuleLevel(candidate);
 
-    const replaced = [
-      ...data.replaces_rule_ids,
-      ...(data.rule_id ? [data.rule_id] : []),
-    ];
+    const replaced = [...data.replaces_rule_ids, ...(data.rule_id ? [data.rule_id] : [])];
 
     const conflicts = checkRuleConflicts(
       candidate,
@@ -115,7 +112,7 @@ export const previewRuleChange = createServerFn({ method: "POST" })
 
 export const applyRuleChangeSet = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         moves: z

@@ -15,8 +15,7 @@ import { logError, logInfo, newRunId } from "@/lib/log.server";
 
 // "zerrow" stays a silent alias for the pre-rebrand wake phrase so meetings
 // already in flight (and habit) keep working after the rename to Atzro.
-const WAKE_RE =
-  /(?:^|[\s,.:;!?])(?:@atzro|@zerrow|hey\s+atzro|hey\s+zerrow)[\s,:;-]+(.+)/i;
+const WAKE_RE = /(?:^|[\s,.:;!?])(?:@atzro|@zerrow|hey\s+atzro|hey\s+zerrow)[\s,:;-]+(.+)/i;
 
 // Untrusted real-time event from Recall — validate the shape rather than cast.
 // Unknown keys are stripped so Recall can extend the payload without breaking us.
@@ -47,8 +46,8 @@ type RealtimePayload = z.infer<typeof recallRealtimeSchema>;
 
 function extractQuestion(text: string): string | null {
   const m = text.match(WAKE_RE);
-  if (!m) return null;
-  const q = m[1].trim();
+  const q = m?.[1]?.trim();
+  if (!q) return null;
   // Require at least 3 words to reduce false triggers on stray "hey atzro".
   if (q.split(/\s+/).length < 3) return null;
   return q.slice(0, 500);

@@ -396,7 +396,7 @@ export function parseFromHeader(from: string): { name: string; addr: string } {
 
   const angle = raw.match(/<([^>]*)>/);
   if (angle) {
-    const addr = angle[1].trim();
+    const addr = (angle[1] ?? "").trim();
     // Everything before the first "<" is the display name; strip surrounding
     // quotes but keep any inner ones (`Jane "JD" Doe` stays intact).
     const name = raw

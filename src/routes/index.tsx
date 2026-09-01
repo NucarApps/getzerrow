@@ -201,8 +201,8 @@ function LandingPage() {
               You name the folders. <span className="accent">Atzro does the filing.</span>
             </h2>
             <p className="sect-lede">
-              A folder is a name plus a one-line description. Write it the way you'd explain it to an
-              assistant — Atzro handles the rest.
+              A folder is a name plus a one-line description. Write it the way you'd explain it to
+              an assistant — Atzro handles the rest.
             </p>
           </header>
 
@@ -301,9 +301,7 @@ function LandingPage() {
             <h2 className="sect-title">
               Three steps to <span className="accent">a quiet inbox.</span>
             </h2>
-            <p className="sect-lede">
-              Ninety seconds of setup, then the sorting runs itself.
-            </p>
+            <p className="sect-lede">Ninety seconds of setup, then the sorting runs itself.</p>
           </header>
 
           <div className="steps">
@@ -353,8 +351,8 @@ function LandingPage() {
               </summary>
               <div className="faq-body">
                 Atzro syncs message metadata and content so it can classify and summarize. Sensitive
-                content is <b>encrypted at rest</b>, everything is <b>scoped to your account</b>, and
-                you can disconnect Gmail at any time from Settings.
+                content is <b>encrypted at rest</b>, everything is <b>scoped to your account</b>,
+                and you can disconnect Gmail at any time from Settings.
               </div>
             </details>
             <details className="faq-item">
@@ -365,8 +363,8 @@ function LandingPage() {
                 </span>
               </summary>
               <div className="faq-body">
-                Yes — when Atzro files an email into a folder, it applies the matching Gmail label so
-                your <b>phone, web, and other clients stay in sync</b>.
+                Yes — when Atzro files an email into a folder, it applies the matching Gmail label
+                so your <b>phone, web, and other clients stay in sync</b>.
               </div>
             </details>
             <details className="faq-item">

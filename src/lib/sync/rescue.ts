@@ -236,7 +236,7 @@ export async function rescueStrandedEmails(opts: { limit?: number } = {}) {
   for (const [accountId, accountRows] of byAccount) {
     let ctx: AccountContext;
     try {
-      ctx = await loadAccountContext(accountId, accountRows[0].user_id);
+      ctx = await loadAccountContext(accountId, accountRows[0]!.user_id);
     } catch (e) {
       console.error("rescue loadAccountContext failed", accountId, e);
       failed += accountRows.length;
@@ -290,7 +290,7 @@ export async function rescueStrandedEmails(opts: { limit?: number } = {}) {
           ctx.enrichedFolders,
         );
         for (let idx = 0; idx < chunk.length; idx++) {
-          const row = chunk[idx];
+          const row = chunk[idx]!;
           const r = out[idx];
           if (!r) {
             await fallbackOne(row);

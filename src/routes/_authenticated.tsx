@@ -93,11 +93,12 @@ function AuthedLayoutInner({
   const accounts = useMemo(() => accountsQ.data?.accounts ?? [], [accountsQ.data]);
 
   useEffect(() => {
-    if (accounts.length === 0) return;
+    const first = accounts[0];
+    if (!first) return;
     const activeExists =
       activeAccountId && accounts.some((account) => account.id === activeAccountId);
     if (activeExists) return;
-    setActiveAccountId(accounts[0].id);
+    setActiveAccountId(first.id);
     setSelected("all");
   }, [accounts, activeAccountId, setActiveAccountId, setSelected]);
 
@@ -203,9 +204,10 @@ function useSidebarData(onNavigate?: () => void) {
   // Reconcile activeAccountId with the actual account list — fall back to the
   // first account if the stored selection no longer exists or none was set.
   useEffect(() => {
-    if (accounts.length === 0) return;
+    const first = accounts[0];
+    if (!first) return;
     const exists = activeAccountId && accounts.some((a) => a.id === activeAccountId);
-    if (!exists) setActiveAccountId(accounts[0].id);
+    if (!exists) setActiveAccountId(first.id);
   }, [accounts, activeAccountId, setActiveAccountId]);
 
   const accountId =

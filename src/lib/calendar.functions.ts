@@ -29,7 +29,7 @@ async function assertOwnsAccount(
 /** Current guard state + sync metadata for one account, used by the UI. */
 export const getCalendarGuardStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ accountId: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ accountId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     await assertOwnsAccount(data.accountId, context.userId);
     const { data: account } = await supabaseAdmin
@@ -54,7 +54,7 @@ export const getCalendarGuardStatus = createServerFn({ method: "GET" })
  * triggers an initial calendar sync when access has been granted. */
 export const setCalendarGuard = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) =>
+  .validator((input) =>
     z.object({ accountId: z.string().uuid(), enabled: z.boolean() }).parse(input),
   )
   .handler(async ({ data, context }) => {
@@ -90,7 +90,7 @@ export const setCalendarGuard = createServerFn({ method: "POST" })
 /** On-demand resync of calendar attendees for an account. */
 export const syncCalendarNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ accountId: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ accountId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { calendarAccess } = await assertOwnsAccount(data.accountId, context.userId);
     if (!calendarAccess) {
@@ -129,7 +129,7 @@ export type MeetingPerson = {
  */
 export const listMeetingPeople = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) =>
+  .validator((input) =>
     z
       .object({
         when: z.enum(["past", "upcoming"]).default("past"),

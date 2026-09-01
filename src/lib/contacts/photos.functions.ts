@@ -11,7 +11,7 @@ import { MAX_UPLOAD_BYTES, ALLOWED_MIME, base64ToBytes } from "@/lib/photo-uploa
 
 export const uploadContactPhoto = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         contactId: z.string().uuid(),
@@ -70,7 +70,7 @@ export const uploadContactPhoto = createServerFn({ method: "POST" })
 
 export const removeContactPhoto = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ contactId: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ contactId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertOwnsContact(context.userId, data.contactId);
     const { deleteContactPhoto } = await import("@/lib/contacts/photos.server");
@@ -107,7 +107,7 @@ export const removeContactPhoto = createServerFn({ method: "POST" })
  * contact has no stored photo. */
 export const getContactPhotoSignedUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ contactId: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ contactId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }): Promise<{ url: string | null }> => {
     await assertOwnsContact(context.userId, data.contactId);
     const { signContactPhotoUrl } = await import("@/lib/contacts/photos.server");

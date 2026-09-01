@@ -400,9 +400,9 @@ export type ParsedVCard = {
 function unescapeValue(v: string): string {
   const out: string[] = [];
   for (let i = 0; i < v.length; i++) {
-    const c = v[i];
+    const c = v[i]!;
     if (c === "\\" && i + 1 < v.length) {
-      const n = v[i + 1];
+      const n = v[i + 1]!;
       if (n === "n" || n === "N") out.push("\n");
       else out.push(n);
       i++;
@@ -438,11 +438,11 @@ function parseLine(raw: string): ParsedLine | null {
   // associated X-ABLabel (custom labels), and often for the first
   // EMAIL/TEL/URL/ADR on a newly created contact. Strip the prefix so
   // downstream switches on the base property name still match.
-  const rawName = parts[0].replace(/^item\d+\./i, "");
+  const rawName = parts[0]!.replace(/^item\d+\./i, "");
   const name = rawName.toUpperCase();
   const params: Record<string, string[]> = {};
   for (let i = 1; i < parts.length; i++) {
-    const p = parts[i];
+    const p = parts[i]!;
     const eq = p.indexOf("=");
     if (eq < 0) {
       (params["TYPE"] ??= []).push(p.toUpperCase());
@@ -645,7 +645,8 @@ export function parseVCard(text: string): ParsedVCard | null {
       case "X-ADDRESSBOOKSERVER-MEMBER": {
         // Format: urn:uuid:<uid>
         const m = v.trim().match(/urn:uuid:([0-9a-f-]{36})/i);
-        if (m) out.memberUids.push(m[1].toLowerCase());
+        const uid = m?.[1];
+        if (uid) out.memberUids.push(uid.toLowerCase());
         break;
       }
       case "PHOTO": {
@@ -711,7 +712,7 @@ export function parseVCard(text: string): ParsedVCard | null {
   // Ensure exactly one primary and sort primary-first.
   let emailsArr = Array.from(seenEmails.values());
   if (emailsArr.length && !emailsArr.some((e) => e.is_primary)) {
-    emailsArr[0] = { ...emailsArr[0], is_primary: true };
+    emailsArr[0] = { ...emailsArr[0]!, is_primary: true };
   }
   emailsArr = emailsArr.sort((a, b) => (a.is_primary === b.is_primary ? 0 : a.is_primary ? -1 : 1));
   out.emails = emailsArr;

@@ -224,7 +224,6 @@ export function FilterLikeThisDrawer({
     };
   }, [open, showMarkRead, folderId, value, markReadDecisionFn]);
 
-
   const canSave =
     !!folderId && value.trim().length > 0 && !saving && (!isInboxMode || field !== "subject");
 
@@ -383,7 +382,6 @@ export function FilterLikeThisDrawer({
               </p>
             </div>
           )}
-
 
           {/* Match by */}
           <div>
@@ -571,7 +569,6 @@ export function FilterLikeThisDrawer({
               )}
             </div>
           )}
-
 
           {/* Apply to */}
           <div>

@@ -85,8 +85,7 @@ export function resolveRules(
 ): RuleResolution {
   const vetoed = new Set(opts.vetoedFolderIds ?? []);
   const nameOf = (id: string) => folders.find((f) => f.id === id)?.name ?? "folder";
-  const paused = (id: string) =>
-    folders.find((f) => f.id === id)?.processing_enabled === false;
+  const paused = (id: string) => folders.find((f) => f.id === id)?.processing_enabled === false;
 
   const matched: RuleEvaluation[] = [];
   const failed: RuleEvaluation[] = [];

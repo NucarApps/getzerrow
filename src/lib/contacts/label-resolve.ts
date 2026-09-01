@@ -56,5 +56,6 @@ export function pickExistingLabel<L extends LabelCandidate>(
     const mb = b.member_count ?? 0;
     if (mb !== ma) return mb - ma;
     return a.name.length - b.name.length;
-  })[0];
+    // inScope.length >= 1 is checked above, so the sorted array is non-empty.
+  })[0]!;
 }

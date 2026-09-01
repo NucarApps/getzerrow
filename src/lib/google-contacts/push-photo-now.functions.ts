@@ -97,7 +97,7 @@ function triggerBackgroundSync(): boolean {
 
 export const pushContactPhotoToGoogleNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ contactId: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ contactId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }): Promise<PushResult> => {
     await assertOwnsContact(context.userId, data.contactId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -152,7 +152,7 @@ export const pushContactPhotoToGoogleNow = createServerFn({ method: "POST" })
 
 export const pushCompanyPhotoToGoogleNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ companyId: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ companyId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }): Promise<PushResult> => {
     await assertOwnsCompany(context.userId, data.companyId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");

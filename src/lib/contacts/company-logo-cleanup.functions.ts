@@ -25,9 +25,7 @@ export const listContactsForLogoCleanup = createServerFn({ method: "GET" })
 
 export const cleanupCompanyLogoPhotosBatch = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z.object({ ids: z.array(z.string().uuid()).min(1).max(20) }).parse(d),
-  )
+  .validator((d: unknown) => z.object({ ids: z.array(z.string().uuid()).min(1).max(20) }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { loadContactPhotoBytes, deleteContactPhoto, sha256Hex } =
@@ -172,7 +170,7 @@ export const cleanupCompanyLogoPhotosBatch = createServerFn({ method: "POST" })
  * logo. Requires the contact to have a linked company. */
 export const resetContactToCompanyLogo = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ contactId: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ contactId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { deleteContactPhoto, sha256Hex } = await import("@/lib/contacts/photos.server");

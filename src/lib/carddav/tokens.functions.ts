@@ -34,7 +34,7 @@ export const listCardDavTokens = createServerFn({ method: "GET" })
 /** Create a new CardDAV token. Returns the raw value once — never stored. */
 export const createCardDavToken = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ label: z.string().trim().min(1).max(60) }).parse(d))
+  .validator((d: unknown) => z.object({ label: z.string().trim().min(1).max(60) }).parse(d))
   .handler(async ({ data, context }) => {
     // 24 bytes -> 32 base64url chars: readable enough for one-time copy
     // and enough entropy that guessing is infeasible.
@@ -55,7 +55,7 @@ export const createCardDavToken = createServerFn({ method: "POST" })
 /** Revoke a CardDAV token so the iPhone stops syncing. */
 export const revokeCardDavToken = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { error } = await context.supabase
       .from("carddav_tokens")

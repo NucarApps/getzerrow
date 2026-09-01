@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import type { Folder, Filter, HistoryEmail } from "./types";
 
 type ReasonTone = "ai" | "manual" | "rule" | "label" | "muted";
+const noneReason = { label: "Imported", tone: "muted" as ReasonTone, Icon: Inbox };
 const reasonMeta: Record<string, { label: string; tone: ReasonTone; Icon: typeof Bot }> = {
   ai: { label: "AI", tone: "ai", Icon: Bot },
   manual_move: { label: "Manual", tone: "manual", Icon: Hand },
@@ -23,7 +24,7 @@ const reasonMeta: Record<string, { label: string; tone: ReasonTone; Icon: typeof
   domain_rule: { label: "Domain rule", tone: "rule", Icon: FilterIcon },
   gmail_label: { label: "Gmail label", tone: "label", Icon: Tag },
   surfaced_to_inbox: { label: "Surfaced", tone: "label", Icon: Inbox },
-  none: { label: "Imported", tone: "muted", Icon: Inbox },
+  none: noneReason,
 };
 const toneClass: Record<ReasonTone, string> = {
   ai: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 border-indigo-500/20",
@@ -34,7 +35,7 @@ const toneClass: Record<ReasonTone, string> = {
 };
 
 function getReasonMeta(by: string | null | undefined) {
-  return reasonMeta[by ?? "none"] ?? reasonMeta.none;
+  return reasonMeta[by ?? "none"] ?? noneReason;
 }
 
 function relativeTime(iso: string | null) {

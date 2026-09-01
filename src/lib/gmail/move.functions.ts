@@ -15,7 +15,7 @@ import { getEmailsDecrypted } from "../sync/encrypted-reader";
 
 export const moveEmailToFolder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email_id: string; to_folder_id: string }) =>
+  .validator((d: { email_id: string; to_folder_id: string }) =>
     z
       .object({
         email_id: z.string().uuid(),
@@ -45,15 +45,14 @@ export const moveEmailToFolder = createServerFn({ method: "POST" })
 
 export const findSimilarEmails = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
-    (d: { email_id: string; from_folder_id: string | null; mode: "sender" | "domain" }) =>
-      z
-        .object({
-          email_id: z.string().uuid(),
-          from_folder_id: z.string().uuid().nullable(),
-          mode: z.enum(["sender", "domain"]),
-        })
-        .parse(d),
+  .validator((d: { email_id: string; from_folder_id: string | null; mode: "sender" | "domain" }) =>
+    z
+      .object({
+        email_id: z.string().uuid(),
+        from_folder_id: z.string().uuid().nullable(),
+        mode: z.enum(["sender", "domain"]),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { data: email } = await supabaseAdmin
@@ -105,7 +104,7 @@ export const findSimilarEmails = createServerFn({ method: "POST" })
 
 export const bulkMoveEmails = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
+  .validator(
     (d: {
       email_ids: string[];
       to_folder_id: string;
@@ -184,7 +183,7 @@ export const bulkMoveEmails = createServerFn({ method: "POST" })
 
 export const reanalyzeEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email_id: string }) => z.object({ email_id: z.string().uuid() }).parse(d))
+  .validator((d: { email_id: string }) => z.object({ email_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { classifyParsedEmail, loadAccountContext } = await import("../sync.server");
     const { rows } = await getEmailsDecrypted([data.email_id]);
@@ -440,7 +439,7 @@ export const reanalyzeEmail = createServerFn({ method: "POST" })
 
 export const moveEmailToInbox = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email_id: string; add_override?: "email" | "domain" | null }) =>
+  .validator((d: { email_id: string; add_override?: "email" | "domain" | null }) =>
     z
       .object({
         email_id: z.string().uuid(),
@@ -534,7 +533,7 @@ export const moveEmailToInbox = createServerFn({ method: "POST" })
 
 export const addInboxOverride = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
+  .validator(
     (d: {
       value: string;
       match_type: "email" | "domain";
@@ -631,7 +630,7 @@ export const addInboxOverride = createServerFn({ method: "POST" })
         let i = 0;
         async function worker() {
           while (i < matches.length) {
-            const m = matches[i++];
+            const m = matches[i++]!;
             try {
               const oldLabel = m.folder_id ? (labelById.get(m.folder_id) ?? null) : null;
               // Reprocess past path: row was filed into a folder (often

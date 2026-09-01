@@ -9,7 +9,7 @@ const LINK_KINDS = ["email", "phone", "website", "linkedin", "twitter", "other"]
 
 /** Public — log an event on a card. No auth required. */
 export const logCardEvent = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         handle: z.string().regex(HANDLE_RE),
@@ -61,7 +61,7 @@ export type CardAnalyticsSummary = {
 /** Owner — summary analytics for their own card. */
 export const getMyCardAnalytics = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z.object({ days: z.number().int().min(1).max(365).default(30) }).parse(d ?? {}),
   )
   .handler(async ({ context, data }): Promise<CardAnalyticsSummary> => {

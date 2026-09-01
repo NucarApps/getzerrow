@@ -8,7 +8,7 @@ import { isLikelyHuman, normalizeName } from "../contacts-helpers.server";
 
 export const shareContactByEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         contactId: z.string().uuid(),
@@ -74,7 +74,7 @@ export const listFoldersForPicker = createServerFn({ method: "GET" })
   });
 export const listUniqueInboxSenders = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         folderIds: z.array(z.string().uuid()).max(50).optional(),

@@ -62,7 +62,7 @@ export const listMyGmailAccounts = createServerFn({ method: "GET" })
 
 export const startConnectGmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { login_hint?: string } | undefined) =>
+  .validator((d: { login_hint?: string } | undefined) =>
     z.object({ login_hint: z.string().email().optional() }).parse(d ?? {}),
   )
   .handler(async ({ data, context }) => {
@@ -75,7 +75,7 @@ export const startConnectGmail = createServerFn({ method: "POST" })
 
 export const connectGmailFromSession = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
+  .validator(
     (d: {
       access_token: string;
       refresh_token: string;
@@ -174,9 +174,7 @@ export const connectGmailFromSession = createServerFn({ method: "POST" })
 
 export const disconnectGmailAccount = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { account_id: string }) =>
-    z.object({ account_id: z.string().uuid() }).parse(d),
-  )
+  .validator((d: { account_id: string }) => z.object({ account_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
     try {
@@ -251,9 +249,7 @@ export const disconnectGmailAccount = createServerFn({ method: "POST" })
 
 export const listGmailLabels = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { account_id: string }) =>
-    z.object({ account_id: z.string().uuid() }).parse(d),
-  )
+  .validator((d: { account_id: string }) => z.object({ account_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
     const r = await listLabels(data.account_id);
@@ -263,7 +259,7 @@ export const listGmailLabels = createServerFn({ method: "POST" })
 
 export const generateFolderAiRule = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { purpose: string; folder_name?: string }) =>
+  .validator((d: { purpose: string; folder_name?: string }) =>
     z
       .object({
         purpose: z.string().min(1).max(1000),
@@ -281,7 +277,7 @@ export const generateFolderAiRule = createServerFn({ method: "POST" })
 
 export const generateFolderAiRuleFromLabel = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
+  .validator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: folder } = await supabaseAdmin
       .from("folders")
@@ -329,7 +325,7 @@ export const generateFolderAiRuleFromLabel = createServerFn({ method: "POST" })
 
 export const createGmailLabel = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { account_id: string; name: string; parent_label_id?: string }) =>
+  .validator((d: { account_id: string; name: string; parent_label_id?: string }) =>
     z
       .object({
         account_id: z.string().uuid(),
@@ -358,14 +354,14 @@ export const createGmailLabel = createServerFn({ method: "POST" })
 
 export const learnFolderFromLabel = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
+  .validator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     return learnFromLinkedLabel(data.folder_id, context.userId);
   });
 
 export const applyFolderLabelToLocal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
+  .validator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: folder } = await supabaseAdmin

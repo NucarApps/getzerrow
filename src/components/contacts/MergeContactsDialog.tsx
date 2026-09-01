@@ -67,6 +67,7 @@ export function MergeContactsDialog({ open, onOpenChange, contactIds, onMerged }
   useEffect(() => {
     if (!q.data) return;
     const first = q.data.contacts[0];
+    if (!first) return;
     const pid = primaryId ?? first.id;
     setPrimaryId(pid);
     // Best-value default per scalar: prefer the primary's non-empty value,

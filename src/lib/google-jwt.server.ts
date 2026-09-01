@@ -86,6 +86,8 @@ export async function verifyGoogleJwt(token: string, opts: VerifyOptions): Promi
   const parts = token.split(".");
   if (parts.length !== 3) return { ok: false, reason: "malformed" };
   const [headerB64, payloadB64, sigB64] = parts;
+  if (headerB64 === undefined || payloadB64 === undefined || sigB64 === undefined)
+    return { ok: false, reason: "malformed" };
 
   let header: { alg?: string; kid?: string };
   let claims: GoogleJwtClaims;

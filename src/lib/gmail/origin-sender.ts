@@ -8,7 +8,6 @@
 // Pure logic (no Gmail API, no DB) so the precedence is testable in isolation.
 import { emailDomain } from "../company-domains";
 
-
 /** Header lookup: name (case-insensitive) -> raw value, "" when absent. */
 export type HeaderLookup = (name: string) => string;
 
@@ -25,7 +24,6 @@ export type OriginSender = {
   is_forwarded: boolean;
 };
 
-
 /** Minimal address extractor. Kept local (rather than importing the Gmail
  * parser) so this module stays pure and free of server-only imports. */
 function addrOf(raw: string): { addr: string; name: string } {
@@ -38,7 +36,7 @@ function addrOf(raw: string): { addr: string; name: string } {
       .trim()
       .replace(/^"(.*)"$/s, "$1")
       .trim();
-    return { addr: angle[1].trim().toLowerCase(), name };
+    return { addr: (angle[1] ?? "").trim().toLowerCase(), name };
   }
   const token = s.split(/\s+/).find((t) => t.includes("@"));
   if (token) {
@@ -47,7 +45,6 @@ function addrOf(raw: string): { addr: string; name: string } {
   }
   return { addr: "", name: "" };
 }
-
 
 /**
  * Split a Google-style relay display name: `"Manheim" via Old User Ken Connor`
@@ -59,12 +56,16 @@ function addrOf(raw: string): { addr: string; name: string } {
 export function parseViaDisplayName(
   displayName: string | null | undefined,
 ): { originName: string; forwarderName: string } | null {
-  const raw = (displayName ?? "").trim().replace(/^"(.*)"$/s, "$1").trim();
+  const raw = (displayName ?? "")
+    .trim()
+    .replace(/^"(.*)"$/s, "$1")
+    .trim();
   if (!raw) return null;
   const m = raw.match(/^(.*\S)\s+via\s+(\S.*)$/i);
-  if (!m) return null;
-  const originName = m[1].replace(/^"(.*)"$/s, "$1").trim();
-  const forwarderName = m[2].replace(/^"(.*)"$/s, "$1").trim();
+  const [, rawOrigin, rawForwarder] = m ?? [];
+  if (!rawOrigin || !rawForwarder) return null;
+  const originName = rawOrigin.replace(/^"(.*)"$/s, "$1").trim();
+  const forwarderName = rawForwarder.replace(/^"(.*)"$/s, "$1").trim();
   if (!originName || !forwarderName) return null;
   return { originName, forwarderName };
 }
@@ -141,7 +142,6 @@ export function deriveOriginSender(h: HeaderLookup): OriginSender {
     is_forwarded: !!origin?.addr || relayed,
   };
 }
-
 
 /** The sender a rule should match on: the true origin when the message was
  * forwarded, otherwise the From address. Keeps `origin_*` rules working for

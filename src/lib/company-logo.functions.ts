@@ -33,7 +33,7 @@ export const listCompanyLogoChoices = createServerFn({ method: "GET" })
 
 export const setCompanyLogoChoice = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
+  .validator((input: unknown) =>
     z
       .object({
         domain: domainSchema,
@@ -73,7 +73,7 @@ export const setCompanyLogoChoice = createServerFn({ method: "POST" })
 
 export const clearCompanyLogoChoice = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ domain: domainSchema }).parse(input))
+  .validator((input: unknown) => z.object({ domain: domainSchema }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { error } = await supabase

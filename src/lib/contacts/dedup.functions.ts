@@ -444,7 +444,7 @@ export const listContactDuplicateSuggestions = createServerFn({ method: "GET" })
     }));
 
     // Confidence order: high, medium, low
-    const order: Record<string, number> = { high: 0, medium: 1, low: 2 };
+    const order: Record<DuplicateSuggestion["confidence"], number> = { high: 0, medium: 1, low: 2 };
     enriched.sort((a, b) => order[a.confidence] - order[b.confidence]);
     return { suggestions: enriched };
   });
@@ -453,7 +453,7 @@ const MergeInput = z.object({ suggestionId: z.string().uuid() });
 
 export const mergeContactDuplicate = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => MergeInput.parse(d))
+  .validator((d: unknown) => MergeInput.parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { data: row } = await supabase
@@ -548,7 +548,7 @@ const DismissInput = z.object({ suggestionId: z.string().uuid() });
 
 export const dismissContactDuplicate = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => DismissInput.parse(d))
+  .validator((d: unknown) => DismissInput.parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { error } = await supabase
@@ -584,9 +584,7 @@ type ScalarField = (typeof SCALAR_FIELDS)[number];
 
 export const getContactsMergePayload = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z.object({ ids: z.array(z.string().uuid()).min(2).max(6) }).parse(d),
-  )
+  .validator((d: unknown) => z.object({ ids: z.array(z.string().uuid()).min(2).max(6) }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { data: rows, error } = await supabase
@@ -602,7 +600,8 @@ export const getContactsMergePayload = createServerFn({ method: "POST" })
     const { getContactDecrypted } = await import("@/lib/sync/encrypted-reader");
     const decrypted = await Promise.all(data.ids.map((id) => getContactDecrypted(id)));
     const notesById = new Map<string, string | null>();
-    decrypted.forEach((r, i) => notesById.set(data.ids[i], r.row?.notes ?? null));
+    // decrypted is index-aligned with data.ids (built by mapping over it).
+    decrypted.forEach((r, i) => notesById.set(data.ids[i]!, r.row?.notes ?? null));
 
     const [{ data: phones }, { data: emails }, { data: memberships }, { data: groupRows }] =
       await Promise.all([
@@ -659,7 +658,7 @@ const ManualMergeInput = z.object({
 
 export const mergeContactsManual = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => ManualMergeInput.parse(d))
+  .validator((d: unknown) => ManualMergeInput.parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     if (data.loserIds.includes(data.primaryId)) {

@@ -44,15 +44,14 @@ export async function getOwnedExecution(id: string, userId: string): Promise<Exe
 
 export const flagWrongClassification = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
-    (d: { executed_rule_id: string; correct_folder_id?: string | null; note?: string }) =>
-      z
-        .object({
-          executed_rule_id: z.string().uuid(),
-          correct_folder_id: z.string().uuid().nullish(),
-          note: z.string().max(500).optional(),
-        })
-        .parse(d),
+  .validator((d: { executed_rule_id: string; correct_folder_id?: string | null; note?: string }) =>
+    z
+      .object({
+        executed_rule_id: z.string().uuid(),
+        correct_folder_id: z.string().uuid().nullish(),
+        note: z.string().max(500).optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }): Promise<{ ok: true; moved: boolean }> => {
     const { supabase, userId } = context;

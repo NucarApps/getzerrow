@@ -100,8 +100,7 @@ export async function deliverWebhook(input: {
     "X-Atzro-Delivery": input.deliveryId,
   };
   if (input.secret) {
-    headers["X-Atzro-Signature"] =
-      `sha256=${signWebhookBody(input.secret, timestamp, input.body)}`;
+    headers["X-Atzro-Signature"] = `sha256=${signWebhookBody(input.secret, timestamp, input.body)}`;
   }
 
   const doFetch = input.fetchImpl ?? fetch;

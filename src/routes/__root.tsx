@@ -67,20 +67,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "Atzro — AI inbox for Gmail" },
       {
         name: "description",
-        content:
-          "Atzro auto-categorizes your Gmail inbox using folders and AI rules in real time.",
+        content: "Atzro auto-categorizes your Gmail inbox using folders and AI rules in real time.",
       },
       { property: "og:title", content: "Atzro — AI inbox for Gmail" },
       { name: "twitter:title", content: "Atzro — AI inbox for Gmail" },
       {
         property: "og:description",
-        content:
-          "Atzro auto-categorizes your Gmail inbox using folders and AI rules in real time.",
+        content: "Atzro auto-categorizes your Gmail inbox using folders and AI rules in real time.",
       },
       {
         name: "twitter:description",
-        content:
-          "Atzro auto-categorizes your Gmail inbox using folders and AI rules in real time.",
+        content: "Atzro auto-categorizes your Gmail inbox using folders and AI rules in real time.",
       },
       {
         property: "og:image",

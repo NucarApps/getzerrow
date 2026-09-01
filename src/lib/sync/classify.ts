@@ -100,7 +100,6 @@ function aiCandidateFolders(parsed: ParsedEmailForClassify, context: AccountCont
   return context.enrichedFolders.filter((f) => eligibleIds.has(f.id));
 }
 
-
 /** AI fallback pass. Call only when classifyByRules returned
  * needs_ai=true. Takes the rules result as `base` so non-AI fields
  * (matched_* arrays, exception-note reason) carry through. */
@@ -160,7 +159,6 @@ export async function classifyByAi(
   return out;
 }
 
-
 export async function classifyParsedEmail(
   parsed: ParsedEmailForClassify,
   userId: string,
@@ -206,7 +204,6 @@ export async function classifyParsedEmail(
   }
   return rules;
 }
-
 
 export type SurfaceDecision = {
   /** True = keep the email visible in the inbox (still filed into the folder). */

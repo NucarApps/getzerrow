@@ -1,6 +1,6 @@
 // Shared server-only helpers/constants used by src/lib/meetings/*.functions.ts.
 // Anything referenced from more than one split file — or from a createServerFn
-// handler/inputValidator — belongs here so the `?tss-serverfn-split` transform
+// handler/validator — belongs here so the `?tss-serverfn-split` transform
 // never has to reach across sibling module scope for it.
 
 /**

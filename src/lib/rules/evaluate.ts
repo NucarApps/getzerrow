@@ -49,10 +49,7 @@ function pinMatches(m: EngineMessage, pin: Pin): boolean {
 
 /** Folders the AI stage may consider: not paused, not vetoed, not opted
  * out, and carrying something to score against. */
-export function aiCandidateFolderIds(
-  folders: EngineFolder[],
-  vetoedFolderIds: string[],
-): string[] {
+export function aiCandidateFolderIds(folders: EngineFolder[], vetoedFolderIds: string[]): string[] {
   const vetoed = new Set(vetoedFolderIds);
   return folders
     .filter((f) => {
@@ -124,7 +121,11 @@ export function evaluate(
       stages.push({ stage: "pin", outcome: "applied", detail });
       return finish(null, "pin", detail, { vetoed_folder_ids: guard.vetoedFolderIds });
     }
-    if (pin.folder_id && !isPaused(folders, pin.folder_id) && !guard.vetoedFolderIds.includes(pin.folder_id)) {
+    if (
+      pin.folder_id &&
+      !isPaused(folders, pin.folder_id) &&
+      !guard.vetoedFolderIds.includes(pin.folder_id)
+    ) {
       const detail = `You pinned ${pin.match === "thread" ? "this thread" : `"${pin.value}"`} to "${nameOf(folders, pin.folder_id)}"`;
       stages.push({ stage: "pin", outcome: "applied", detail });
       return finish(pin.folder_id, "pin", detail, { vetoed_folder_ids: guard.vetoedFolderIds });
@@ -194,7 +195,8 @@ export function evaluate(
     stages.push({
       stage: "thread_continuity",
       outcome: "skipped",
-      detail: "Earlier message was filed by an unconfirmed AI decision — continuity does not chain off it",
+      detail:
+        "Earlier message was filed by an unconfirmed AI decision — continuity does not chain off it",
     });
   } else {
     stages.push({ stage: "thread_continuity", outcome: "pass" });
@@ -251,7 +253,11 @@ export function evaluate(
   }
 
   // ── Stage 7: Inbox ────────────────────────────────────────────────────
-  stages.push({ stage: "inbox", outcome: "applied", detail: "Nothing matched — stays in the Inbox" });
+  stages.push({
+    stage: "inbox",
+    outcome: "applied",
+    detail: "Nothing matched — stays in the Inbox",
+  });
   return finish(null, "inbox", "Nothing matched — stays in the Inbox", {
     ...ruleTrace,
     ai: { eligible_folder_ids: aiCandidates, enabled: opts.aiEnabled },

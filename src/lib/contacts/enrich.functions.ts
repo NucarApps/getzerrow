@@ -434,7 +434,7 @@ ${convoSample}`,
 
 export const enrichContact = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string; force?: boolean }) =>
+  .validator((d: { id: string; force?: boolean }) =>
     z.object({ id: z.string().uuid(), force: z.boolean().optional() }).parse(d),
   )
   .handler(async ({ data, context }) =>
@@ -453,7 +453,7 @@ export const enrichContact = createServerFn({ method: "POST" })
  * contacts get a fresh summary. */
 export const rerunEnrichmentBatch = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         ids: z.array(z.string().uuid()).min(1).max(15),
@@ -474,7 +474,8 @@ export const rerunEnrichmentBatch = createServerFn({ method: "POST" })
         else processed += 1;
       } else {
         failed.push({
-          id: data.ids[i],
+          // results is index-aligned with data.ids (built by mapping over it).
+          id: data.ids[i]!,
           error: r.reason instanceof Error ? r.reason.message : String(r.reason),
         });
       }
@@ -502,7 +503,7 @@ export const listContactIdsForRerun = createServerFn({ method: "POST" })
 
 export const addContactFromEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { emailId: string }) => z.object({ emailId: z.string().uuid() }).parse(d))
+  .validator((d: { emailId: string }) => z.object({ emailId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 

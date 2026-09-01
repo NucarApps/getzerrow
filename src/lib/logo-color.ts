@@ -73,31 +73,35 @@ function extractFromImage(img: HTMLImageElement): string | null {
   }));
   for (let i = 0; i < data.length; i += 4) {
     const a = data[i + 3];
-    if (a < 200) continue;
-    const r = data[i],
-      g = data[i + 1],
-      b = data[i + 2];
+    if (a === undefined || a < 200) continue;
+    const r = data[i] ?? 0,
+      g = data[i + 1] ?? 0,
+      b = data[i + 2] ?? 0;
     const [h, s, l] = rgbToHsl(r, g, b);
     if (l < 0.08 || l > 0.92) continue; // ignore near-white/black
     if (s < 0.25) continue; // ignore near-neutral
     const bin = Math.min(11, Math.floor(h / 30));
+    const entry = bins[bin];
+    if (!entry) continue;
     const w = s * (1 - Math.abs(l - 0.5));
-    bins[bin].weight += w;
-    bins[bin].r += r;
-    bins[bin].g += g;
-    bins[bin].b += b;
-    bins[bin].count++;
+    entry.weight += w;
+    entry.r += r;
+    entry.g += g;
+    entry.b += b;
+    entry.count++;
   }
   let best = -1,
     bestW = 0;
   for (let i = 0; i < bins.length; i++) {
-    if (bins[i].weight > bestW) {
-      bestW = bins[i].weight;
+    const bi = bins[i]!; // i < bins.length, dense array
+    if (bi.weight > bestW) {
+      bestW = bi.weight;
       best = i;
     }
   }
   if (best < 0) return null;
   const b = bins[best];
+  if (!b) return null;
   const r = Math.round(b.r / b.count);
   const g = Math.round(b.g / b.count);
   const bl = Math.round(b.b / b.count);
@@ -124,7 +128,8 @@ export function getLogoDominantColor(domain: string): Promise<string | null> {
       resolve(c);
     };
     const tryNext = () => {
-      if (i >= urls.length) return finish(null);
+      const url = urls[i];
+      if (url === undefined) return finish(null);
       const img = new Image();
       img.crossOrigin = "anonymous";
       img.decoding = "async";
@@ -141,7 +146,7 @@ export function getLogoDominantColor(domain: string): Promise<string | null> {
         i++;
         tryNext();
       };
-      img.src = urls[i];
+      img.src = url;
     };
     tryNext();
     setTimeout(() => finish(null), 6000);

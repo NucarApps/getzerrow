@@ -68,8 +68,9 @@ export function EntriesEditor<T extends EntryRow>({
   function remove(idx: number) {
     const wasPrimary = value[idx]?.is_primary;
     const next = value.filter((_, i) => i !== idx);
-    if (wasPrimary && next.length > 0 && !next.some((e) => e.is_primary)) {
-      next[0] = withValue(next[0], valueOf(next[0]), true, next[0].label);
+    const head = next[0];
+    if (wasPrimary && head && !next.some((e) => e.is_primary)) {
+      next[0] = withValue(head, valueOf(head), true, head.label);
     }
     onChange(next);
   }

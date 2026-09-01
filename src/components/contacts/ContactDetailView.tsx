@@ -346,7 +346,7 @@ export function ContactDetailView({ id, onDeleted, onDirtyChange, flushRef }: Pr
       // When emails[] is provided, the server derives contacts.email from the
       // primary row — don't also pass the single email field.
       const primaryEmail = cleanEmails.length
-        ? (cleanEmails.find((e) => e.is_primary)?.address ?? cleanEmails[0].address)
+        ? (cleanEmails.find((e) => e.is_primary)?.address ?? cleanEmails[0]!.address)
         : form.email.trim()
           ? form.email.trim()
           : null;
@@ -617,8 +617,8 @@ export function ContactDetailView({ id, onDeleted, onDirtyChange, flushRef }: Pr
             <AlertDialogHeader>
               <AlertDialogTitle>Delete “{displayName}”?</AlertDialogTitle>
               <AlertDialogDescription>
-                The contact is removed from Atzro and, on the next sync, from your connected
-                address books.
+                The contact is removed from Atzro and, on the next sync, from your connected address
+                books.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

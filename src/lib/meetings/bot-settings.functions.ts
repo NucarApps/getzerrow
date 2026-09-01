@@ -32,7 +32,7 @@ export const getMeetingBotSettings = createServerFn({ method: "GET" })
  */
 export const updateMeetingBotSettings = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) =>
+  .validator((input) =>
     z
       .object({
         botName: z.string().trim().min(1).max(100),

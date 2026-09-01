@@ -30,9 +30,9 @@ export function AccountPicker({ value, onChange, label = "Account" }: Props) {
   // Auto-select the first account if none is selected, or if the current
   // selection is no longer valid (e.g. account was just disconnected).
   useEffect(() => {
-    if (accounts.length === 0) return;
+    const first = accounts[0];
+    if (!first) return;
     if (!value || !accounts.some((a) => a.id === value)) {
-      const first = accounts[0];
       onChange(first.id, first.email_address);
     }
   }, [accounts, value, onChange]);

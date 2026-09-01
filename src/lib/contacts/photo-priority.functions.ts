@@ -9,7 +9,7 @@ const PRIORITY = z.enum(["company_first", "personal_first", "personal_only"]);
 
 export const setGlobalPhotoPriority = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ priority: PRIORITY }).parse(d))
+  .validator((d: unknown) => z.object({ priority: PRIORITY }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { bumpResyncNonce } = await import("@/lib/carddav/settings.functions");
@@ -24,7 +24,7 @@ export const setGlobalPhotoPriority = createServerFn({ method: "POST" })
 
 export const setCompanyPhotoPriority = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z.object({ companyId: z.string().uuid(), priority: PRIORITY.nullable() }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -49,7 +49,7 @@ export const setCompanyPhotoPriority = createServerFn({ method: "POST" })
 
 export const setContactPhotoPriority = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z.object({ contactId: z.string().uuid(), priority: PRIORITY.nullable() }).parse(d),
   )
   .handler(async ({ data, context }) => {

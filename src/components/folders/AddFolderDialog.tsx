@@ -36,7 +36,8 @@ const palette = [
   "#14b8a6",
   "#eab308",
 ];
-const pickColor = () => palette[Math.floor(Math.random() * palette.length)];
+// Math.floor(random * length) is always a valid index of the non-empty palette.
+const pickColor = () => palette[Math.floor(Math.random() * palette.length)]!;
 
 /** Toggle chip for the "when mail lands here" folder actions. */
 function ActionChip({

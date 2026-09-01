@@ -10,7 +10,7 @@ import { updateEmailEncrypted, insertFolderExampleEncrypted } from "../sync/encr
 
 export const loadOlderFromGmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string; before_received_at: string | null }) =>
+  .validator((d: { folder_id: string; before_received_at: string | null }) =>
     z
       .object({
         folder_id: z.string().uuid(),
@@ -24,7 +24,7 @@ export const loadOlderFromGmail = createServerFn({ method: "POST" })
 
 export const listFolderDomainSuggestions = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
+  .validator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: folder } = await supabaseAdmin
       .from("folders")
@@ -62,7 +62,7 @@ export const listFolderDomainSuggestions = createServerFn({ method: "POST" })
 
 export const addDomainFilter = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string; domain: string }) =>
+  .validator((d: { folder_id: string; domain: string }) =>
     z
       .object({
         folder_id: z.string().uuid(),
@@ -94,7 +94,7 @@ export const addDomainFilter = createServerFn({ method: "POST" })
 
 export const reassignDomainToFolder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { from_folder_id: string; to_folder_id: string; domain: string }) =>
+  .validator((d: { from_folder_id: string; to_folder_id: string; domain: string }) =>
     z
       .object({
         from_folder_id: z.string().uuid(),

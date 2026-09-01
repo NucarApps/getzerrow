@@ -53,14 +53,14 @@ export async function findEmaillessDuplicate(input: DupInput): Promise<string | 
         .eq("user_id", input.userId)
         .in("id", ids);
       const emailless = (candidates ?? []).filter((c) => !c.email);
-      if (emailless.length === 1) return emailless[0].id;
+      if (emailless.length === 1) return emailless[0]!.id;
       if (emailless.length > 1 && name) {
         const nameHit = emailless.find((c) => normalizeNameLoose(c.name) === name);
         if (nameHit) return nameHit.id;
         // Fall back to the first match — better than making yet another dupe.
-        return emailless[0].id;
+        return emailless[0]!.id;
       }
-      if (emailless.length >= 1) return emailless[0].id;
+      if (emailless.length >= 1) return emailless[0]!.id;
     }
   } else if (name && company) {
     // Coarse DB filter (email null, company present), then confirm identity in
@@ -75,7 +75,7 @@ export async function findEmaillessDuplicate(input: DupInput): Promise<string | 
     const matches = (candidates ?? []).filter(
       (c) => normalizeNameLoose(c.name) === name && normalizeNameLoose(c.company) === company,
     );
-    if (matches.length === 1) return matches[0].id;
+    if (matches.length === 1) return matches[0]!.id;
   }
   return null;
 }

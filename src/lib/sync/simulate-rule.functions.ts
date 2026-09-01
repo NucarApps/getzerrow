@@ -23,7 +23,7 @@ const filterSchema = z.object({
 
 export const simulateRule = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
+  .validator(
     (d: {
       account_id: string;
       folder_id?: string | null;

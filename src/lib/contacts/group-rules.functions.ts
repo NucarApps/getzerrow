@@ -275,7 +275,7 @@ export async function syncCompanyRuleMemberships(
 
 export const listGroupRules = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { groupId: string }) => z.object({ groupId: z.string().uuid() }).parse(d))
+  .validator((d: { groupId: string }) => z.object({ groupId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { data: rows, error } = await supabase
@@ -305,7 +305,7 @@ export const listGroupRules = createServerFn({ method: "GET" })
 
 export const addGroupRule = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         groupId: z.string().uuid(),
@@ -374,7 +374,7 @@ export const addGroupRule = createServerFn({ method: "POST" })
 
 export const updateGroupRule = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         id: z.string().uuid(),
@@ -407,7 +407,7 @@ export const updateGroupRule = createServerFn({ method: "POST" })
 
 export const deleteGroupRule = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { data: row } = await supabase

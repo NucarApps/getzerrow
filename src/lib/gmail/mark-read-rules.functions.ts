@@ -30,9 +30,7 @@ async function listRules(folderId: string): Promise<MarkReadRuleRow[]> {
 
 export const listFolderMarkReadRules = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string }) =>
-    z.object({ folder_id: z.string().uuid() }).parse(d),
-  )
+  .validator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await getOwnedFolder(context.userId, data.folder_id);
     return { rules: await listRules(data.folder_id) };
@@ -40,7 +38,7 @@ export const listFolderMarkReadRules = createServerFn({ method: "POST" })
 
 export const addFolderMarkReadRule = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string; value: string }) =>
+  .validator((d: { folder_id: string; value: string }) =>
     z.object({ folder_id: z.string().uuid(), value: z.string().min(3).max(320) }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -63,7 +61,7 @@ export const addFolderMarkReadRule = createServerFn({ method: "POST" })
 
 export const removeFolderMarkReadRule = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string; id: string }) =>
+  .validator((d: { folder_id: string; id: string }) =>
     z.object({ folder_id: z.string().uuid(), id: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -84,14 +82,12 @@ export const removeFolderMarkReadRule = createServerFn({ method: "POST" })
  * pipeline instead of guessing. */
 export const getFolderMarkReadDecision = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string; value: string }) =>
+  .validator((d: { folder_id: string; value: string }) =>
     z.object({ folder_id: z.string().uuid(), value: z.string().min(1).max(320) }).parse(d),
   )
   .handler(async ({ data, context }) => {
     await getOwnedFolder(context.userId, data.folder_id);
-    const { resolveAutoMarkRead, matchesMarkReadRules } = await import(
-      "../sync/mark-read-scope"
-    );
+    const { resolveAutoMarkRead, matchesMarkReadRules } = await import("../sync/mark-read-scope");
     const { data: folder } = await supabaseAdmin
       .from("folders")
       .select("auto_mark_read, mark_read_mode")
@@ -118,7 +114,7 @@ export const getFolderMarkReadDecision = createServerFn({ method: "POST" })
  * surfaces can never disagree. */
 export const setSenderMarkRead = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string; value: string; mark_read: boolean }) =>
+  .validator((d: { folder_id: string; value: string; mark_read: boolean }) =>
     z
       .object({
         folder_id: z.string().uuid(),

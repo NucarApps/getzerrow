@@ -18,7 +18,7 @@ export type AccountCalendar = {
  */
 export const listAccountCalendars = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ accountId: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ accountId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { data: acct } = await context.supabase
       .from("gmail_accounts")
@@ -74,7 +74,7 @@ export const listAccountCalendars = createServerFn({ method: "GET" })
  */
 export const saveCalendarSelections = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) =>
+  .validator((input) =>
     z
       .object({
         accountId: z.string().uuid(),
@@ -121,7 +121,7 @@ type UpcomingCalendarEvent = import("../meetings-autojoin.server").UpcomingCalen
  */
 export const listUpcomingCalendarEvents = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ accountId: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ accountId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { data: acct } = await context.supabase
       .from("gmail_accounts")
@@ -283,7 +283,7 @@ export const listRecentUnrecordedEvents = createServerFn({ method: "GET" })
 /** Exclude (or re-include) one calendar event from auto-record. */
 export const setEventExclusion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) =>
+  .validator((input) =>
     z
       .object({
         accountId: z.string().uuid(),
@@ -330,7 +330,7 @@ export const setEventExclusion = createServerFn({ method: "POST" })
  */
 export const setEventRecordingMode = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) =>
+  .validator((input) =>
     z
       .object({
         accountId: z.string().uuid(),

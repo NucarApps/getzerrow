@@ -47,7 +47,6 @@ export const CONTACT_PUSH_CONCURRENCY = 3;
 // the minute instead of bursting into a 429.
 const PUSH_BATCH_SPACING_MS = 350;
 
-
 export async function pushToGoogle(
   ids: Ids,
   progress?: ProgressReporter,
@@ -530,7 +529,6 @@ async function pushContacts(
             logError("google_contacts.push.guard_failed", { ...ids, contact_id: c.id }, guardErr);
           }
 
-
           if (!skipBodyUpdate) {
             const updated = await updatePerson(ids.gmailAccountId, link.resource_name, {
               ...body,
@@ -747,7 +745,6 @@ async function pushContacts(
     if (!quotaExhausted && !budgetHit()) {
       await new Promise((r) => setTimeout(r, PUSH_BATCH_SPACING_MS));
     }
-
   }
   return count;
 }

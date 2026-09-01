@@ -365,7 +365,6 @@ export async function loadOlderFromLabel(
     return { ingested: 0, hasMore: false, reason: "no_label" as const };
   }
 
-
   // Prefer the stored pageToken when it lines up with the caller's
   // cursor. Otherwise fall back to a Gmail `before:` query anchored
   // to the cursor, so we always retrieve messages older than what's

@@ -7,7 +7,7 @@ import { extractCardDraft, saveScannedContact } from "@/lib/card-scan.server";
 
 export const scanCard = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { imageDataUrl: string }) =>
+  .validator((d: { imageDataUrl: string }) =>
     z
       .object({
         imageDataUrl: z
@@ -27,7 +27,7 @@ export const scanCard = createServerFn({ method: "POST" })
 /** Create a contact from a scanned-card draft. */
 export const createContactFromScan = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         email: z.string().email(),
@@ -60,7 +60,7 @@ export const createContactFromScan = createServerFn({ method: "POST" })
   });
 export const getContactCardSignedUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ contactId: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ contactId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { data: row, error } = await supabase

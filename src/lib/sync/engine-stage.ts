@@ -89,9 +89,7 @@ export function runEngineStage(
   // Authoritative: translate the engine's decision into the result shape
   // the rest of the pipeline (side effects, UI, analytics) already reads.
   const winner = engine.trace.winner;
-  const matchedFolderIds = Array.from(
-    new Set(engine.trace.matched_rules.map((r) => r.folder_id)),
-  );
+  const matchedFolderIds = Array.from(new Set(engine.trace.matched_rules.map((r) => r.folder_id)));
   const matchedRuleIds = engine.trace.matched_rules
     .filter((r) => r.folder_id === engine.folder_id)
     .map((r) => r.rule_id)

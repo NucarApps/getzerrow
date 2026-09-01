@@ -87,7 +87,7 @@ export async function retryForwardAttempts(maxRows = 50) {
         gaveUp++;
       } else {
         const backoff = jitter(
-          FORWARD_BACKOFF_SECONDS[Math.min(nextAttempt - 1, FORWARD_BACKOFF_SECONDS.length - 1)],
+          FORWARD_BACKOFF_SECONDS[Math.min(nextAttempt - 1, FORWARD_BACKOFF_SECONDS.length - 1)]!,
         );
         await supabaseAdmin
           .from("emails")

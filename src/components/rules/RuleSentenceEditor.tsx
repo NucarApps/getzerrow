@@ -100,15 +100,14 @@ export function RuleSentenceEditor({
 
   const setCondition = (gi: number, ci: number, next: Partial<Condition>) =>
     setGroups((cur) =>
-      cur.map((g, i) =>
-        i === gi ? g.map((c, j) => (j === ci ? { ...c, ...next } : c)) : g,
-      ),
+      cur.map((g, i) => (i === gi ? g.map((c, j) => (j === ci ? { ...c, ...next } : c)) : g)),
     );
   const removeCondition = (gi: number, ci: number) =>
-    setGroups((cur) =>
-      cur
-        .map((g, i) => (i === gi ? g.filter((_, j) => j !== ci) : g))
-        .filter((g) => g.length > 0) || [[emptyCondition()]],
+    setGroups(
+      (cur) =>
+        cur
+          .map((g, i) => (i === gi ? g.filter((_, j) => j !== ci) : g))
+          .filter((g) => g.length > 0) || [[emptyCondition()]],
     );
   const addCondition = (gi: number, condition = emptyCondition()) =>
     setGroups((cur) => cur.map((g, i) => (i === gi ? [...g, condition] : g)));
@@ -142,10 +141,7 @@ export function RuleSentenceEditor({
               )}
               {group.map((c, ci) => (
                 <div key={ci} className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Select
-                    value={c.field}
-                    onValueChange={(v) => setCondition(gi, ci, { field: v })}
-                  >
+                  <Select value={c.field} onValueChange={(v) => setCondition(gi, ci, { field: v })}>
                     <SelectTrigger className="h-8 w-full text-xs sm:w-64">
                       <SelectValue />
                     </SelectTrigger>

@@ -51,12 +51,7 @@ import { emailDomain } from "../company-domains";
  * available (a label change carries a label; a manual move carries an
  * explicit destination). */
 export type DecisionTrigger =
-  | "arrival"
-  | "label_change"
-  | "backfill"
-  | "rescue"
-  | "reanalyze"
-  | "manual";
+  "arrival" | "label_change" | "backfill" | "rescue" | "reanalyze" | "manual";
 
 export const DECISION_TRACE_VERSION = 1 as const;
 

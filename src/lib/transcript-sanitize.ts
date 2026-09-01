@@ -56,14 +56,15 @@ export function collapseRunawayRepeats(text: string): string {
         reps += 1;
       }
       if (reps >= MIN_REPEATS) {
-        for (let k = 0; k < L; k += 1) out.push(parts[i + k]);
+        // i + k < i + reps * L <= n, so the index is always in bounds.
+        for (let k = 0; k < L; k += 1) out.push(parts[i + k]!);
         i += reps * L;
         collapsed = true;
         break;
       }
     }
     if (!collapsed) {
-      out.push(parts[i]);
+      out.push(parts[i]!); // i < n === parts.length
       i += 1;
     }
   }

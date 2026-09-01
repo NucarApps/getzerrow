@@ -7,7 +7,7 @@ import { extractMeetingUrl, NO_LINK_MESSAGE } from "../meetings-helpers.server";
 
 export const recordFromLink = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => {
+  .validator((input) => {
     const raw = z
       .object({
         meetingUrl: z.string(),
@@ -82,7 +82,7 @@ export const recordFromLink = createServerFn({ method: "POST" })
 /** List the caller's meetings, newest first. */
 export const syncMeeting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     // Ownership is enforced by RLS on the per-user client.
     const { data: meeting } = await context.supabase
@@ -108,7 +108,7 @@ export const syncMeeting = createServerFn({ method: "POST" })
  */
 export const stopMeeting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     // Ownership is enforced by RLS on the per-user client.
     const { data: meeting } = await context.supabase
@@ -147,7 +147,7 @@ export const stopMeeting = createServerFn({ method: "POST" })
  */
 export const resendMeetingBot = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     // Ownership is enforced by RLS on the per-user client.
     const { data: meeting } = await context.supabase
@@ -216,7 +216,7 @@ export const resendMeetingBot = createServerFn({ method: "POST" })
  */
 export const refreshRecording = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     // Ownership is enforced by RLS on the per-user client.
     const { data: meeting } = await context.supabase
@@ -253,7 +253,7 @@ export const refreshRecording = createServerFn({ method: "POST" })
  */
 export const getRecordingStreamUrl = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { data: meeting } = await context.supabase
       .from("meetings")
@@ -283,7 +283,7 @@ export const getRecordingStreamUrl = createServerFn({ method: "GET" })
  */
 export const createInPersonMeeting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) =>
+  .validator((input) =>
     z
       .object({
         title: z.string().max(200).optional(),
@@ -342,7 +342,7 @@ export const createInPersonMeeting = createServerFn({ method: "POST" })
  */
 export const transcribeInPersonMeeting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) =>
+  .validator((input) =>
     z
       .object({
         id: z.string().uuid(),

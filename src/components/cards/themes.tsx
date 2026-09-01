@@ -59,7 +59,8 @@ export const CARD_THEMES: CardTheme[] = [
 ];
 
 export function getTheme(id: string | null | undefined): CardTheme {
-  return CARD_THEMES.find((t) => t.id === id) ?? CARD_THEMES[0];
+  // CARD_THEMES is a non-empty literal array, so index 0 always exists.
+  return CARD_THEMES.find((t) => t.id === id) ?? CARD_THEMES[0]!;
 }
 
 export function ThemePicker({

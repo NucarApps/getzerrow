@@ -23,7 +23,7 @@ import { toEmailUpsert } from "../sync/email-upsert";
 
 export const stripFolderLabelPast = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { value: string; match_type: "email" | "domain" }) =>
+  .validator((d: { value: string; match_type: "email" | "domain" }) =>
     z
       .object({
         value: z.string().min(1).max(320),
@@ -73,7 +73,7 @@ export const stripFolderLabelPast = createServerFn({ method: "POST" })
       let i = 0;
       async function worker() {
         while (i < matches.length) {
-          const m = matches[i++];
+          const m = matches[i++]!;
           try {
             await updateEmailEncrypted({
               email_id: m.id,
@@ -116,7 +116,7 @@ export const stripFolderLabelPast = createServerFn({ method: "POST" })
  */
 export const searchGmailAndIngest = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { query: string; account_id?: string }) =>
+  .validator((d: { query: string; account_id?: string }) =>
     z
       .object({
         query: z.string().min(1).max(200),
@@ -223,7 +223,6 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
             labelToFolder.set(f.gmail_label_id, f.id);
         }
 
-
         // Load folder_filters for this user so newly-ingested messages
         // honor existing domain / sender / subject rules instead of
         // landing as un-classified gmail_search_ingest rows.
@@ -244,7 +243,7 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
         let stop = false;
         async function worker() {
           while (i < todo.length && !stop) {
-            const id = todo[i++];
+            const id = todo[i++]!;
             try {
               const raw = await getMessage(accountId, id);
               const p = parseMessage(raw);
@@ -326,7 +325,7 @@ export const searchGmailAndIngest = createServerFn({ method: "POST" })
 
 export const listPubsubEvents = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) =>
+  .validator((input) =>
     z
       .object({
         event_type: z
@@ -536,7 +535,7 @@ export const listPubsubEvents = createServerFn({ method: "POST" })
 /** Re-pull the current Gmail label state for a single message and reconcile our row. */
 export const resyncMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const email = await getEmailAccount(context.userId, data.id);
     const labels = await getMessageLabels(email.gmail_account_id, email.gmail_message_id);
@@ -560,7 +559,7 @@ export const resyncMessage = createServerFn({ method: "POST" })
  */
 export const reconcileInboxFromGmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { gmail_account_id: string }) =>
+  .validator((d: { gmail_account_id: string }) =>
     z.object({ gmail_account_id: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {

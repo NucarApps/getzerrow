@@ -26,7 +26,7 @@ export const getMeetingEventPrefs = createServerFn({ method: "GET" })
 /** Save the caller's event-type/color capture preferences. */
 export const updateMeetingEventPrefs = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) =>
+  .validator((input) =>
     z
       .object({
         hiddenEventTypes: z.array(z.enum(SPECIAL_EVENT_TYPES)),

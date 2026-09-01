@@ -306,12 +306,7 @@ export type FolderMatch =
  * Config-only (folder names + rule field/op/value) — never email content,
  * so a trace is safe to store unencrypted and render in the UI. */
 export type CandidateVerdict =
-  | "matched"
-  | "vetoed"
-  | "paused"
-  | "no_rules"
-  | "invalid_tree"
-  | "no_match";
+  "matched" | "vetoed" | "paused" | "no_rules" | "invalid_tree" | "no_match";
 
 export type CandidateTrace = {
   folder_id: string;
@@ -436,7 +431,7 @@ export function matchByFiltersExplained(
       }
       const logic = folder.filter_logic === "all" ? "all" : "any";
       for (let i = 0; i < candidateMsgs.length; i++) {
-        const hits = includes.filter((f) => applyFilter(candidateMsgs[i], f));
+        const hits = includes.filter((f) => applyFilter(candidateMsgs[i]!, f));
         const passes = logic === "all" ? hits.length === includes.length : hits.length > 0;
         if (passes) {
           matchIndex = i;
@@ -463,7 +458,7 @@ export function matchByFiltersExplained(
       continue;
     }
     const leaves = hasTree
-      ? collectMatchingLeaves(candidateMsgs[matchIndex], tree!)
+      ? collectMatchingLeaves(candidateMsgs[matchIndex]!, tree!)
       : includeHits.map((f) => ({ field: f.field, op: f.op, value: f.value }));
     matched.push({
       folder,
@@ -480,15 +475,16 @@ export function matchByFiltersExplained(
     matched.sort(
       (a, b) => b.folder.priority - a.folder.priority || a.folder.name.localeCompare(b.folder.name),
     );
+    const top = matched[0]!;
     return {
       match: {
         kind: "match",
-        folder_id: matched[0].folder.id,
-        filter: matched[0].filter,
-        matched_filters: matched[0].allMatches,
+        folder_id: top.folder.id,
+        filter: top.filter,
+        matched_filters: top.allMatches,
         all_matched_folder_ids: matched.map((m) => m.folder.id),
-        tree_used: matched[0].treeUsed,
-        matched_via_thread: matched[0].viaThread,
+        tree_used: top.treeUsed,
+        matched_via_thread: top.viaThread,
       },
       candidates,
     };
@@ -497,19 +493,19 @@ export function matchByFiltersExplained(
     excludedFolders.sort(
       (a, b) => b.folder.priority - a.folder.priority || a.folder.name.localeCompare(b.folder.name),
     );
+    const top = excludedFolders[0]!;
     return {
       match: {
         kind: "excluded",
-        folder_id: excludedFolders[0].folder.id,
-        folder_name: excludedFolders[0].folder.name,
-        exclude: excludedFolders[0].exclude,
+        folder_id: top.folder.id,
+        folder_name: top.folder.name,
+        exclude: top.exclude,
       },
       candidates,
     };
   }
   return { match: null, candidates };
 }
-
 
 export function labelOf(folders: Folder[], id: string): string {
   return folders.find((f) => f.id === id)?.name ?? "folder";

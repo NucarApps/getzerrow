@@ -36,7 +36,8 @@ export const Route = createFileRoute("/api/public/logo")({
           if (!Number.isInteger(idx) || idx < 0 || idx >= all.length) {
             return new Response("Bad provider", { status: 400 });
           }
-          candidates = [all[idx]];
+          // idx is bounds-checked against all.length just above.
+          candidates = [all[idx]!];
         }
 
         const cacheKey = `${domain}|${size}|${providerParam ?? "*"}`;

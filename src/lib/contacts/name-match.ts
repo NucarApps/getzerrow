@@ -20,12 +20,13 @@ export function firstLastTokens(input: string | null | undefined): [string, stri
   // Handle "Last, First" from Gmail
   if (n.includes(",")) {
     const [last, first] = n.split(",").map((s) => s.trim());
-    if (first && last) return [first.split(" ")[0], last.split(" ").pop() ?? last];
+    // split(" ") always yields at least one element for a non-empty string.
+    if (first && last) return [first.split(" ")[0]!, last.split(" ").pop() ?? last];
   }
   const parts = n.split(" ").filter(Boolean);
   if (parts.length === 0) return null;
-  if (parts.length === 1) return [parts[0], ""];
-  return [parts[0], parts[parts.length - 1]];
+  if (parts.length === 1) return [parts[0]!, ""];
+  return [parts[0]!, parts[parts.length - 1]!];
 }
 
 /** Damerau-ish Levenshtein distance (iterative, O(n*m)). */
@@ -42,11 +43,12 @@ export function levenshtein(a: string, b: string): number {
     curr[0] = i;
     for (let j = 1; j <= n; j++) {
       const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
-      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+      // prev[0..n] and curr[0..j-1] are always filled before this read.
+      curr[j] = Math.min(curr[j - 1]! + 1, prev[j]! + 1, prev[j - 1]! + cost);
     }
-    for (let j = 0; j <= n; j++) prev[j] = curr[j];
+    for (let j = 0; j <= n; j++) prev[j] = curr[j]!;
   }
-  return prev[n];
+  return prev[n]!;
 }
 
 export type NameMatchConfidence = "high" | "medium" | "low" | null;

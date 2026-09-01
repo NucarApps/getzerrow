@@ -277,7 +277,8 @@ export function FolderChatPanel({
     const turn = turns[turnIndex];
     if (!turn || turn.kind !== "assistant" || applyingIndex !== null) return;
     const appliedIndexes = turn.actions.map((_, i) => i).filter((i) => turn.selected[i]);
-    const chosen = appliedIndexes.map((i) => turn.actions[i]);
+    // appliedIndexes are derived from turn.actions itself, so each is in bounds.
+    const chosen = appliedIndexes.map((i) => turn.actions[i]!);
     if (chosen.length === 0) {
       toast.message("Nothing selected to apply.");
       return;

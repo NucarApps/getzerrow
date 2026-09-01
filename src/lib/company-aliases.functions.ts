@@ -28,7 +28,7 @@ export const listCompanyAliases = createServerFn({ method: "GET" })
 
 export const addCompanyAlias = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => {
+  .validator((input: unknown) => {
     const parsed = z
       .object({ primaryDomain: domainSchema, aliasDomain: domainSchema })
       .parse(input);

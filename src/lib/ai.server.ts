@@ -386,7 +386,8 @@ export async function classifyEmailsBatch(
 
   const emailBlocks = emails
     .map((e, i) => {
-      const g = guardedEmails[i];
+      // Parallel array built via emails.map above — same length, index always present.
+      const g = guardedEmails[i]!;
       const isReply = !!(e.in_reply_to && e.in_reply_to.trim());
       const hasCal = !!e.has_calendar_invite;
       return `--- EMAIL ${i + 1} ---
@@ -559,7 +560,7 @@ export async function suggestFolderFromEmails(
     "#ef4444",
     "#14b8a6",
     "#eab308",
-  ];
+  ] as const;
 
   try {
     const { output } = await generateText({
@@ -782,7 +783,7 @@ Write a daily digest in Markdown. Start with a single line: "# <short subject>" 
   const firstHeading = lines.findIndex((l) => l.trim().startsWith("#"));
   if (firstHeading >= 0) {
     subject =
-      lines[firstHeading]
+      (lines[firstHeading] ?? "")
         .replace(/^#+\s*/, "")
         .trim()
         .slice(0, 200) || subject;
@@ -799,9 +800,11 @@ Write a daily digest in Markdown. Start with a single line: "# <short subject>" 
       if (!trimmed) return "";
       if (/^#{1,6}\s/.test(trimmed)) {
         const m = trimmed.match(/^(#{1,6})\s+(.*)$/);
-        if (m) {
-          const level = Math.min(m[1].length + 1, 6);
-          return `<h${level} style="margin:16px 0 8px">${escapeHtml(m[2])}</h${level}>`;
+        const hashes = m?.[1];
+        const heading = m?.[2];
+        if (hashes !== undefined && heading !== undefined) {
+          const level = Math.min(hashes.length + 1, 6);
+          return `<h${level} style="margin:16px 0 8px">${escapeHtml(heading)}</h${level}>`;
         }
       }
       if (/^[-*]\s/.test(trimmed)) {

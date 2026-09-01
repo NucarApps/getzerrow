@@ -99,7 +99,7 @@ async function loadLabelClusterInputs(
 
 export const findDuplicateLabels = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z.object({ useAi: z.boolean().optional().default(false) }).parse(d ?? {}),
   )
   .handler(async ({ data, context }) => {
@@ -109,7 +109,8 @@ export const findDuplicateLabels = createServerFn({ method: "POST" })
 
     const clusters = deterministic.map(({ labels: cluster, reason }) => {
       const sorted = sortCanonicalFirst(cluster);
-      const canonical = sorted[0];
+      // clusterLabels only returns clusters with >= 2 members.
+      const canonical = sorted[0]!;
       return {
         canonicalId: canonical.id,
         canonicalName: canonical.name,
@@ -348,7 +349,7 @@ async function convergeAfterMerges(
 
 export const mergeLabelCluster = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         canonicalId: z.string().uuid(),
@@ -399,7 +400,8 @@ export async function consolidateLabelDuplicatesImpl(
   const errors: string[] = [];
   for (const { labels: cluster } of clusters) {
     const sorted = sortCanonicalFirst(cluster);
-    const canonical = sorted[0];
+    // clusterLabels only returns clusters with >= 2 members.
+    const canonical = sorted[0]!;
     for (const src of sorted.slice(1)) {
       try {
         const r = await mergeLabelPair(supabase, userId, src.id, canonical.id);

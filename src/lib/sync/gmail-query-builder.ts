@@ -92,7 +92,7 @@ export function expandTreeToBranches(node: RuleNode): string[][] {
   }
   // If no child produced anything, acc stays at [[]] — return [] so caller
   // doesn't issue an empty query.
-  if (acc.length === 1 && acc[0].length === 0) return [];
+  if (acc.length === 1 && acc[0]?.length === 0) return [];
   return acc;
 }
 

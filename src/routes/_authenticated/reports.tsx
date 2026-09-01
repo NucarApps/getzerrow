@@ -94,7 +94,7 @@ function Report({ data }: { data: InboxReport }) {
         <Stat
           icon={<Calendar className="h-4 w-4" />}
           label="Busiest day"
-          value={data.busiestDow ? DOW[data.busiestDow.dow] : "—"}
+          value={data.busiestDow ? (DOW[data.busiestDow.dow] ?? "—") : "—"}
           hint={data.busiestDow ? `${data.busiestDow.count} emails` : undefined}
         />
         <Stat

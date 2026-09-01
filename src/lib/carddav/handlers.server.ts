@@ -670,13 +670,13 @@ export async function handleReport(
   if (lower.includes("addressbook-multiget")) {
     const hrefs = parseMultigetHrefs(raw);
     for (const h of hrefs) {
-      const g = h.match(/group-([0-9a-f-]{36})\.vcf$/i);
-      if (g) {
-        groupIds.push(g[1]);
+      const gid = h.match(/group-([0-9a-f-]{36})\.vcf$/i)?.[1];
+      if (gid) {
+        groupIds.push(gid);
         continue;
       }
-      const c = h.match(/([0-9a-f-]{36})\.vcf$/i);
-      if (c) contactIds.push(c[1]);
+      const cid = h.match(/([0-9a-f-]{36})\.vcf$/i)?.[1];
+      if (cid) contactIds.push(cid);
     }
   } else if (lower.includes("addressbook-query")) {
     // A full-collection query legitimately returns everything.
@@ -743,9 +743,8 @@ export async function handleGet(
   method: "GET" | "HEAD",
 ): Promise<Response> {
   const ifNoneMatch = request.headers.get("if-none-match");
-  const gm = path.match(/group-([0-9a-f-]{36})\.vcf$/i);
-  if (gm) {
-    const groupId = gm[1];
+  const groupId = path.match(/group-([0-9a-f-]{36})\.vcf$/i)?.[1];
+  if (groupId) {
     const { data: group } = await supabaseAdmin
       .from("contact_groups")
       .select("id,name,updated_at,carddav_uid")
@@ -776,9 +775,8 @@ export async function handleGet(
     });
   }
 
-  const m = path.match(/([0-9a-f-]{36})\.vcf$/i);
-  if (!m) return new Response("Not found", { status: 404 });
-  const contactId = m[1];
+  const contactId = path.match(/([0-9a-f-]{36})\.vcf$/i)?.[1];
+  if (!contactId) return new Response("Not found", { status: 404 });
 
   const { data: owner } = await supabaseAdmin
     .from("contacts")
@@ -821,7 +819,7 @@ const UUID_RE = /^[0-9a-f-]{36}$/i;
 
 function extractGroupId(path: string): string | null {
   const m = path.match(/group-([0-9a-f-]{36})\.vcf$/i);
-  return m ? m[1].toLowerCase() : null;
+  return m?.[1]?.toLowerCase() ?? null;
 }
 
 function extractContactId(path: string): string | null {
@@ -829,7 +827,7 @@ function extractContactId(path: string): string | null {
   // but live under group-<uuid>.vcf and must be routed separately.
   if (extractGroupId(path)) return null;
   const m = path.match(/([0-9a-f-]{36})\.vcf$/i);
-  return m ? m[1].toLowerCase() : null;
+  return m?.[1]?.toLowerCase() ?? null;
 }
 
 function preconditionFailed(): Response {

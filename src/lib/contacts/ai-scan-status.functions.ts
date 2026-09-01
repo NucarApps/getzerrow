@@ -24,7 +24,7 @@ export type AiScanJobStatus = {
  * polls this after queueing a scan; `null` means never scanned. */
 export const getContactAiScanStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { kind: "dedup_scan" | "signature_scan" }) =>
+  .validator((d: { kind: "dedup_scan" | "signature_scan" }) =>
     z.object({ kind: z.enum(["dedup_scan", "signature_scan"]) }).parse(d),
   )
   .handler(async ({ data, context }): Promise<{ job: AiScanJobStatus }> => {

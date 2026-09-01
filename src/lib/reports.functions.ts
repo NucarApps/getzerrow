@@ -25,7 +25,7 @@ export type InboxReport = {
 function parseDomain(addr: string | null): string | null {
   if (!addr) return null;
   const m = addr.match(/<([^>]+)>/);
-  const email = (m ? m[1] : addr).trim().toLowerCase();
+  const email = (m?.[1] ?? addr).trim().toLowerCase();
   const at = email.lastIndexOf("@");
   if (at < 0) return null;
   const dom = email.slice(at + 1).replace(/[>,\s].*$/, "");
@@ -36,7 +36,7 @@ function parseSender(addr: string | null, name: string | null): string {
   if (name && name.trim()) return name.trim();
   if (!addr) return "(unknown)";
   const m = addr.match(/<([^>]+)>/);
-  return (m ? m[1] : addr).trim().toLowerCase();
+  return (m?.[1] ?? addr).trim().toLowerCase();
 }
 
 export const getInboxReport = createServerFn({ method: "GET" })
@@ -124,8 +124,10 @@ export const getInboxReport = createServerFn({ method: "GET" })
       if (e.has_attachment) attach++;
 
       const dt = new Date(t);
-      dow[dt.getUTCDay()]++;
-      hour[dt.getUTCHours()]++;
+      const dowIdx = dt.getUTCDay();
+      dow[dowIdx] = (dow[dowIdx] ?? 0) + 1;
+      const hourIdx = dt.getUTCHours();
+      hour[hourIdx] = (hour[hourIdx] ?? 0) + 1;
 
       const dom = parseDomain(e.from_addr);
       if (dom) domains.set(dom, (domains.get(dom) ?? 0) + 1);

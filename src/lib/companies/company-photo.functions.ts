@@ -29,7 +29,7 @@ async function markCompanyContactsDirty(userId: string, companyId: string): Prom
 
 export const uploadCompanyPhoto = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         companyId: z.string().uuid(),
@@ -64,7 +64,7 @@ export const uploadCompanyPhoto = createServerFn({ method: "POST" })
 
 export const removeCompanyPhoto = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ companyId: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ companyId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertOwnsCompany(context.userId, data.companyId);
     const { deleteCompanyPhoto } = await import("./company-photo.server");

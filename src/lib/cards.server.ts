@@ -194,9 +194,16 @@ View / save my card: ${args.publicUrl}
 
 type EmailTheme = { from: string; to: string; accent: string; accentText: string };
 
+const DEFAULT_EMAIL_THEME: EmailTheme = {
+  from: "#6366f1",
+  to: "#818cf8",
+  accent: "#4f46e5",
+  accentText: "#ffffff",
+};
+
 /** Concrete hex mirror of CARD_THEMES (Tailwind classes can't be used in email). */
 const THEME_EMAIL_COLORS: Record<string, EmailTheme> = {
-  default: { from: "#6366f1", to: "#818cf8", accent: "#4f46e5", accentText: "#ffffff" },
+  default: DEFAULT_EMAIL_THEME,
   sunset: { from: "#f97316", to: "#9333ea", accent: "#f97316", accentText: "#ffffff" },
   ocean: { from: "#06b6d4", to: "#4338ca", accent: "#2563eb", accentText: "#ffffff" },
   forest: { from: "#10b981", to: "#0f766e", accent: "#059669", accentText: "#ffffff" },
@@ -207,15 +214,16 @@ const THEME_EMAIL_COLORS: Record<string, EmailTheme> = {
 };
 
 function getEmailTheme(id?: string | null): EmailTheme {
-  return THEME_EMAIL_COLORS[id ?? "default"] ?? THEME_EMAIL_COLORS.default;
+  return THEME_EMAIL_COLORS[id ?? "default"] ?? DEFAULT_EMAIL_THEME;
 }
 
 function getInitials(name?: string | null, fallback?: string | null): string {
   const src = (name || fallback || "?").trim();
   const parts = src.split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  // Length checks above guarantee these indices; entries are non-empty (filter(Boolean)).
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return (parts[0]!.charAt(0) + parts[parts.length - 1]!.charAt(0)).toUpperCase();
 }
 
 const FONT_STACK = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";

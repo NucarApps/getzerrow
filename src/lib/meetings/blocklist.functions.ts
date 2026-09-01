@@ -19,7 +19,7 @@ export const listRecordBlocklist = createServerFn({ method: "GET" })
 /** Add an email or domain to the caller's don't-auto-record list. */
 export const addRecordBlocklistEntry = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) =>
+  .validator((input) =>
     z
       .object({
         value: z
@@ -51,7 +51,7 @@ export const addRecordBlocklistEntry = createServerFn({ method: "POST" })
 /** Remove an entry from the caller's don't-auto-record list. */
 export const removeRecordBlocklistEntry = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { error } = await context.supabase
       .from("meeting_record_blocklist")

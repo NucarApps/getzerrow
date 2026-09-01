@@ -76,7 +76,7 @@ const DOMAIN_SCAN_WINDOW = 150;
 
 export const proposeAssistantChanges = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
+  .validator(
     (d: {
       gmail_account_id: string;
       user_message: string;
@@ -223,7 +223,7 @@ type ApplyResultItem = {
 
 export const applyAssistantChanges = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { actions: AssistantAction[] }) =>
+  .validator((d: { actions: AssistantAction[] }) =>
     z
       .object({
         actions: z.array(actionInputSchema).min(1).max(20),

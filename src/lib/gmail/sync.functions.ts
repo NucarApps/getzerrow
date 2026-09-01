@@ -19,7 +19,7 @@ import { setReplyDraftEncrypted } from "../sync/encrypted-writer";
 
 export const triggerBackfill = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { account_id: string; count?: number }) =>
+  .validator((d: { account_id: string; count?: number }) =>
     z
       .object({ account_id: z.string().uuid(), count: z.number().min(1).max(100).optional() })
       .parse(d),
@@ -31,7 +31,7 @@ export const triggerBackfill = createServerFn({ method: "POST" })
 
 export const triggerWeekBackfill = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { account_id: string; days?: number; max?: number }) =>
+  .validator((d: { account_id: string; days?: number; max?: number }) =>
     z
       .object({
         account_id: z.string().uuid(),
@@ -51,7 +51,7 @@ export const triggerWeekBackfill = createServerFn({ method: "POST" })
 
 export const startDeepBackfill = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { account_id: string; months?: number }) =>
+  .validator((d: { account_id: string; months?: number }) =>
     z
       .object({
         account_id: z.string().uuid(),
@@ -66,7 +66,7 @@ export const startDeepBackfill = createServerFn({ method: "POST" })
 
 export const getBackfillStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { account_id?: string }) =>
+  .validator((d: { account_id?: string }) =>
     z.object({ account_id: z.string().uuid().optional() }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -102,16 +102,14 @@ export const getBackfillStatus = createServerFn({ method: "POST" })
 
 export const cancelDeepBackfill = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { job_id: string }) => z.object({ job_id: z.string().uuid() }).parse(d))
+  .validator((d: { job_id: string }) => z.object({ job_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     return cancelBackfillJob(data.job_id, context.userId);
   });
 
 export const triggerSync = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { account_id: string }) =>
-    z.object({ account_id: z.string().uuid() }).parse(d),
-  )
+  .validator((d: { account_id: string }) => z.object({ account_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
     const histResult = await syncSinceHistory(data.account_id);
@@ -165,9 +163,7 @@ export const triggerSync = createServerFn({ method: "POST" })
 // manual refresh or page reload.
 export const backgroundSync = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { account_id: string }) =>
-    z.object({ account_id: z.string().uuid() }).parse(d),
-  )
+  .validator((d: { account_id: string }) => z.object({ account_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
     const histResult = await syncSinceHistory(data.account_id);
@@ -181,9 +177,7 @@ export const backgroundSync = createServerFn({ method: "POST" })
 
 export const renewGmailWatch = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { account_id: string }) =>
-    z.object({ account_id: z.string().uuid() }).parse(d),
-  )
+  .validator((d: { account_id: string }) => z.object({ account_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await getOwnedAccount(context.userId, data.account_id);
     const { data: accRow } = await supabaseAdmin
@@ -216,7 +210,7 @@ export const renewGmailWatch = createServerFn({ method: "POST" })
 
 export const markEmailRead = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string; read: boolean }) =>
+  .validator((d: { id: string; read: boolean }) =>
     z.object({ id: z.string().uuid(), read: z.boolean() }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -265,7 +259,7 @@ export const syncMyReadState = createServerFn({ method: "POST" })
 
 export const archiveEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const email = await getEmailAccount(context.userId, data.id);
     // Talk to Gmail first — if it fails, surface the error so we don't drift
@@ -303,7 +297,7 @@ export const archiveEmail = createServerFn({ method: "POST" })
 
 export const trashEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const email = await getEmailAccount(context.userId, data.id);
     try {
@@ -331,7 +325,7 @@ export const trashEmail = createServerFn({ method: "POST" })
 
 export const generateReply = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const email = await getEmailAccount(context.userId, data.id);
     const draft = await suggestReply({
@@ -345,7 +339,7 @@ export const generateReply = createServerFn({ method: "POST" })
 
 export const sendReply = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string; body: string }) =>
+  .validator((d: { id: string; body: string }) =>
     z.object({ id: z.string().uuid(), body: z.string().min(1).max(20000) }).parse(d),
   )
   .handler(async ({ data, context }) => {

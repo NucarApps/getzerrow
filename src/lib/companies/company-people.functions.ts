@@ -40,12 +40,12 @@ function nameFromLocalPart(email: string): string | null {
   if (!local || /[^a-z0-9._-]/i.test(local)) return null;
   const parts = local.split(/[._-]+/).filter((p) => /^[a-z]+$/i.test(p) && p.length > 1);
   if (parts.length < 2) return null; // single token → likely a handle, not a name
-  return parts.map((p) => p[0].toUpperCase() + p.slice(1).toLowerCase()).join(" ");
+  return parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(" ");
 }
 
 export const findCompanyPeopleByDomain = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ companyId: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ companyId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
@@ -269,7 +269,7 @@ export const findCompanyPeopleByDomain = createServerFn({ method: "POST" })
       const needsAI = [...agg.values()].filter(
         (p) =>
           p.possibleMatches.length >= 2 &&
-          p.possibleMatches[0].score === p.possibleMatches[1].score,
+          p.possibleMatches[0]!.score === p.possibleMatches[1]!.score,
       );
       if (needsAI.length > 0 && needsAI.length <= 20) {
         try {
@@ -306,7 +306,8 @@ export const findCompanyPeopleByDomain = createServerFn({ method: "POST" })
             if (!pick) continue;
             const idx = p.possibleMatches.findIndex((m) => m.contactId === pick);
             if (idx > 0) {
-              const [chosen] = p.possibleMatches.splice(idx, 1);
+              // idx is a valid index, so splice removes exactly one element.
+              const chosen = p.possibleMatches.splice(idx, 1)[0]!;
               chosen.score = Math.max(chosen.score, 0.92);
               p.possibleMatches.unshift(chosen);
             }
@@ -327,7 +328,7 @@ export const findCompanyPeopleByDomain = createServerFn({ method: "POST" })
 
 export const enhanceContactWithNewEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         contactId: z.string().uuid(),
@@ -459,7 +460,7 @@ export const enhanceContactWithNewEmail = createServerFn({ method: "POST" })
 
 export const addCompanyPeople = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         companyId: z.string().uuid(),

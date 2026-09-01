@@ -15,7 +15,7 @@ export type ContactRevisionRow = {
 
 export const listContactRevisions = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { contactId: string }) =>
+  .validator((input: { contactId: string }) =>
     z.object({ contactId: z.string().uuid() }).parse(input),
   )
   .handler(async ({ data, context }): Promise<ContactRevisionRow[]> => {
@@ -42,7 +42,7 @@ export const listContactRevisions = createServerFn({ method: "GET" })
 
 export const restoreContactRevision = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { revisionId: string }) =>
+  .validator((input: { revisionId: string }) =>
     z.object({ revisionId: z.string().uuid() }).parse(input),
   )
   .handler(async ({ data, context }) => {

@@ -105,7 +105,7 @@ export function ProcessingJobs({ accountId }: { accountId: string | null }) {
                   ? "All"
                   : f === "dlq"
                     ? "Dead-letter"
-                    : f[0].toUpperCase() + f.slice(1)}
+                    : f.charAt(0).toUpperCase() + f.slice(1)}
               </Button>
             ))}
           </div>

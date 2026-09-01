@@ -57,7 +57,9 @@ export function toRules(folders: Folder[], filters: Filter[]): Rule[] {
     if (folder.filter_tree) {
       const groups = treeToGroups(folder.filter_tree).filter((g) => g.length > 0);
       if (groups.length) {
-        rules.push(withLevel({ id: `tree:${folder.id}`, folder_id: folder.id, created_at: EPOCH, groups }));
+        rules.push(
+          withLevel({ id: `tree:${folder.id}`, folder_id: folder.id, created_at: EPOCH, groups }),
+        );
       }
     }
 
@@ -114,9 +116,7 @@ export function toGuardrails(filters: Filter[]): Guardrail[] {
 }
 
 /** Always-inbox overrides become inbox pins. */
-export function toPins(
-  overrides: Array<{ id: string; match_type: string; value: string }>,
-): Pin[] {
+export function toPins(overrides: Array<{ id: string; match_type: string; value: string }>): Pin[] {
   return overrides.map((o) => ({
     id: o.id,
     kind: "inbox" as const,

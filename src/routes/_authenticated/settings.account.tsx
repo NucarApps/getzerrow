@@ -63,8 +63,8 @@ function DangerZone() {
     <Card className="border-destructive/40 p-4 md:p-6">
       <h2 className="font-display text-xl text-destructive">Delete account</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Permanently delete your Atzro account, revoke Google access, and remove all synced
-        messages, folders, contacts, and settings. This cannot be undone.
+        Permanently delete your Atzro account, revoke Google access, and remove all synced messages,
+        folders, contacts, and settings. This cannot be undone.
       </p>
       <AlertDialog
         open={open}

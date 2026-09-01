@@ -12,7 +12,7 @@ import { syncCompanyRuleMemberships } from "@/lib/contacts/group-rules.functions
 /** Labels a company belongs to (its company_id rules). */
 export const listCompanyLabels = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { companyId: string }) => z.object({ companyId: z.string().uuid() }).parse(d))
+  .validator((d: { companyId: string }) => z.object({ companyId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { data: rows, error } = await supabase
@@ -32,7 +32,7 @@ export const listCompanyLabels = createServerFn({ method: "POST" })
  *  gain/lose the labels; manual memberships are never touched). */
 export const setCompanyLabels = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { companyId: string; groupIds: string[] }) =>
+  .validator((d: { companyId: string; groupIds: string[] }) =>
     z
       .object({
         companyId: z.string().uuid(),

@@ -8,9 +8,7 @@ const DOMAIN_RE = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{
 
 export const searchLogoBrands = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
-    z.object({ query: z.string().trim().min(2).max(50) }).parse(input),
-  )
+  .validator((input: unknown) => z.object({ query: z.string().trim().min(2).max(50) }).parse(input))
   .handler(async ({ data }): Promise<{ results: LogoBrand[] }> => {
     const secret = process.env.LOGO_DEV_SECRET;
     if (!secret) return { results: [] };

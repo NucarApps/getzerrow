@@ -562,8 +562,8 @@ function GoogleContactsSettings() {
       <Card className="p-4 md:p-6">
         <h2 className="font-display text-2xl">Google contacts sync</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Start with <strong>Pull only</strong> to import your Google contacts and groups into
-          Atzro so you can merge duplicates and clean things up. When you're ready, switch to{" "}
+          Start with <strong>Pull only</strong> to import your Google contacts and groups into Atzro
+          so you can merge duplicates and clean things up. When you're ready, switch to{" "}
           <strong>Two-way</strong> to also push local changes, adds, and deletes back to Google.
         </p>
         <p className="mt-2 text-xs text-muted-foreground">
@@ -573,8 +573,8 @@ function GoogleContactsSettings() {
         <p className="mt-2 text-xs text-muted-foreground">
           Google Contacts doesn't support nested labels — subgroups sync as
           <span className="font-mono"> Parent - Child</span> (e.g.{" "}
-          <span className="font-mono">Factory - VW</span>). All Atzro contacts are added to
-          Google's default Contacts list.
+          <span className="font-mono">Factory - VW</span>). All Atzro contacts are added to Google's
+          default Contacts list.
         </p>
       </Card>
 

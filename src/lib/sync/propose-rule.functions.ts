@@ -40,7 +40,7 @@ async function askModel(prompt: string): Promise<string> {
 
 export const proposeRuleFromEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email_id: string; intent?: string }) =>
+  .validator((d: { email_id: string; intent?: string }) =>
     z
       .object({
         email_id: z.string().uuid(),

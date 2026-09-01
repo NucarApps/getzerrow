@@ -95,7 +95,7 @@ export type ProposeResult = FolderChatProposal & { message_id: string | null };
 
 export const proposeFolderChanges = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string; user_message: string; history?: FolderChatMessage[] }) =>
+  .validator((d: { folder_id: string; user_message: string; history?: FolderChatMessage[] }) =>
     z
       .object({
         folder_id: z.string().uuid(),
@@ -343,7 +343,7 @@ export type StoredChatMessage = {
 
 export const getFolderChatHistory = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
+  .validator((d: { folder_id: string }) => z.object({ folder_id: z.string().uuid() }).parse(d))
   .handler(
     async ({ data, context }): Promise<{ messages: StoredChatMessage[]; summary: string }> => {
       const { data: folderRow } = await supabaseAdmin
@@ -401,7 +401,7 @@ export const getFolderChatHistory = createServerFn({ method: "POST" })
 // and so the model is told not to re-suggest them.
 export const discardFolderChanges = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { folder_id: string; message_id: string }) =>
+  .validator((d: { folder_id: string; message_id: string }) =>
     z.object({ folder_id: z.string().uuid(), message_id: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }): Promise<{ ok: boolean }> => {
@@ -432,7 +432,7 @@ type ApplyResultItem = {
 
 export const applyFolderChanges = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
+  .validator(
     (d: {
       folder_id: string;
       actions: FolderChatAction[];

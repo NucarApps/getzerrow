@@ -162,7 +162,7 @@ export async function fetchLogoBytes(
       const bytes = await readCapped(res);
       if (!bytes || bytes.byteLength < MIN_BYTES) return null;
 
-      const mime = ct.split(";")[0].trim() || "image/png";
+      const mime = (ct.split(";")[0] ?? "").trim() || "image/png";
       return { bytes, mime };
     }
     return null;

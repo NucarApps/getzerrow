@@ -31,6 +31,7 @@ function verifySvix(secret: string, headers: Headers, body: string): boolean {
   // Header can carry several space-delimited `v1,<sig>` pairs.
   for (const part of signature.split(" ")) {
     const sig = part.includes(",") ? part.split(",")[1] : part;
+    if (!sig) continue;
     const sigBuf = Buffer.from(sig);
     if (sigBuf.length === expectedBuf.length && timingSafeEqual(sigBuf, expectedBuf)) return true;
   }

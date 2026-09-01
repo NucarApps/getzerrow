@@ -23,13 +23,15 @@ function ipv4Octets(host: string): number[] | null {
 }
 
 function isBlockedIpv4(o: number[]): string | null {
-  if (o[0] === 127) return "loopback address";
-  if (o[0] === 10) return "private address (RFC1918)";
-  if (o[0] === 172 && o[1] >= 16 && o[1] <= 31) return "private address (RFC1918)";
-  if (o[0] === 192 && o[1] === 168) return "private address (RFC1918)";
-  if (o[0] === 169 && o[1] === 254) return "link-local address";
-  if (o[0] === 100 && o[1] >= 64 && o[1] <= 127) return "carrier-grade NAT address";
-  if (o[0] === 0) return "unspecified address";
+  const [o0, o1] = o;
+  if (o0 === undefined || o1 === undefined) return null;
+  if (o0 === 127) return "loopback address";
+  if (o0 === 10) return "private address (RFC1918)";
+  if (o0 === 172 && o1 >= 16 && o1 <= 31) return "private address (RFC1918)";
+  if (o0 === 192 && o1 === 168) return "private address (RFC1918)";
+  if (o0 === 169 && o1 === 254) return "link-local address";
+  if (o0 === 100 && o1 >= 64 && o1 <= 127) return "carrier-grade NAT address";
+  if (o0 === 0) return "unspecified address";
   return null;
 }
 

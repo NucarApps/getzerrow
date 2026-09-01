@@ -95,7 +95,8 @@ export function evaluateAutoApply(suggestion: GateSuggestion, ctx: GateContext):
     domains.add(domain.toLowerCase());
   }
   if (domains.size === 1) {
-    const [domain] = [...domains];
+    // domains.size === 1 is checked above.
+    const domain = [...domains][0]!;
     if (ctx.isPersonalDomain(domain)) return no("personal_domain", { domain });
     const companyId = ctx.companyIdByDomain.get(domain);
     if (!companyId) return no("domain_without_company", { domain });

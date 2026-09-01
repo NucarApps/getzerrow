@@ -78,8 +78,8 @@ function PrivacyPage() {
             encryption to protect your information, both in transit and at rest:
             <ul className="mt-3 list-disc space-y-2 pl-6">
               <li>
-                All traffic between your browser, Gmail, and Atzro is encrypted in transit using
-                TLS 1.2 or higher.
+                All traffic between your browser, Gmail, and Atzro is encrypted in transit using TLS
+                1.2 or higher.
               </li>
               <li>
                 Sensitive content — email subjects, snippets, bodies, recipient lists, AI-generated

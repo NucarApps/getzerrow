@@ -85,5 +85,5 @@ export function computeBackoffSeconds(opts: {
   const idx = opts.retryable
     ? Math.min(opts.currentAttempt, table.length - 1)
     : Math.min(opts.nextAttempt - 1, table.length - 1);
-  return jitter(table[idx]);
+  return jitter(table[idx]!);
 }

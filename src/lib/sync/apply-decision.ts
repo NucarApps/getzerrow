@@ -44,10 +44,7 @@ export async function persistDecision(
 
 /** Store the "why" alongside the decision. Best-effort: an explanation
  * that fails to save must never fail the routing write itself. */
-export async function persistDecisionTrace(
-  emailId: string,
-  trace: DecisionTrace,
-): Promise<void> {
+export async function persistDecisionTrace(emailId: string, trace: DecisionTrace): Promise<void> {
   try {
     const { error } = await supabaseAdmin
       .from("emails")

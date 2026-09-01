@@ -425,7 +425,7 @@ ${corpus}`;
  * default in the background path. */
 export const scanContactEnrichment = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { strictness?: number } | undefined) =>
+  .validator((d: { strictness?: number } | undefined) =>
     z
       .object({ strictness: z.number().int().min(1).max(5).optional() })
       .default({})
@@ -459,7 +459,7 @@ function deriveCompanyFromDomain(domain: string): string | null {
 /** List suggestions grouped by contact. Defaults to pending; pass status='dismissed' for the declines tab. */
 export const listContactEnrichmentSuggestions = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { status?: "pending" | "dismissed" } | undefined) =>
+  .validator((d: { status?: "pending" | "dismissed" } | undefined) =>
     z
       .object({ status: z.enum(["pending", "dismissed"]).optional() })
       .default({})
@@ -516,7 +516,7 @@ export const listContactEnrichmentSuggestions = createServerFn({ method: "GET" }
 /** Apply a single suggestion — writes to the contact row and marks applied. */
 export const applyContactEnrichmentSuggestion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { suggestionId: string }) =>
+  .validator((d: { suggestionId: string }) =>
     z.object({ suggestionId: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -568,7 +568,7 @@ export const applyContactEnrichmentSuggestion = createServerFn({ method: "POST" 
 /** Dismiss a suggestion without applying it. */
 export const dismissContactEnrichmentSuggestion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { suggestionId: string }) =>
+  .validator((d: { suggestionId: string }) =>
     z.object({ suggestionId: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -584,7 +584,7 @@ export const dismissContactEnrichmentSuggestion = createServerFn({ method: "POST
 /** Restore a dismissed suggestion back to pending (for accidental dismisses). */
 export const undismissContactEnrichmentSuggestion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { suggestionId: string }) =>
+  .validator((d: { suggestionId: string }) =>
     z.object({ suggestionId: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {

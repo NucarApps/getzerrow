@@ -15,7 +15,7 @@ export type FolderOption = { id: string; name: string };
  * RPC is service-role-only and scoped to the authenticated user id. */
 export const listExecutedRules = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { accountId?: string | null; folderId?: string | null; limit?: number }) =>
+  .validator((d: { accountId?: string | null; folderId?: string | null; limit?: number }) =>
     z
       .object({
         accountId: z.string().uuid().nullish(),

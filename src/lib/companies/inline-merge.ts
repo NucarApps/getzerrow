@@ -75,7 +75,8 @@ export function buildInlineCompanyMergeSuggestions(
     const sorted = [...entry.buckets].sort(
       (a, b) => b.contacts.length - a.contacts.length || a.domain.localeCompare(b.domain),
     );
-    const primary = sorted[0];
+    // entry.buckets.length >= 2 is checked above, so sorted is non-empty.
+    const primary = sorted[0]!;
     const others = sorted.slice(1);
     const aliasDomains = Array.from(
       new Set(others.map((bucket) => bucket.domain).filter((domain) => domain !== primary.domain)),

@@ -70,7 +70,7 @@ export function ReconnectBanner() {
             <div className="min-w-0 flex-1">
               <div className="font-medium text-destructive">
                 {disconnected.length === 1
-                  ? `Gmail disconnected for ${disconnected[0].email} — new mail won't arrive live until you reconnect.`
+                  ? `Gmail disconnected for ${disconnected[0]!.email} — new mail won't arrive live until you reconnect.`
                   : `${disconnected.length} inboxes disconnected — new mail won't arrive live until you reconnect.`}
               </div>
               <div className="mt-2 flex flex-col gap-2">
@@ -111,7 +111,7 @@ export function ReconnectBanner() {
             <div className="min-w-0 flex-1">
               <div className="font-medium text-amber-700 dark:text-amber-400">
                 {paused.length === 1
-                  ? `Real-time delivery paused for ${paused[0].email} — new mail is still filed, but on a slower fallback until you re-arm.`
+                  ? `Real-time delivery paused for ${paused[0]!.email} — new mail is still filed, but on a slower fallback until you re-arm.`
                   : `Real-time delivery paused for ${paused.length} inboxes — new mail is still filed, but on a slower fallback until you re-arm.`}
               </div>
               <div className="mt-2 flex flex-col gap-2">

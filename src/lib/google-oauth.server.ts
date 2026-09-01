@@ -314,7 +314,7 @@ export async function getAccessToken(accountId: string): Promise<string> {
   );
   if (error) throw new Error(`OAuth token fetch failed: ${error.message}`);
   if (!rows || rows.length === 0) throw new Error("Gmail account not found");
-  const acc = rows[0];
+  const acc = rows[0]!;
   if (!acc.access_token || !acc.refresh_token) {
     const reason = "Refresh token missing — reconnect required to keep mail flowing.";
     await markNeedsReconnect(accountId, reason);
@@ -405,7 +405,7 @@ export async function revokeGoogleOAuthForAccount(accountId: string): Promise<vo
     { p_account_id: accountId, p_key: key },
   );
   if (error || !rows || rows.length === 0) return;
-  const acc = rows[0];
+  const acc = rows[0]!;
   const token = acc.refresh_token || acc.access_token;
   if (!token) return;
   const res = await fetch(

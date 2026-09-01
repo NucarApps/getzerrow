@@ -41,6 +41,12 @@ export type AiDecisionEmail = {
   has_attachment: boolean;
 };
 
+const noneMethod = {
+  label: "Not classified yet",
+  Icon: HelpCircle,
+  cls: "text-muted-foreground",
+};
+
 const methodMeta: Record<string, { label: string; Icon: typeof Bot; cls: string }> = {
   ai: { label: "Classified by AI", Icon: Bot, cls: "text-primary" },
   filter: { label: "Classified by a rule", Icon: FilterIcon, cls: "text-foreground" },
@@ -57,7 +63,7 @@ const methodMeta: Record<string, { label: string; Icon: typeof Bot; cls: string 
     Icon: HelpCircle,
     cls: "text-destructive",
   },
-  none: { label: "Not classified yet", Icon: HelpCircle, cls: "text-muted-foreground" },
+  none: noneMethod,
 };
 
 function confidenceBand(score: number): { label: string; bar: string; text: string } {
@@ -109,7 +115,7 @@ export function AiDecisionDrawer({
     staleTime: 60_000,
   });
   const rulesTrace = historyQ.data?.trace ?? null;
-  const method = methodMeta[email.classified_by ?? "none"] ?? methodMeta.none;
+  const method = methodMeta[email.classified_by ?? "none"] ?? noneMethod;
   const MethodIcon = method.Icon;
   const winner = email.folder_id ? folders.find((f) => f.id === email.folder_id) : null;
   const showConfidence = email.classified_by === "ai" && email.ai_confidence != null;
@@ -192,7 +198,6 @@ export function AiDecisionDrawer({
               email={email}
             />
           )}
-
 
           {/* Runner-up folders */}
           {others.length > 0 && (

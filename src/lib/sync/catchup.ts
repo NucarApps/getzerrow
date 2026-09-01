@@ -61,12 +61,13 @@ async function parallelFetch(
     for (;;) {
       const idx = queue.shift();
       if (idx === undefined) return;
-      const job = jobs[idx];
+      const slot = out[idx];
+      if (!slot) return;
       try {
-        const raw = await getMessage(accountId, job.gmail_message_id);
-        out[idx].parsed = parseMessage(raw);
+        const raw = await getMessage(accountId, slot.job.gmail_message_id);
+        slot.parsed = parseMessage(raw);
       } catch (e) {
-        out[idx].error = (e as Error)?.message ?? "fetch failed";
+        slot.error = (e as Error)?.message ?? "fetch failed";
       }
     }
   });

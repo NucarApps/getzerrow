@@ -108,7 +108,9 @@ function parseRuleEvaluation(v: unknown): RuleEvaluation | null {
     level,
     matched: v.matched === true,
     condition_count:
-      typeof v.condition_count === "number" ? v.condition_count : parseConditions(v.conditions).length,
+      typeof v.condition_count === "number"
+        ? v.condition_count
+        : parseConditions(v.conditions).length,
     conditions: parseConditions(v.conditions),
   };
 }
@@ -196,9 +198,12 @@ export function traceHeadline(trace: RulesTrace): string {
 
 /** Stage rows in ladder order, including stages the trace never reached
  * (rendered as "not reached" by the UI). */
-export function stageRows(
-  trace: RulesTrace,
-): Array<{ stage: Stage; label: string; outcome: StageTrace["outcome"] | "not_reached"; detail?: string }> {
+export function stageRows(trace: RulesTrace): Array<{
+  stage: Stage;
+  label: string;
+  outcome: StageTrace["outcome"] | "not_reached";
+  detail?: string;
+}> {
   const byStage = new Map(trace.stages.map((s) => [s.stage, s]));
   return STAGES.map((stage) => {
     const hit = byStage.get(stage);

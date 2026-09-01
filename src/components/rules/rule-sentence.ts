@@ -26,7 +26,7 @@ export const FIELD_OPTIONS: FieldOption[] = [
   { value: "subject", label: "the subject" },
   { value: "body", label: "the body" },
   { value: "list_id", label: "the mailing list id" },
-  { value: "is_reply", label: "the message is a reply" , boolean: true },
+  { value: "is_reply", label: "the message is a reply", boolean: true },
   { value: "has_attachment", label: "the message has an attachment", boolean: true },
 ];
 
@@ -44,8 +44,7 @@ export const OP_OPTIONS: Array<{ value: string; label: string }> = [
 export const fieldLabel = (field: string): string =>
   FIELD_OPTIONS.find((f) => f.value === field)?.label ?? field;
 
-export const opLabel = (op: string): string =>
-  OP_OPTIONS.find((o) => o.value === op)?.label ?? op;
+export const opLabel = (op: string): string => OP_OPTIONS.find((o) => o.value === op)?.label ?? op;
 
 export const isBooleanField = (field: string): boolean =>
   FIELD_OPTIONS.find((f) => f.value === field)?.boolean === true;

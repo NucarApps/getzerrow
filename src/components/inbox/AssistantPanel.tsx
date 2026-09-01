@@ -256,7 +256,7 @@ export function AssistantPanel({
               {selectedEmails.length === 1 ? (
                 <Badge variant="secondary" className="font-normal">
                   Selected:{" "}
-                  {selectedEmails[0].from_name || selectedEmails[0].from_addr || "1 email"}
+                  {selectedEmails[0]?.from_name || selectedEmails[0]?.from_addr || "1 email"}
                 </Badge>
               ) : (
                 <Badge variant="secondary" className="font-normal">

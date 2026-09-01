@@ -25,7 +25,7 @@ async function assertOwnsAccount(userId: string, accountId: string): Promise<voi
 
 export const syncGoogleContactsNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { accountId: string }) => z.object({ accountId: z.string().uuid() }).parse(d))
+  .validator((d: { accountId: string }) => z.object({ accountId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertOwnsAccount(context.userId, data.accountId);
     const { runGoogleContactsSync } = await import("@/lib/google-contacts/reconcile.server");
@@ -45,7 +45,7 @@ export const syncGoogleContactsNow = createServerFn({ method: "POST" })
 
 export const forceFullGoogleContactsResync = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { accountId: string }) => z.object({ accountId: z.string().uuid() }).parse(d))
+  .validator((d: { accountId: string }) => z.object({ accountId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertOwnsAccount(context.userId, data.accountId);
     const { forceFullResync } = await import("@/lib/google-contacts/pull.server");
@@ -64,7 +64,7 @@ export const forceFullGoogleContactsResync = createServerFn({ method: "POST" })
 
 export const getGoogleContactsSyncStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { accountId: string }) => z.object({ accountId: z.string().uuid() }).parse(d))
+  .validator((d: { accountId: string }) => z.object({ accountId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertOwnsAccount(context.userId, data.accountId);
     const { getGoogleContactsStatus } = await import("@/lib/google-contacts/reconcile.server");
@@ -132,7 +132,7 @@ type SyncMode = (typeof SYNC_MODES)[number];
 
 export const setGoogleContactsSyncMode = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { accountId: string; mode: SyncMode }) =>
+  .validator((d: { accountId: string; mode: SyncMode }) =>
     z.object({ accountId: z.string().uuid(), mode: z.enum(SYNC_MODES) }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -151,7 +151,7 @@ type SyncInterval = (typeof SYNC_INTERVALS)[number];
 
 export const setGoogleContactsSyncInterval = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { accountId: string; intervalMinutes: SyncInterval }) =>
+  .validator((d: { accountId: string; intervalMinutes: SyncInterval }) =>
     z
       .object({
         accountId: z.string().uuid(),
@@ -170,7 +170,7 @@ export const setGoogleContactsSyncInterval = createServerFn({ method: "POST" })
 /** Additively re-pull one contact from Google to recover any missing emails/phones. */
 export const repullContactFromGoogle = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { contactId: string }) => z.object({ contactId: z.string().uuid() }).parse(d))
+  .validator((d: { contactId: string }) => z.object({ contactId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertOwnsContact(context.userId, data.contactId);
     const { repullContact } = await import("@/lib/google-contacts/repair.server");
@@ -180,7 +180,7 @@ export const repullContactFromGoogle = createServerFn({ method: "POST" })
 /** Scan every linked contact for this account and additively import missing emails/phones. */
 export const backfillMultiEmailsFromGoogle = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { accountId: string }) => z.object({ accountId: z.string().uuid() }).parse(d))
+  .validator((d: { accountId: string }) => z.object({ accountId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertOwnsAccount(context.userId, data.accountId);
     const { backfillMultiEmails } = await import("@/lib/google-contacts/repair.server");
@@ -194,7 +194,7 @@ export const backfillMultiEmailsFromGoogle = createServerFn({ method: "POST" })
  * touches those contacts again. */
 export const backfillGoogleContactPhotos = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { accountId: string }) => z.object({ accountId: z.string().uuid() }).parse(d))
+  .validator((d: { accountId: string }) => z.object({ accountId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertOwnsAccount(context.userId, data.accountId);
     // Only pick links that are actually stale: local avatar missing AND we

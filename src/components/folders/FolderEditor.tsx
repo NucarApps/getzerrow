@@ -776,7 +776,6 @@ export function FolderEditor({
               )}
             </div>
 
-
             <div className="mt-2 space-y-1.5">
               {filters.map((f) => {
                 const isExclude =

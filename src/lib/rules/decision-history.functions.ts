@@ -32,11 +32,12 @@ export type DecisionHistory = {
   }>;
 };
 
-const emailIdInput = (d: { email_id: string }) => z.object({ email_id: z.string().uuid() }).parse(d);
+const emailIdInput = (d: { email_id: string }) =>
+  z.object({ email_id: z.string().uuid() }).parse(d);
 
 export const getDecisionHistory = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(emailIdInput)
+  .validator(emailIdInput)
   .handler(async ({ data, context }): Promise<DecisionHistory> => {
     const { supabase } = context;
 
@@ -87,7 +88,7 @@ export const getDecisionHistory = createServerFn({ method: "GET" })
  * chain off — an unconfirmed AI decision never is. */
 export const confirmDecision = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(emailIdInput)
+  .validator(emailIdInput)
   .handler(async ({ data, context }) => {
     const { error } = await context.supabase
       .from("emails")
@@ -99,7 +100,7 @@ export const confirmDecision = createServerFn({ method: "POST" })
 
 export const resolveCollision = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { collision_id: string }) =>
+  .validator((d: { collision_id: string }) =>
     z.object({ collision_id: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {

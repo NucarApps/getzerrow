@@ -52,7 +52,8 @@ function pickDisplayName(rawValues: string[]): string {
     if (b[0].length !== a[0].length) return b[0].length - a[0].length;
     return a[0].localeCompare(b[0]);
   });
-  return entries[0][0];
+  // entries.length === 0 is handled above.
+  return entries[0]![0];
 }
 
 async function assertOwnsGroup(supabase: DB, userId: string, groupId: string) {
@@ -596,7 +597,7 @@ export const reconcileAllAutoGroups = createServerFn({ method: "POST" })
  *  the user explicitly prunes. */
 export const setAutoCompanySubgroups = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { groupId: string; enabled: boolean }) =>
+  .validator((d: { groupId: string; enabled: boolean }) =>
     z.object({ groupId: z.string().uuid(), enabled: z.boolean() }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -620,7 +621,7 @@ export const setAutoCompanySubgroups = createServerFn({ method: "POST" })
 /** Manual re-run for the "Re-scan now" button. */
 export const reconcileAutoCompanySubgroups = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { groupId: string }) => z.object({ groupId: z.string().uuid() }).parse(d))
+  .validator((d: { groupId: string }) => z.object({ groupId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     await assertOwnsGroup(supabase, userId, data.groupId);
@@ -632,7 +633,7 @@ export const reconcileAutoCompanySubgroups = createServerFn({ method: "POST" })
  *  "Remove auto subgroups" cleanup button. */
 export const pruneAutoCompanySubgroups = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { groupId: string }) => z.object({ groupId: z.string().uuid() }).parse(d))
+  .validator((d: { groupId: string }) => z.object({ groupId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     await assertOwnsGroup(supabase, userId, data.groupId);

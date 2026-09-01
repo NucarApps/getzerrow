@@ -1801,10 +1801,8 @@ function InboxPage() {
 
           {filtered.map((e, i) => {
             const groupLabel = e.__placeholder ? null : dayGroupLabel(e.received_at);
-            const prevLabel =
-              i > 0 && !filtered[i - 1].__placeholder
-                ? dayGroupLabel(filtered[i - 1].received_at)
-                : null;
+            const prev = i > 0 ? filtered[i - 1] : undefined;
+            const prevLabel = prev && !prev.__placeholder ? dayGroupLabel(prev.received_at) : null;
             return (
               <Fragment key={e.id}>
                 {groupLabel && groupLabel !== prevLabel && (
@@ -2741,6 +2739,7 @@ function Reader({
 }
 
 function ClassifiedChip({ by, confidence }: { by: string | null; confidence?: number | null }) {
+  const noneChip = { label: "Unclassified", Icon: HelpCircle, cls: "text-muted-foreground" };
   const map: Record<string, { label: string; Icon: typeof Bot; cls: string }> = {
     ai: { label: "AI", Icon: Bot, cls: "text-primary" },
     filter: { label: "Rule", Icon: FilterIcon, cls: "text-foreground" },
@@ -2749,10 +2748,10 @@ function ClassifiedChip({ by, confidence }: { by: string | null; confidence?: nu
     manual_move: { label: "Manual", Icon: Hand, cls: "text-foreground" },
     excluded: { label: "Excluded", Icon: HelpCircle, cls: "text-destructive" },
     global_exclude: { label: "Inbox list", Icon: HelpCircle, cls: "text-destructive" },
-    none: { label: "Unclassified", Icon: HelpCircle, cls: "text-muted-foreground" },
+    none: noneChip,
   };
   const k = by ?? "none";
-  const v = map[k] ?? map.none;
+  const v = map[k] ?? noneChip;
   const { Icon } = v;
   const label =
     k === "ai" && confidence != null ? `${v.label} · ${Math.round(confidence * 100)}%` : v.label;

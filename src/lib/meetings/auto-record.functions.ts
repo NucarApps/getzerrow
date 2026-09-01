@@ -4,7 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 export const setAutoRecord = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) =>
+  .validator((input) =>
     z.object({ accountId: z.string().uuid(), enabled: z.boolean() }).parse(input),
   )
   .handler(async ({ data, context }) => {
@@ -19,7 +19,7 @@ export const setAutoRecord = createServerFn({ method: "POST" })
 /** Toggle "record meetings I've declined" for one connected account. */
 export const setRecordDeclined = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) =>
+  .validator((input) =>
     z.object({ accountId: z.string().uuid(), enabled: z.boolean() }).parse(input),
   )
   .handler(async ({ data, context }) => {
@@ -34,7 +34,7 @@ export const setRecordDeclined = createServerFn({ method: "POST" })
 /** Auto-record status for one account (used by the settings card). */
 export const getAutoRecordStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ accountId: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ accountId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { data: acct, error } = await context.supabase
       .from("gmail_accounts")

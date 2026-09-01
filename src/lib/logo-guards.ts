@@ -35,6 +35,7 @@ export function ipv4IsPrivate(ip: string): boolean {
     return true;
   }
   const [a, b] = parts;
+  if (a === undefined || b === undefined) return true;
   if (a === 10) return true;
   if (a === 127) return true;
   if (a === 0) return true;
@@ -52,8 +53,8 @@ export function ipv6IsPrivate(ip: string): boolean {
   if (s.startsWith("fc") || s.startsWith("fd")) return true;
   if (s.startsWith("fe80")) return true;
   if (s.startsWith("ff")) return true;
-  const mapped = s.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return ipv4IsPrivate(mapped[1]);
+  const mappedV4 = s.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
+  if (mappedV4) return ipv4IsPrivate(mappedV4);
   return false;
 }
 

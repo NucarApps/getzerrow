@@ -77,7 +77,7 @@ export const listCompanies = createServerFn({ method: "GET" })
 
 export const getCompany = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { data: company, error } = await supabase
@@ -140,7 +140,7 @@ export const getCompany = createServerFn({ method: "POST" })
 
 export const discoverCompanyDomains = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { data: rows, error } = await supabase.rpc("discover_company_domains", {
@@ -158,7 +158,7 @@ export const discoverCompanyDomains = createServerFn({ method: "POST" })
 
 export const createCompany = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ name: nonEmpty(200) }).parse(d))
+  .validator((d: unknown) => z.object({ name: nonEmpty(200) }).parse(d))
   .handler(async ({ data, context }) => {
     const c = await findOrCreateCompanyByName(context, data.name);
     if (!c) throw new Error("Invalid company name");
@@ -174,7 +174,7 @@ export const createCompany = createServerFn({ method: "POST" })
  *  surface now that the standalone list is gone. */
 export const openOrCreateCompanyForBucket = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         name: z.string().trim().max(200).nullable().optional(),
@@ -240,7 +240,7 @@ export const openOrCreateCompanyForBucket = createServerFn({ method: "POST" })
  *  instant — the client fires this without awaiting after it navigates. */
 export const convergeBucketCompany = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         companyId: z.string().uuid(),
@@ -268,7 +268,7 @@ export const convergeBucketCompany = createServerFn({ method: "POST" })
 
 export const updateCompany = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         id: z.string().uuid(),
@@ -329,7 +329,7 @@ export const updateCompany = createServerFn({ method: "POST" })
 
 export const addCompanyDomain = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z.object({ id: z.string().uuid(), domain: z.string().trim().min(1).max(253) }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -381,7 +381,7 @@ export const addCompanyDomain = createServerFn({ method: "POST" })
 
 export const removeCompanyDomain = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { error } = await supabase
@@ -395,7 +395,7 @@ export const removeCompanyDomain = createServerFn({ method: "POST" })
 
 export const setCompanyTags = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         id: z.string().uuid(),
@@ -423,7 +423,7 @@ export const setCompanyTags = createServerFn({ method: "POST" })
 
 export const previewMergeCompanies = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({ sourceId: z.string().uuid(), targetId: z.string().uuid() })
       .refine((v) => v.sourceId !== v.targetId, {
@@ -737,7 +737,7 @@ async function mergeCompaniesImpl(
 
 export const mergeCompanies = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({ sourceId: z.string().uuid(), targetId: z.string().uuid() })
       .refine((v) => v.sourceId !== v.targetId, { message: "Cannot merge a company into itself" })
@@ -747,7 +747,7 @@ export const mergeCompanies = createServerFn({ method: "POST" })
 
 export const deleteCompany = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     // Capture affected contacts BEFORE the delete so we can prune their
@@ -878,11 +878,11 @@ export function clusterCompanies(companies: CompanyLite[]): CompanyLite[][] {
   // Only unite on tokens shared by ≥2 companies (a distinctive brand token).
   for (const ids of tokenBuckets.values()) {
     if (ids.length < 2) continue;
-    for (let i = 1; i < ids.length; i++) union(ids[0], ids[i]);
+    for (let i = 1; i < ids.length; i++) union(ids[0]!, ids[i]!);
   }
   for (const ids of domainBuckets.values()) {
     if (ids.length < 2) continue;
-    for (let i = 1; i < ids.length; i++) union(ids[0], ids[i]);
+    for (let i = 1; i < ids.length; i++) union(ids[0]!, ids[i]!);
   }
   const byRoot = new Map<string, CompanyLite[]>();
   for (const c of companies) {
@@ -896,7 +896,7 @@ export function clusterCompanies(companies: CompanyLite[]): CompanyLite[][] {
 
 export const findDuplicateCompanies = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z.object({ useAi: z.boolean().optional().default(false) }).parse(d ?? {}),
   )
   .handler(async ({ data, context }) => {
@@ -947,7 +947,8 @@ export const findDuplicateCompanies = createServerFn({ method: "POST" })
         if (b.member_count !== a.member_count) return b.member_count - a.member_count;
         return a.name.length - b.name.length;
       });
-      const canonical = sorted[0];
+      // clusterCompanies only returns clusters with >= 2 members.
+      const canonical = sorted[0]!;
       const canonicalRoots = rootDomainsOf(canonical.domains);
       const canonicalKey = normalizeCompanyNameDbSynced(canonical.name);
       const canonicalBrand = companyBrandKey(canonical.name);
@@ -1069,7 +1070,7 @@ Return JSON matching the schema. For each cluster, include the canonical name pl
 
 export const mergeCluster = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         canonicalId: z.string().uuid(),

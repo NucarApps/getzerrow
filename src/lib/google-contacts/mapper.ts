@@ -233,9 +233,8 @@ export function personToContact(person: Person): {
   photoUrl: string | null;
 } {
   const rawEmails = person.emailAddresses ?? [];
-  const primaryEmailIdx = rawEmails.findIndex((e) => e.metadata?.primary && e.value);
   const primaryEmail =
-    (primaryEmailIdx >= 0 ? rawEmails[primaryEmailIdx].value : null) ??
+    rawEmails.find((e) => e.metadata?.primary && e.value)?.value ??
     rawEmails.find((e) => e.value)?.value ??
     null;
 
@@ -254,7 +253,7 @@ export function personToContact(person: Person): {
     });
   }
   if (emails.length && !emails.some((e) => e.is_primary)) {
-    emails[0] = { ...emails[0], is_primary: true };
+    emails[0] = { ...emails[0]!, is_primary: true };
   }
 
   const patch: Partial<LocalContact> = {

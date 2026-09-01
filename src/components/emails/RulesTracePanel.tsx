@@ -181,8 +181,8 @@ export function RulesTracePanel({ trace }: { trace: RulesTrace }) {
         <div className="flex items-start gap-2 text-xs text-muted-foreground">
           <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           {trace.vetoed_folder_ids.length} folder
-          {trace.vetoed_folder_ids.length === 1 ? "" : "s"} excluded this message by their own rules,
-          so they could not be the destination.
+          {trace.vetoed_folder_ids.length === 1 ? "" : "s"} excluded this message by their own
+          rules, so they could not be the destination.
         </div>
       )}
 

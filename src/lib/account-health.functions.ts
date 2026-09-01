@@ -110,7 +110,7 @@ export type DlqRow = {
 
 export const listDlqJobs = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ account_id: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ account_id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }): Promise<{ rows: DlqRow[] }> => {
     const { data: rows } = await supabaseAdmin
       .from("message_jobs")
@@ -136,7 +136,7 @@ export const listDlqJobs = createServerFn({ method: "GET" })
 
 export const retryDlqJobs = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ account_id: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ account_id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { count, error } = await supabaseAdmin
       .from("message_jobs")
@@ -159,7 +159,7 @@ export const retryDlqJobs = createServerFn({ method: "POST" })
 
 export const retryDlqJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ job_id: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ job_id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { error } = await supabaseAdmin
       .from("message_jobs")
@@ -179,7 +179,7 @@ export const retryDlqJob = createServerFn({ method: "POST" })
 
 export const deleteDlqJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ job_id: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ job_id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { error } = await supabaseAdmin
       .from("message_jobs")
@@ -205,7 +205,7 @@ export type AccountDiagnostic = {
 // the next cron tick.
 export const runAccountDiagnostic = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ account_id: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ account_id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }): Promise<AccountDiagnostic> => {
     // Verify the caller owns the account before doing any Google calls.
     const { data: acct, error: ownErr } = await supabaseAdmin

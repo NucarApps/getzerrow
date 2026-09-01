@@ -28,7 +28,7 @@ export type OriginBackfillResult = {
  */
 export const backfillOriginSenders = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { before?: string | null; days?: number; limit?: number }) =>
+  .validator((d: { before?: string | null; days?: number; limit?: number }) =>
     z
       .object({
         before: z.string().datetime().nullish(),
@@ -69,7 +69,7 @@ export const backfillOriginSenders = createServerFn({ method: "POST" })
           budgetHit = true;
           return;
         }
-        const row = list[index++];
+        const row = list[index++]!;
         scanned++;
         try {
           const parsed = parseMessage(await getMessage(row.gmail_account_id, row.gmail_message_id));

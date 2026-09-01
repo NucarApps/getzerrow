@@ -80,13 +80,7 @@ export type ThreadDecision = {
 };
 
 export type Stage =
-  | "guardrail"
-  | "pin"
-  | "gmail_label"
-  | "thread_continuity"
-  | "rule"
-  | "ai"
-  | "inbox";
+  "guardrail" | "pin" | "gmail_label" | "thread_continuity" | "rule" | "ai" | "inbox";
 
 export type Trigger = "arrival" | "label_change" | "backfill" | "reprocess" | "replay" | "manual";
 

@@ -99,7 +99,6 @@ export function resolveFolderFromContext(
   };
 }
 
-
 async function fetchActionFolder(
   folderId: string,
   email?: SenderLike,
@@ -172,7 +171,6 @@ export function computeInsertReadFlag(
   if (needsAi) return parsed.is_read;
   return parsed.is_read || (rulesEffects?.removeLabels.includes("UNREAD") ?? false);
 }
-
 
 /** Apply the folder's actions to an email routed into it: explicit
  * folder_actions rows plus the legacy flags mapped to synthetic actions
@@ -302,7 +300,6 @@ export async function applyFolderActions(
 async function persistClassification(emailId: string, c: ClassificationResult) {
   await persistDecision(emailId, c);
 }
-
 
 /** After deterministic rules file an email into a folder that carries a
  * "surface to inbox" rule, ask the AI whether this specific message

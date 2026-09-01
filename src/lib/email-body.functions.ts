@@ -20,7 +20,7 @@ import { mergeSearchRows } from "./search-merge";
 
 export const getEmailBody = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data) => z.object({ email_id: z.string().uuid() }).parse(data))
+  .validator((data) => z.object({ email_id: z.string().uuid() }).parse(data))
   .handler(async ({ data, context }) => {
     const { userId } = context;
     const { rows, error } = await getEmailsDecrypted([data.email_id]);
@@ -42,7 +42,7 @@ export const getEmailBody = createServerFn({ method: "POST" })
 
 export const getEmailListFields = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data) => z.object({ ids: z.array(z.string().uuid()).max(5000) }).parse(data))
+  .validator((data) => z.object({ ids: z.array(z.string().uuid()).max(5000) }).parse(data))
   .handler(async ({ data, context }) => {
     const { userId } = context;
     if (data.ids.length === 0) return { fields: [], error: null };
@@ -67,7 +67,7 @@ export const getEmailListFields = createServerFn({ method: "POST" })
 // RPC via p_user_id (taken from the authenticated context, never the client).
 export const getInboxList = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data) =>
+  .validator((data) =>
     z
       .object({
         account_id: z.string().uuid(),
@@ -100,7 +100,7 @@ export const getInboxList = createServerFn({ method: "POST" })
 // authenticated context, never the client.
 export const searchInbox = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data) =>
+  .validator((data) =>
     z
       .object({
         query: z.string().trim().min(1).max(200),

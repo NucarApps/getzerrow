@@ -277,7 +277,7 @@ export async function getTranscript(bot: RecallBot): Promise<TranscriptSegment[]
         .join(" ")
         .replace(/\s+/g, " ")
         .trim();
-      const start = words.length ? wordStart(words[0]) : null;
+      const start = words.length ? wordStart(words[0]!) : null;
       const speaker = entry.participant?.name ?? entry.speaker ?? null;
       return { speaker, text, start };
     })
@@ -294,7 +294,7 @@ export function extractRecordingUrl(bot: RecallBot): string | null {
 /** Latest status code Recall reported for the bot (e.g. "done", "call_ended"). */
 export function latestStatusCode(bot: RecallBot): string | null {
   const changes = bot.status_changes ?? [];
-  return changes.length ? changes[changes.length - 1].code : null;
+  return changes.length ? changes[changes.length - 1]!.code : null;
 }
 
 /**

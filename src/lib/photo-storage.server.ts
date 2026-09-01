@@ -51,5 +51,5 @@ export function pathToBucketKey(bucket: string, publicUrl: string | null): strin
   const marker = `/${bucket}/`;
   const idx = publicUrl.indexOf(marker);
   if (idx < 0) return null;
-  return decodeURIComponent(publicUrl.slice(idx + marker.length).split("?")[0]);
+  return decodeURIComponent(publicUrl.slice(idx + marker.length).split("?")[0] ?? "");
 }

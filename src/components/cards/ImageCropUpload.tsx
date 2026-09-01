@@ -159,7 +159,10 @@ export function ImageCropUpload({
               max={4}
               step={0.05}
               value={[zoom]}
-              onValueChange={(v) => setZoom(v[0])}
+              onValueChange={(v) => {
+                const next = v[0];
+                if (next !== undefined) setZoom(next);
+              }}
             />
           </div>
           <ResponsiveDialogFooter>

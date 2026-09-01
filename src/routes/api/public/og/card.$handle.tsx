@@ -3,8 +3,9 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { truncate } from "@/lib/format";
 
 // Theme id -> [stop1, stop2, stop3] hex
+const DEFAULT_GRADIENT: [string, string, string] = ["#6366f1", "#4f46e5", "#1e1b4b"];
 const THEME_GRADIENTS: Record<string, [string, string, string]> = {
-  default: ["#6366f1", "#4f46e5", "#1e1b4b"],
+  default: DEFAULT_GRADIENT,
   sunset: ["#f97316", "#ec4899", "#9333ea"],
   ocean: ["#06b6d4", "#2563eb", "#3730a3"],
   forest: ["#10b981", "#16a34a", "#0f766e"],
@@ -42,7 +43,7 @@ export const Route = createFileRoute("/api/public/og/card/$handle")({
 
         const W = 1200,
           H = 630;
-        const [c1, c2, c3] = THEME_GRADIENTS[card.theme ?? "default"] ?? THEME_GRADIENTS.default;
+        const [c1, c2, c3] = THEME_GRADIENTS[card.theme ?? "default"] ?? DEFAULT_GRADIENT;
         const name = truncate(card.name ?? card.handle, 40);
         const title = truncate([card.title, card.company].filter(Boolean).join(" · "), 60);
         const tagline = card.tagline ? truncate(card.tagline, 90) : "";

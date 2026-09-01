@@ -41,7 +41,7 @@ export const getMyCard = createServerFn({ method: "GET" })
 /** Create or update the signed-in user's card. */
 export const upsertMyCard = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         handle: z
@@ -90,9 +90,7 @@ export const upsertMyCard = createServerFn({ method: "POST" })
 
 /** Public — fetch a card by handle. Safe-column projection. No auth. */
 export const getPublicCard = createServerFn({ method: "GET" })
-  .inputValidator((d: { handle: string }) =>
-    z.object({ handle: z.string().regex(HANDLE_RE) }).parse(d),
-  )
+  .validator((d: { handle: string }) => z.object({ handle: z.string().regex(HANDLE_RE) }).parse(d))
   .handler(async ({ data }) => {
     const { data: card } = await supabaseAdmin
       .from("my_cards")
@@ -107,7 +105,7 @@ export const getPublicCard = createServerFn({ method: "GET" })
 
 /** Public — return a vCard text body for a handle. */
 export const getPublicVCard = createServerFn({ method: "GET" })
-  .inputValidator((d: { handle: string; publicUrl?: string }) =>
+  .validator((d: { handle: string; publicUrl?: string }) =>
     z
       .object({
         handle: z.string().regex(HANDLE_RE),
@@ -128,7 +126,7 @@ export const getPublicVCard = createServerFn({ method: "GET" })
 /** Send the user's card to an email via their Gmail account. */
 export const sendMyCard = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { toEmail: string; contactId?: string; publicBaseUrl: string }) =>
+  .validator((d: { toEmail: string; contactId?: string; publicBaseUrl: string }) =>
     z
       .object({
         toEmail: z.string().email(),
@@ -173,7 +171,7 @@ export const sendMyCard = createServerFn({ method: "POST" })
 
 /** Public — capture a lead from a public card. Creates a contact for the card owner. */
 export const submitCardLead = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         handle: z.string().regex(HANDLE_RE),

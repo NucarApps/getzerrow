@@ -32,7 +32,7 @@ export const listMeetings = createServerFn({ method: "GET" })
 /** List meetings a given contact participated in. */
 export const listMeetingsForContact = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ contactId: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ contactId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { data: parts, error } = await context.supabase
       .from("meeting_participants")
@@ -57,7 +57,7 @@ export const listMeetingsForContact = createServerFn({ method: "GET" })
 /** Fetch one meeting with its participants. */
 export const getMeeting = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { data: meeting, error } = await context.supabase
       .from("meetings")
@@ -75,7 +75,7 @@ export const getMeeting = createServerFn({ method: "GET" })
 
 export const deleteMeeting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { data: meeting } = await context.supabase
       .from("meetings")
@@ -98,7 +98,7 @@ export const deleteMeeting = createServerFn({ method: "POST" })
 /** Rename a meeting. An empty title clears it (falls back to "Untitled meeting"). */
 export const renameMeeting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) =>
+  .validator((input) =>
     z.object({ id: z.string().uuid(), title: z.string().max(200) }).parse(input),
   )
   .handler(async ({ data, context }) => {
@@ -111,7 +111,7 @@ export const renameMeeting = createServerFn({ method: "POST" })
 /** Generate a meeting title on demand from its summary/transcript. */
 export const generateTitleForMeeting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { data: meeting, error } = await context.supabase
       .from("meetings")
@@ -150,7 +150,7 @@ export const generateTitleForMeeting = createServerFn({ method: "POST" })
  */
 export const regenerateMeetingSummary = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .validator((input) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { data: meeting, error } = await context.supabase
       .from("meetings")

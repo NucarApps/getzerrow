@@ -155,7 +155,7 @@ export const listAdminUsers = createServerFn({ method: "GET" })
 
 export const getAdminActivity = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { days?: number } | undefined) =>
+  .validator((d: { days?: number } | undefined) =>
     z.object({ days: z.number().int().min(7).max(180).optional() }).parse(d ?? {}),
   )
   .handler(async ({ data, context }) => {
@@ -211,7 +211,7 @@ function dayKey(iso: string): string {
  */
 export const getFolderRetryMetrics = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { days?: number } | undefined) =>
+  .validator((d: { days?: number } | undefined) =>
     z.object({ days: z.number().int().min(1).max(30).optional() }).parse(d ?? {}),
   )
   .handler(async ({ data, context }): Promise<FolderRetryMetrics> => {
@@ -368,7 +368,7 @@ export type SyncJobMetrics = {
 function percentile(sorted: number[], p: number): number | null {
   if (sorted.length === 0) return null;
   const idx = Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1)));
-  return sorted[idx];
+  return sorted[idx] ?? null;
 }
 
 export const getSyncJobMetrics = createServerFn({ method: "GET" })
