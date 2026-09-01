@@ -71,7 +71,7 @@ describe("collapseRunawayRepeats", () => {
 
 describe("finalizeInPersonMeeting regression — iOS-style problematic recording", () => {
   beforeEach(() => {
-    process.env.LOVABLE_API_KEY = "test-key";
+    vi.stubEnv("LOVABLE_API_KEY", "test-key");
     fake.reset();
     fake.seed("meetings", [
       { id: "meeting-1", user_id: "user-1", audio_storage_path: "user-1/meeting-1.m4a" },
@@ -192,7 +192,7 @@ function readFixture(file: string): { bytes: Uint8Array<ArrayBuffer>; fragments:
 
 describe("finalizeInPersonMeeting regression — fragmentation lengths", () => {
   beforeEach(() => {
-    process.env.LOVABLE_API_KEY = "test-key";
+    vi.stubEnv("LOVABLE_API_KEY", "test-key");
     fake.reset();
     fake.seed("meetings", [
       { id: "meeting-1", user_id: "user-1", audio_storage_path: "user-1/meeting-1.m4a" },

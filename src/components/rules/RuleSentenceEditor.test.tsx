@@ -78,7 +78,6 @@ const valueInput = () => screen.getByPlaceholderText("billing@netflix.com");
 const saveButton = () => screen.getByRole("button", { name: "Save rule" });
 
 beforeEach(() => {
-  vi.clearAllMocks();
   previewRuleChange.mockResolvedValue(makePreview());
 });
 

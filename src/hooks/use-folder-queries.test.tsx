@@ -39,8 +39,6 @@ import { useFoldersFullQuery, useGmailLabelsQuery } from "./use-folder-queries";
 
 beforeEach(() => {
   // The global teardown restores spies only; vi.fn call history must be
-  // cleared here or "not called" assertions see earlier tests' calls.
-  vi.clearAllMocks();
   rowsResult = { data: [] };
 });
 

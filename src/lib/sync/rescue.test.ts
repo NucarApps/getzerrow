@@ -14,7 +14,7 @@
 //     in Inbox — the correct failure mode), otherwise back to 'pending_ai'.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
+import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
 import type { AccountContext } from "./account-context";
 import type { Folder } from "./types";
 import { RESCUE_MAX_ATTEMPTS } from "./config";
@@ -24,10 +24,7 @@ const fake = makeSupabaseFake();
 // Property accesses are deferred into method bodies so the hoisted factory
 // never touches `fake` before its initializer runs.
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => fake.supabaseAdmin.from(table),
-    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
-  },
+  supabaseAdmin: mockSupabaseAdmin(() => fake),
 }));
 
 const getEmailsDecrypted = vi.fn();
@@ -168,7 +165,6 @@ function attemptBumps() {
 
 beforeEach(() => {
   fake.reset();
-  vi.clearAllMocks();
   // Decrypt round-trip: every requested id comes back with the sensitive
   // fields the classifier needs.
   getEmailsDecrypted.mockImplementation(async (ids: string[]) => ({

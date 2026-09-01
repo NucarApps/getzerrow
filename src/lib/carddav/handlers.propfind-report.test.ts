@@ -15,7 +15,7 @@
 //     to a full resync instead of silently missing deletes.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
+import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
 import type { DecryptedContact } from "@/lib/sync/encrypted-reader";
 
 const fake = makeSupabaseFake();
@@ -33,10 +33,7 @@ const logInfoMock = vi.fn();
 // CRITICAL: factories must not touch module-level consts at factory time
 // (vi.mock hoisting) — every property access is deferred into method bodies.
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => fake.supabaseAdmin.from(table),
-    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
-  },
+  supabaseAdmin: mockSupabaseAdmin(() => fake),
 }));
 vi.mock("@/lib/sync/encrypted-reader", () => ({
   getContactDecrypted: (contactId: string) => getContactDecryptedMock(contactId),
@@ -209,16 +206,15 @@ const savedEncKey = process.env.EMAIL_ENC_KEY;
 beforeEach(() => {
   fake.reset();
   decryptedRows.clear();
-  vi.clearAllMocks();
   seedBase();
   // The encryption boundary is mocked; the key is set defensively so a mock
   // gap would fail loudly in the RPC layer instead of on a missing env var.
-  process.env.EMAIL_ENC_KEY = "test-key";
+  vi.stubEnv("EMAIL_ENC_KEY", "test-key");
 });
 
 afterEach(() => {
-  if (savedEncKey === undefined) delete process.env.EMAIL_ENC_KEY;
-  else process.env.EMAIL_ENC_KEY = savedEncKey;
+  if (savedEncKey === undefined) vi.stubEnv("EMAIL_ENC_KEY", undefined);
+  else vi.stubEnv("EMAIL_ENC_KEY", savedEncKey);
 });
 
 describe("OPTIONS", () => {

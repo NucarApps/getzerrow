@@ -73,15 +73,15 @@ const savedEnv = {
 
 beforeEach(() => {
   generateText.mockReset();
-  process.env.LOVABLE_API_KEY = "test-key";
-  delete process.env.AI_CLASSIFY_INPUT_MAX_CHARS;
+  vi.stubEnv("LOVABLE_API_KEY", "test-key");
+  vi.stubEnv("AI_CLASSIFY_INPUT_MAX_CHARS", undefined);
 });
 
 afterAll(() => {
-  if (savedEnv.key === undefined) delete process.env.LOVABLE_API_KEY;
-  else process.env.LOVABLE_API_KEY = savedEnv.key;
-  if (savedEnv.max === undefined) delete process.env.AI_CLASSIFY_INPUT_MAX_CHARS;
-  else process.env.AI_CLASSIFY_INPUT_MAX_CHARS = savedEnv.max;
+  if (savedEnv.key === undefined) vi.stubEnv("LOVABLE_API_KEY", undefined);
+  else vi.stubEnv("LOVABLE_API_KEY", savedEnv.key);
+  if (savedEnv.max === undefined) vi.stubEnv("AI_CLASSIFY_INPUT_MAX_CHARS", undefined);
+  else vi.stubEnv("AI_CLASSIFY_INPUT_MAX_CHARS", savedEnv.max);
 });
 
 describe("folder metadata is sanitized too (it comes from email headers)", () => {
@@ -312,9 +312,9 @@ describe("sanitizeUntrustedText", () => {
 
   it("respects the AI_CLASSIFY_INPUT_MAX_CHARS env override", () => {
     expect(aiClassifyInputMaxChars()).toBe(8000);
-    process.env.AI_CLASSIFY_INPUT_MAX_CHARS = "1000";
+    vi.stubEnv("AI_CLASSIFY_INPUT_MAX_CHARS", "1000");
     expect(aiClassifyInputMaxChars()).toBe(1000);
-    process.env.AI_CLASSIFY_INPUT_MAX_CHARS = "banana";
+    vi.stubEnv("AI_CLASSIFY_INPUT_MAX_CHARS", "banana");
     expect(aiClassifyInputMaxChars()).toBe(8000);
   });
 });

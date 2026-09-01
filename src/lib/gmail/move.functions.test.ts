@@ -10,7 +10,7 @@
 // recomputation, and the global inbox-override promotion rules.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
+import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
 import { TEST_USER } from "@/lib/__fixtures__/server-fn-stub";
 
 const fake = makeSupabaseFake();
@@ -28,13 +28,9 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuth: { __passthrough: true },
 }));
 
-// -- DB: shared chainable fake. Property accesses are deferred into method
-// bodies so the hoisted factory never touches `fake` before its initializer.
+// -- DB: shared chainable fake (hoist-safe wrapper) ------------------------
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => fake.supabaseAdmin.from(table),
-    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
-  },
+  supabaseAdmin: mockSupabaseAdmin(() => fake),
 }));
 
 // -- Import graph of move.functions.ts (pure sync/* helpers stay real) ------

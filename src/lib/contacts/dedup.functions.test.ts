@@ -12,7 +12,7 @@
 // the Supabase admin client is the shared chainable fake.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
+import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
 
 const fake = makeSupabaseFake();
 
@@ -25,13 +25,9 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuth: { __passthrough: true },
 }));
 
-// -- DB: shared chainable fake (deferred property access so the hoisted factory
-// never touches `fake` before its initializer runs). ------------------------
+// -- DB: shared chainable fake (hoist-safe wrapper) ------------------------
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => fake.supabaseAdmin.from(table),
-    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
-  },
+  supabaseAdmin: mockSupabaseAdmin(() => fake),
 }));
 
 // Subgroup reconciliation is a DB-heavy side effect; stub it and assert calls.
@@ -301,7 +297,7 @@ describe("scanContactDuplicatesImpl", () => {
   beforeEach(() => {
     // Force the AI-free path: deterministic signals still resolve, and no
     // model calls happen without an API key.
-    delete process.env.LOVABLE_API_KEY;
+    vi.stubEnv("LOVABLE_API_KEY", undefined);
   });
 
   function seedPhonePair(primary: string, dup: string, phone: string, createdBase = "2020-01-01") {

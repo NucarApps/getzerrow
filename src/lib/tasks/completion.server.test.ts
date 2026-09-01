@@ -38,7 +38,7 @@ beforeEach(() => {
   fake.reset();
   getEmailListFieldsDecrypted.mockReset();
   getEmailListFieldsDecrypted.mockResolvedValue({ rows: [] });
-  delete process.env.LOVABLE_API_KEY; // force the AI-unavailable branch
+  vi.stubEnv("LOVABLE_API_KEY", undefined); // force the AI-unavailable branch
 });
 
 describe("scanSentForTaskCompletion", () => {

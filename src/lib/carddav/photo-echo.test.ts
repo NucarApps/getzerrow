@@ -8,17 +8,14 @@
 // the SHA determinism hold, the echo guard cannot silently regress.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
+import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
 import { parseVCard, contactToVCard } from "./vcard";
 import { sha256Hex } from "@/lib/contacts/photos.server";
 import type { DecryptedContact } from "@/lib/sync/encrypted-reader";
 
 const fake = makeSupabaseFake();
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => fake.supabaseAdmin.from(table),
-    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
-  },
+  supabaseAdmin: mockSupabaseAdmin(() => fake),
 }));
 
 function baseContact(overrides: Partial<DecryptedContact> = {}): DecryptedContact {

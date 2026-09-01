@@ -100,8 +100,6 @@ function armMocks() {
 }
 
 beforeEach(() => {
-  // The global setup's restoreAllMocks doesn't clear vi.mock-factory fns.
-  vi.clearAllMocks();
   // Empty key ⇒ AI title/breakdown generation short-circuits to null, so the
   // extractive digest fallback is what lands unless a test opts in.
   vi.stubEnv("LOVABLE_API_KEY", "");

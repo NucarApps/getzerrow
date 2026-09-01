@@ -47,7 +47,7 @@ beforeEach(() => {
   // globals after every test, so a module-level stub would only survive the
   // first test in the file.
   vi.stubGlobal("fetch", fetchMock);
-  delete process.env.GMAIL_PUBSUB_TOPIC;
+  vi.stubEnv("GMAIL_PUBSUB_TOPIC", undefined);
 });
 
 afterEach(() => {
@@ -55,8 +55,8 @@ afterEach(() => {
 });
 
 afterAll(() => {
-  if (savedTopic === undefined) delete process.env.GMAIL_PUBSUB_TOPIC;
-  else process.env.GMAIL_PUBSUB_TOPIC = savedTopic;
+  if (savedTopic === undefined) vi.stubEnv("GMAIL_PUBSUB_TOPIC", undefined);
+  else vi.stubEnv("GMAIL_PUBSUB_TOPIC", savedTopic);
 });
 
 describe("GmailApiError status mapping", () => {
@@ -345,14 +345,14 @@ describe("ensureWatch", () => {
   });
 
   it("skips renewal when the watch has more than 3 days remaining", async () => {
-    process.env.GMAIL_PUBSUB_TOPIC = "projects/p/topics/t";
+    vi.stubEnv("GMAIL_PUBSUB_TOPIC", "projects/p/topics/t");
     const farOut = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString();
     await expect(ensureWatch("acc-1", farOut)).resolves.toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("re-watches with the configured topic when expiry is near (or absent)", async () => {
-    process.env.GMAIL_PUBSUB_TOPIC = "projects/p/topics/t";
+    vi.stubEnv("GMAIL_PUBSUB_TOPIC", "projects/p/topics/t");
     fetchMock.mockImplementation(async () => jsonResponse({ historyId: "h1", expiration: "e1" }));
 
     const soon = new Date(Date.now() + 60 * 60 * 1000).toISOString();

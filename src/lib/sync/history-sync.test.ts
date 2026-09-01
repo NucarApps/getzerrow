@@ -17,17 +17,14 @@
 //     bump_history_id_if_greater JS fallback, and last_push_at stamping.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
+import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
 
 const fake = makeSupabaseFake();
 
 // Property accesses are deferred into method bodies so the hoisted factory
 // never touches `fake` before its initializer runs.
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => fake.supabaseAdmin.from(table),
-    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
-  },
+  supabaseAdmin: mockSupabaseAdmin(() => fake),
 }));
 
 // ─── Gmail fake: scripted listHistory / listMessages queues ─────────────

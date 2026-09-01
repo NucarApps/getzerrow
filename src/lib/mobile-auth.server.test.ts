@@ -1,15 +1,12 @@
 // authenticateRequest's contract is THROWN Response objects (401/500) so the
 // mobile route handlers can `catch (r) { return r }`. Every rejection is
 // asserted as an actual Response instance with the right status.
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("@supabase/supabase-js", () => ({ createClient: vi.fn() }));
 
 import { createClient } from "@supabase/supabase-js";
 import { authenticateRequest } from "./mobile-auth.server";
-
-const ENV_KEYS = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY"] as const;
-let savedEnv: Record<string, string | undefined>;
 
 function reqWith(headers: Record<string, string>): Request {
   // Plain header bag: real Request headers trim trailing whitespace, which
@@ -39,23 +36,14 @@ async function expectThrownResponse(p: Promise<unknown>, status: number): Promis
 }
 
 beforeEach(() => {
-  savedEnv = {};
-  for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
-  process.env.SUPABASE_URL = "https://project.supabase.co";
-  process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
+  vi.stubEnv("SUPABASE_URL", "https://project.supabase.co");
+  vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "publishable-key");
   vi.mocked(createClient).mockReset();
-});
-
-afterEach(() => {
-  for (const k of ENV_KEYS) {
-    if (savedEnv[k] === undefined) delete process.env[k];
-    else process.env[k] = savedEnv[k];
-  }
 });
 
 describe("authenticateRequest", () => {
   it("throws a 500 Response when server env is not configured", async () => {
-    delete process.env.SUPABASE_URL;
+    vi.stubEnv("SUPABASE_URL", undefined);
     await expectThrownResponse(authenticateRequest(reqWith({ authorization: "Bearer t" })), 500);
   });
 

@@ -1,24 +1,19 @@
 // getAccessToken flow tests. The module keeps per-account in-flight refresh
 // promises in module scope (`inFlightRefresh`), so every test gets a fresh
 // module instance via vi.resetModules() + dynamic import.
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { makeSupabaseFake } from "./__fixtures__/supabase-fake";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { makeSupabaseFake, mockSupabaseAdmin } from "./__fixtures__/supabase-fake";
 
 const fake = makeSupabaseFake();
 // Static vi.mock still applies to dynamically imported module instances.
 // Methods are deferred into bodies so the hoisted factory never reads `fake`.
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => fake.supabaseAdmin.from(table),
-    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
-  },
+  supabaseAdmin: mockSupabaseAdmin(() => fake),
 }));
 
 type OAuthModule = typeof import("./google-oauth.server");
 
 const ACC = "acc-1";
-const ENV_KEYS = ["EMAIL_ENC_KEY", "GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET"] as const;
-let savedEnv: Record<string, string | undefined>;
 
 function futureIso(ms: number): string {
   return new Date(Date.now() + ms).toISOString();
@@ -56,27 +51,16 @@ async function importSut(): Promise<OAuthModule> {
 
 beforeEach(() => {
   vi.resetModules();
-  savedEnv = {};
-  for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
-  process.env.EMAIL_ENC_KEY = "test-enc-key";
-  process.env.GOOGLE_OAUTH_CLIENT_ID = "test-client-id";
-  process.env.GOOGLE_OAUTH_CLIENT_SECRET = "test-client-secret";
+  vi.stubEnv("EMAIL_ENC_KEY", "test-enc-key");
+  vi.stubEnv("GOOGLE_OAUTH_CLIENT_ID", "test-client-id");
+  vi.stubEnv("GOOGLE_OAUTH_CLIENT_SECRET", "test-client-secret");
   fake.reset();
   seedAccount();
 });
 
-afterEach(() => {
-  for (const k of ENV_KEYS) {
-    if (savedEnv[k] === undefined) delete process.env[k];
-    else process.env[k] = savedEnv[k];
-  }
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
-});
-
 describe("getAccessToken", () => {
   it("throws before any query when EMAIL_ENC_KEY is unset", async () => {
-    delete process.env.EMAIL_ENC_KEY;
+    vi.stubEnv("EMAIL_ENC_KEY", undefined);
     const mod = await importSut();
     await expect(mod.getAccessToken(ACC)).rejects.toThrow("EMAIL_ENC_KEY not configured");
     expect(fake.calls.selects).toHaveLength(0);

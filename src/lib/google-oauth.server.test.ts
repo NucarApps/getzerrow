@@ -1,15 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { makeSupabaseFake } from "./__fixtures__/supabase-fake";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { makeSupabaseFake, mockSupabaseAdmin } from "./__fixtures__/supabase-fake";
 
 // Shared fake for revokeGoogleOAuthForAccount (the only supabase consumer in
 // this file). Methods are deferred into bodies so the vi.mock factory never
 // touches `fake` before this module finishes initializing.
 const fake = makeSupabaseFake();
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => fake.supabaseAdmin.from(table),
-    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
-  },
+  supabaseAdmin: mockSupabaseAdmin(() => fake),
 }));
 
 import {
@@ -27,35 +24,16 @@ import {
 } from "./google-oauth.server";
 
 const SERVICE_KEY = "test-service-role-key";
-const ENV_KEYS = [
-  "SUPABASE_SERVICE_ROLE_KEY",
-  "OAUTH_STATE_SIGNING_KEY",
-  "GOOGLE_OAUTH_CLIENT_ID",
-  "GOOGLE_OAUTH_CLIENT_SECRET",
-  "EMAIL_ENC_KEY",
-] as const;
-
-let savedEnv: Record<string, string | undefined>;
 
 beforeEach(() => {
-  savedEnv = {};
-  for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
   // Default: no dedicated state key, so tests exercise the service-role
   // fallback path unless they opt in.
-  delete process.env.OAUTH_STATE_SIGNING_KEY;
-  process.env.SUPABASE_SERVICE_ROLE_KEY = SERVICE_KEY;
-  process.env.GOOGLE_OAUTH_CLIENT_ID = "test-client-id";
-  process.env.GOOGLE_OAUTH_CLIENT_SECRET = "test-client-secret";
-  process.env.EMAIL_ENC_KEY = "test-enc-key";
+  vi.stubEnv("OAUTH_STATE_SIGNING_KEY", undefined);
+  vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", SERVICE_KEY);
+  vi.stubEnv("GOOGLE_OAUTH_CLIENT_ID", "test-client-id");
+  vi.stubEnv("GOOGLE_OAUTH_CLIENT_SECRET", "test-client-secret");
+  vi.stubEnv("EMAIL_ENC_KEY", "test-enc-key");
   fake.reset();
-});
-
-afterEach(() => {
-  for (const k of ENV_KEYS) {
-    if (savedEnv[k] === undefined) delete process.env[k];
-    else process.env[k] = savedEnv[k];
-  }
-  vi.unstubAllGlobals();
 });
 
 describe("scopeGrantsCalendar / scopeGrantsContacts", () => {
@@ -114,31 +92,31 @@ describe("signState / verifyState", () => {
   });
 
   it("uses OAUTH_STATE_SIGNING_KEY when set, independent of the service-role key", async () => {
-    process.env.OAUTH_STATE_SIGNING_KEY = "dedicated-state-key";
+    vi.stubEnv("OAUTH_STATE_SIGNING_KEY", "dedicated-state-key");
     const state = await signState("user-123");
     // Round-trips under the dedicated key...
     await expect(verifyState(state)).resolves.toBe("user-123");
     // ...and rotating the service-role key does NOT invalidate the state,
     // proving the service-role key is no longer the signing secret.
-    process.env.SUPABASE_SERVICE_ROLE_KEY = "rotated-service-key";
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "rotated-service-key");
     await expect(verifyState(state)).resolves.toBe("user-123");
   });
 
   it("a state signed under the dedicated key fails once that key rotates", async () => {
-    process.env.OAUTH_STATE_SIGNING_KEY = "state-key-v1";
+    vi.stubEnv("OAUTH_STATE_SIGNING_KEY", "state-key-v1");
     const state = await signState("user-123");
-    process.env.OAUTH_STATE_SIGNING_KEY = "state-key-v2";
+    vi.stubEnv("OAUTH_STATE_SIGNING_KEY", "state-key-v2");
     await expect(verifyState(state)).rejects.toThrow("Invalid state signature");
   });
 
   it("rejects a state signed under a different secret", async () => {
     const state = await signState("user-123");
-    process.env.SUPABASE_SERVICE_ROLE_KEY = "rotated-secret";
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "rotated-secret");
     await expect(verifyState(state)).rejects.toThrow("Invalid state signature");
   });
 
   it("throws when SUPABASE_SERVICE_ROLE_KEY is unset", async () => {
-    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", undefined);
     await expect(signState("user-123")).rejects.toThrow(
       "SUPABASE_SERVICE_ROLE_KEY is not configured",
     );
@@ -168,7 +146,7 @@ describe("buildAuthorizeUrl", () => {
   });
 
   it("throws when GOOGLE_OAUTH_CLIENT_ID is unset", () => {
-    delete process.env.GOOGLE_OAUTH_CLIENT_ID;
+    vi.stubEnv("GOOGLE_OAUTH_CLIENT_ID", undefined);
     expect(() => buildAuthorizeUrl("https://app.example/cb", "s")).toThrow(
       "GOOGLE_OAUTH_CLIENT_ID is not configured",
     );
@@ -223,7 +201,7 @@ describe("exchangeCode", () => {
   it("throws before any fetch when client credentials are unset", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    delete process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+    vi.stubEnv("GOOGLE_OAUTH_CLIENT_SECRET", undefined);
     await expect(exchangeCode("c", "https://app.example/cb")).rejects.toThrow(
       "GOOGLE_OAUTH_CLIENT_SECRET is not configured",
     );
@@ -334,7 +312,7 @@ describe("revokeGoogleOAuthForAccount", () => {
   });
 
   it("throws before any RPC when EMAIL_ENC_KEY is unset", async () => {
-    delete process.env.EMAIL_ENC_KEY;
+    vi.stubEnv("EMAIL_ENC_KEY", undefined);
     await expect(revokeGoogleOAuthForAccount("acc-1")).rejects.toThrow(
       "EMAIL_ENC_KEY not configured",
     );

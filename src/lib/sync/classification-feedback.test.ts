@@ -6,15 +6,12 @@
 //     (Pure matchByFilters — no AI, no scorer.)
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
+import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
 
 const fake = makeSupabaseFake();
 
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => fake.supabaseAdmin.from(table),
-    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
-  },
+  supabaseAdmin: mockSupabaseAdmin(() => fake),
 }));
 vi.mock("../move-email.server", () => ({ performMove: vi.fn(async () => ({ ok: true })) }));
 vi.mock("./encrypted-writer", () => ({

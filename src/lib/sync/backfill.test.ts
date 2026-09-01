@@ -16,7 +16,7 @@
 //     recorded on the row without failing the tick.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
+import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
 import { BACKFILL_LIST_PAGES_PER_TICK, BACKFILL_PAGE_SIZE } from "./config";
 
 const fake = makeSupabaseFake();
@@ -24,10 +24,7 @@ const fake = makeSupabaseFake();
 // Property accesses are deferred into method bodies so the hoisted factory
 // never touches `fake` before its initializer runs.
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => fake.supabaseAdmin.from(table),
-    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
-  },
+  supabaseAdmin: mockSupabaseAdmin(() => fake),
 }));
 
 const listMessages = vi.fn();
@@ -62,7 +59,6 @@ function msgs(...ids: string[]) {
 
 beforeEach(() => {
   fake.reset();
-  vi.clearAllMocks();
   listMessages.mockResolvedValue({ messages: [] });
   enqueueMessageJobs.mockResolvedValue(undefined);
   processGmailMessage.mockResolvedValue(undefined);

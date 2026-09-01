@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { isAuthorizedCron, unauthorizedResponse } from "./cron-auth.server";
 
 const SECRET = "test-secret-abcdef1234567890";
@@ -7,12 +7,12 @@ describe("isAuthorizedCron", () => {
   const originalEnv = process.env.CRON_SECRET;
 
   beforeEach(() => {
-    process.env.CRON_SECRET = SECRET;
+    vi.stubEnv("CRON_SECRET", SECRET);
   });
 
   afterEach(() => {
-    if (originalEnv === undefined) delete process.env.CRON_SECRET;
-    else process.env.CRON_SECRET = originalEnv;
+    if (originalEnv === undefined) vi.stubEnv("CRON_SECRET", undefined);
+    else vi.stubEnv("CRON_SECRET", originalEnv);
   });
 
   function reqWith(headers: Record<string, string>): Request {
@@ -38,7 +38,7 @@ describe("isAuthorizedCron", () => {
   });
 
   it("rejects when CRON_SECRET env is not set", () => {
-    delete process.env.CRON_SECRET;
+    vi.stubEnv("CRON_SECRET", undefined);
     expect(isAuthorizedCron(reqWith({ authorization: `Bearer ${SECRET}` }))).toBe(false);
   });
 

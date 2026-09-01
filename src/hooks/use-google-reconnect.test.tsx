@@ -31,7 +31,6 @@ import { useGoogleReconnect } from "./use-google-reconnect";
 const pageUrl = () => window.location.href.split("#")[0];
 
 beforeEach(() => {
-  vi.clearAllMocks();
   window.location.hash = "";
 });
 

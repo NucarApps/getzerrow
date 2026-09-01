@@ -11,15 +11,12 @@
 //   * nothing rendered or AI-generated is persisted anywhere.
 
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
-import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
+import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
 
 const fake = makeSupabaseFake();
 
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => fake.supabaseAdmin.from(table),
-    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
-  },
+  supabaseAdmin: mockSupabaseAdmin(() => fake),
 }));
 
 const sendMessage = vi.fn(async (..._args: unknown[]) => ({}));
@@ -60,12 +57,12 @@ beforeEach(() => {
   createDraft.mockClear();
   suggestReply.mockClear();
   getEmailsDecrypted.mockReset();
-  process.env.EMAIL_ENC_KEY = "test-enc-key";
+  vi.stubEnv("EMAIL_ENC_KEY", "test-enc-key");
 });
 
 afterAll(() => {
-  if (savedKey === undefined) delete process.env.EMAIL_ENC_KEY;
-  else process.env.EMAIL_ENC_KEY = savedKey;
+  if (savedKey === undefined) vi.stubEnv("EMAIL_ENC_KEY", undefined);
+  else vi.stubEnv("EMAIL_ENC_KEY", savedKey);
 });
 
 describe("renderTemplate", () => {

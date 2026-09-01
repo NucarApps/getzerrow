@@ -20,7 +20,7 @@
 //   - partial failure: one bad person row must not abort the rest of a batch.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
+import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
 import type { Person } from "./mapper";
 import type { SyncState } from "./state.server";
 
@@ -49,10 +49,7 @@ const logErrorMock = vi.fn();
 // CRITICAL: factories must not touch module-level consts at factory time
 // (vi.mock hoisting) — every property access is deferred into method bodies.
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => fake.supabaseAdmin.from(table),
-    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
-  },
+  supabaseAdmin: mockSupabaseAdmin(() => fake),
 }));
 vi.mock("@/lib/google-oauth.server", () => ({
   getAccessToken: async () => "test-token",
@@ -191,7 +188,6 @@ function finalLinkUpserts() {
 
 beforeEach(() => {
   fake.reset();
-  vi.clearAllMocks();
   loadSyncStateMock.mockResolvedValue(stateRow());
   ensureSyncStateMock.mockResolvedValue(stateRow());
   updateSyncStateMock.mockResolvedValue(undefined);

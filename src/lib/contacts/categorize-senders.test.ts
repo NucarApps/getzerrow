@@ -7,15 +7,12 @@
 //   * idempotency — a second run over the same senders adds nothing new
 //     (already-categorized contacts aren't re-picked).
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
+import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
 
 const fake = makeSupabaseFake();
 
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => fake.supabaseAdmin.from(table),
-    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
-  },
+  supabaseAdmin: mockSupabaseAdmin(() => fake),
 }));
 vi.mock("@/lib/log.server", () => ({
   logError: vi.fn(),

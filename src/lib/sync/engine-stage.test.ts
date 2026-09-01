@@ -97,13 +97,12 @@ const matchingContext = () => {
 };
 
 afterEach(() => {
-  delete process.env["RULES_ENGINE_V2"];
-  vi.clearAllMocks();
+  vi.stubEnv("RULES_ENGINE_V2", undefined);
 });
 
 describe("runEngineStage", () => {
   it("returns the legacy decision untouched when the engine is off", () => {
-    process.env["RULES_ENGINE_V2"] = "off";
+    vi.stubEnv("RULES_ENGINE_V2", "off");
     const legacy = legacyDecision();
     const out = runEngineStage(parsed(), matchingContext(), legacy);
     expect(out).toBe(legacy);
@@ -133,7 +132,7 @@ describe("runEngineStage", () => {
   });
 
   it("hands the decision to the engine when on, and attaches the v2 trace", () => {
-    process.env["RULES_ENGINE_V2"] = "on";
+    vi.stubEnv("RULES_ENGINE_V2", "on");
     const out = runEngineStage(parsed(), matchingContext(), legacyDecision());
     expect(out.folder_id).toBe("receipts");
     expect(out.classified_by).toBe("filter");
@@ -144,7 +143,7 @@ describe("runEngineStage", () => {
   });
 
   it("keeps synthetic tree rule ids out of matched_filter_ids", () => {
-    process.env["RULES_ENGINE_V2"] = "on";
+    vi.stubEnv("RULES_ENGINE_V2", "on");
     const folders = [
       folder({
         filter_tree: {
@@ -160,7 +159,7 @@ describe("runEngineStage", () => {
   });
 
   it("preserves the legacy classifier while the engine defers to AI", () => {
-    process.env["RULES_ENGINE_V2"] = "on";
+    vi.stubEnv("RULES_ENGINE_V2", "on");
     const folders = [folder({ id: "misc", name: "Misc", ai_rule: "anything odd" })];
     const out = runEngineStage(
       parsed(),
@@ -173,7 +172,7 @@ describe("runEngineStage", () => {
   });
 
   it("drops a surface check that belongs to a folder the engine did not pick", () => {
-    process.env["RULES_ENGINE_V2"] = "on";
+    vi.stubEnv("RULES_ENGINE_V2", "on");
     const out = runEngineStage(
       parsed(),
       matchingContext(),
@@ -184,7 +183,7 @@ describe("runEngineStage", () => {
   });
 
   it("falls back to the legacy decision when the engine throws", () => {
-    process.env["RULES_ENGINE_V2"] = "on";
+    vi.stubEnv("RULES_ENGINE_V2", "on");
     const legacy = legacyDecision({ folder_id: "legacy-folder" });
     const broken = context({
       // A Map-shaped field replaced by something that throws on read is

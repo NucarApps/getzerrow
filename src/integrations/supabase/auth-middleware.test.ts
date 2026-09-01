@@ -2,7 +2,7 @@
 // createMiddleware is mocked so `.server(fn)` returns the raw handler — the
 // exported `requireSupabaseAuth` then IS the async ({ next }) function, which
 // we drive directly with a mocked getRequest and a spy Supabase client.
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("@tanstack/react-start", () => ({
   createMiddleware: () => ({ server: (fn: unknown) => fn }),
@@ -19,8 +19,6 @@ const handler = requireSupabaseAuth as unknown as Handler;
 
 const URL_ENV = "https://project.supabase.co";
 const KEY_ENV = "publishable-key";
-const ENV_KEYS = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY"] as const;
-let savedEnv: Record<string, string | undefined>;
 
 function stubRequest(headers: Record<string, string> | null) {
   // A plain header bag (not a real Request): the Fetch spec strips trailing
@@ -40,34 +38,24 @@ function stubClient(claimsResult: { data?: unknown; error?: unknown }) {
 }
 
 beforeEach(() => {
-  savedEnv = {};
-  for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
-  process.env.SUPABASE_URL = URL_ENV;
-  process.env.SUPABASE_PUBLISHABLE_KEY = KEY_ENV;
+  vi.stubEnv("SUPABASE_URL", URL_ENV);
+  vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", KEY_ENV);
   vi.mocked(createClient).mockReset();
   vi.mocked(getRequest).mockReset();
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
-afterEach(() => {
-  for (const k of ENV_KEYS) {
-    if (savedEnv[k] === undefined) delete process.env[k];
-    else process.env[k] = savedEnv[k];
-  }
-  vi.restoreAllMocks();
-});
-
 describe("requireSupabaseAuth", () => {
   it("names every missing Supabase env var in the error", async () => {
-    delete process.env.SUPABASE_URL;
-    delete process.env.SUPABASE_PUBLISHABLE_KEY;
+    vi.stubEnv("SUPABASE_URL", undefined);
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", undefined);
     await expect(handler({ next: vi.fn() })).rejects.toThrow(
       /SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY/,
     );
   });
 
   it("names only the single missing env var", async () => {
-    delete process.env.SUPABASE_PUBLISHABLE_KEY;
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", undefined);
     const err = await handler({ next: vi.fn() }).catch((e: unknown) => e as Error);
     expect((err as Error).message).toContain("SUPABASE_PUBLISHABLE_KEY");
     expect((err as Error).message).not.toContain("SUPABASE_URL,");

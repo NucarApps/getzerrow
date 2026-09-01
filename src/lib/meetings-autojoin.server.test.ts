@@ -5,14 +5,11 @@
 // stubbed — no live HTTP.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
+import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
 
 const fake = makeSupabaseFake();
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => fake.supabaseAdmin.from(table),
-    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
-  },
+  supabaseAdmin: mockSupabaseAdmin(() => fake),
 }));
 vi.mock("./google-oauth.server", () => ({ getAccessToken: vi.fn() }));
 vi.mock("./recall.server", () => ({ createBot: vi.fn(), detectPlatform: vi.fn() }));
@@ -194,7 +191,6 @@ describe("scheduleUpcomingMeetingBots", () => {
 
   beforeEach(() => {
     // The global setup's restoreAllMocks doesn't clear vi.mock-factory fns.
-    vi.clearAllMocks();
     fake.reset();
     fake.seed("gmail_accounts", [ACCOUNT]);
     vi.mocked(getAccessToken).mockResolvedValue("google-token");

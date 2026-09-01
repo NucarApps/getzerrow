@@ -11,7 +11,7 @@
 //     bumps the CardDAV resync nonce — and failures of those side-nudges
 //     are non-fatal by design.
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
+import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
 import { TEST_USER, impersonate } from "@/lib/__fixtures__/server-fn-stub";
 import { expectDeniedCrossUser } from "@/lib/__fixtures__/idor";
 
@@ -23,10 +23,7 @@ vi.mock("@tanstack/react-start", async () => {
 });
 vi.mock("@/integrations/supabase/auth-middleware", () => ({ requireSupabaseAuth: {} }));
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => fake.supabaseAdmin.from(table),
-    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
-  },
+  supabaseAdmin: mockSupabaseAdmin(() => fake),
 }));
 
 const saveContactPhoto = vi.fn(async () => ({ avatarUrl: "/photos/c-1.jpg" }));

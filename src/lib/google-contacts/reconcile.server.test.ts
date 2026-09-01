@@ -14,7 +14,7 @@
 //     People scope → "missing_contacts_scope", anything else truncated.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
+import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
 import type { SyncState } from "./state.server";
 
 const fake = makeSupabaseFake();
@@ -31,10 +31,7 @@ const logErrorMock = vi.fn();
 // CRITICAL: factories must not touch module-level consts at factory time
 // (vi.mock hoisting) — every property access is deferred into method bodies.
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => fake.supabaseAdmin.from(table),
-    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
-  },
+  supabaseAdmin: mockSupabaseAdmin(() => fake),
 }));
 vi.mock("@/lib/google-oauth.server", () => {
   class NeedsReconnectError extends Error {
@@ -137,7 +134,6 @@ function patches(): Array<Record<string, unknown>> {
 
 beforeEach(() => {
   fake.reset();
-  vi.clearAllMocks();
   fake.seed("gmail_accounts", [{ id: ACC, needs_reconnect: false }]);
   fake.seed("google_contact_links", []);
   ensureSyncStateMock.mockResolvedValue(baseState());

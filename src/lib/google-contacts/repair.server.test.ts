@@ -8,7 +8,7 @@
 // on case (emails) or formatting (phones).
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
+import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
 import type { Person } from "./mapper";
 
 const fake = makeSupabaseFake();
@@ -19,10 +19,7 @@ const logErrorMock = vi.fn();
 // CRITICAL: factories must not touch module-level consts at factory time
 // (vi.mock hoisting) — every property access is deferred into method bodies.
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => fake.supabaseAdmin.from(table),
-    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
-  },
+  supabaseAdmin: mockSupabaseAdmin(() => fake),
 }));
 vi.mock("@/lib/google-oauth.server", () => ({
   getAccessToken: async () => "test-token",
@@ -60,7 +57,6 @@ function writesTo(kind: "inserts" | "updates" | "deletes" | "upserts", table: st
 
 beforeEach(() => {
   fake.reset();
-  vi.clearAllMocks();
   fake.seed("google_contact_links", []);
   fake.seed("contact_emails", []);
   fake.seed("contact_phones", []);

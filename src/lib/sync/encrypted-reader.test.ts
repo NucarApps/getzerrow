@@ -10,17 +10,14 @@
 //   * empty inputs short-circuit without a round-trip.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
+import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
 
 const fake = makeSupabaseFake();
 
 // Property accesses are deferred into method bodies so the hoisted factory
 // never touches `fake` before its initializer runs.
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => fake.supabaseAdmin.from(table),
-    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
-  },
+  supabaseAdmin: mockSupabaseAdmin(() => fake),
 }));
 
 import {
@@ -40,12 +37,12 @@ const savedKey = process.env.EMAIL_ENC_KEY;
 
 beforeEach(() => {
   fake.reset();
-  process.env.EMAIL_ENC_KEY = KEY;
+  vi.stubEnv("EMAIL_ENC_KEY", KEY);
 });
 
 afterEach(() => {
-  if (savedKey === undefined) delete process.env.EMAIL_ENC_KEY;
-  else process.env.EMAIL_ENC_KEY = savedKey;
+  if (savedKey === undefined) vi.stubEnv("EMAIL_ENC_KEY", undefined);
+  else vi.stubEnv("EMAIL_ENC_KEY", savedKey);
 });
 
 describe("empty-input short-circuits", () => {
@@ -59,7 +56,7 @@ describe("empty-input short-circuits", () => {
 
 describe("EMAIL_ENC_KEY guard", () => {
   it("rejects before issuing any RPC when the key is unset", async () => {
-    delete process.env.EMAIL_ENC_KEY;
+    vi.stubEnv("EMAIL_ENC_KEY", undefined);
     await expect(getEmailsDecrypted(["e1"])).rejects.toThrow("EMAIL_ENC_KEY not configured");
     await expect(getContactDecrypted("c1")).rejects.toThrow("EMAIL_ENC_KEY not configured");
     await expect(getReplyDraftDecrypted("e1")).rejects.toThrow("EMAIL_ENC_KEY not configured");
