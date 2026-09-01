@@ -665,6 +665,12 @@ export const mergeContactsManual = createServerFn({ method: "POST" })
       throw new Error("Primary cannot also be a loser");
     }
     const allIds = [data.primaryId, ...data.loserIds];
+    // notesSource is decrypted through an id-keyed RPC below; it must be one
+    // of the contacts whose ownership is verified here, or a caller could
+    // read any tenant's encrypted notes by passing a foreign id.
+    if (data.notesSource && !allIds.includes(data.notesSource)) {
+      throw new Error("notesSource must be the primary or one of the losers");
+    }
 
     // Verify ownership of all contacts.
     const { data: ownershipRows, error: ownErr } = await supabase

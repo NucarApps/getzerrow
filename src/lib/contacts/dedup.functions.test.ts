@@ -43,6 +43,13 @@ vi.mock("./auto-company-subgroups.functions", () => ({
 // Logging is a no-op in tests.
 vi.mock("@/lib/log.server", () => ({ logInfo: vi.fn(), logError: vi.fn() }));
 
+// The encrypted reader is an id-keyed SECURITY DEFINER RPC in production;
+// spy on it so tests can assert it is never reached for a foreign id.
+const getContactDecrypted = vi.fn(async (_id: string) => ({ row: null, error: null }));
+vi.mock("@/lib/sync/encrypted-reader", () => ({
+  getContactDecrypted: (id: string) => getContactDecrypted(id),
+}));
+
 import {
   mergeContactDuplicate,
   dismissContactDuplicate,
@@ -262,6 +269,25 @@ describe("mergeContactsManual — guards", () => {
       { id: DUP, user_id: "someone-else", manual_overrides: [] },
     ]);
     await expect(mergeContactsManual({ data: base, ...ctx })).rejects.toThrow("Forbidden");
+  });
+
+  it("rejects a notesSource that is not one of the merged contacts before any decrypt or write", async () => {
+    // Regression: notesSource used to be decrypted via the id-keyed
+    // get_contact_decrypted RPC without being in the ownership check —
+    // a cross-tenant read of another user's encrypted notes.
+    const VICTIM = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    fake.seed("contacts", [
+      { id: PRIMARY, user_id: USER, manual_overrides: [] },
+      { id: DUP, user_id: USER, manual_overrides: [] },
+      { id: VICTIM, user_id: "someone-else", manual_overrides: [] },
+    ]);
+    await expect(
+      mergeContactsManual({ data: { ...base, notesSource: VICTIM }, ...ctx }),
+    ).rejects.toThrow("notesSource must be the primary or one of the losers");
+    expect(getContactDecrypted).not.toHaveBeenCalled();
+    expect(fake.calls.updates).toHaveLength(0);
+    expect(fake.calls.deletes).toHaveLength(0);
+    expect(fake.calls.rpcs).toHaveLength(0);
   });
 });
 

@@ -25,9 +25,10 @@
 //           to Gmail. DB and Gmail label state drift apart.
 //   [BUG-2] createFolderAndAssign (:790) assigns the selected emails with a
 //           hand-rolled patch (folder_id/classified_by/ai_confidence) instead
-//           of performMove: the old folder's Gmail label is never removed,
-//           matched_filter_ids is left stale, and nothing checks the emails
-//           belong to the SAME gmail account as the new folder.
+//           of performMove: the old folder's Gmail label is never removed and
+//           matched_filter_ids is left stale. (The cross-tenant / cross-account
+//           id gap it used to have is FIXED: ids are scoped to the caller's
+//           rows on the target account before any write.)
 //
 // Harness: __fixtures__/server-fn-stub makes each createServerFn export a
 // plain callable with context.userId = TEST_USER (overridable per call for
@@ -631,6 +632,10 @@ describe("reclassifyEmails (audit path 7 — decision-derived rewrite)", () => {
 describe("createFolderAndAssign (audit path 7 — assembles its own patch)", () => {
   it("creates the folder (+ optional rule), assigns the selected emails with a direct patch, and invalidates the account context", async () => {
     fake.seed("gmail_accounts", [{ id: ACC, user_id: TEST_USER }]);
+    fake.seed("emails", [
+      { id: EMAIL_1, user_id: TEST_USER, gmail_account_id: ACC },
+      { id: EMAIL_2, user_id: TEST_USER, gmail_account_id: ACC },
+    ]);
     nextFolderInsertId = NEW_FOLDER;
 
     const res = await createFolderAndAssign({
@@ -669,9 +674,7 @@ describe("createFolderAndAssign (audit path 7 — assembles its own patch)", () 
 
     // [BUG-2] pinned as-is: the assignment is a hand-rolled patch, NOT
     // performMove — Gmail labels are untouched (the old folder's label
-    // stays on the message), matched_filter_ids is left stale, and the
-    // update is scoped only to user_id + ids: nothing checks the emails
-    // belong to the same gmail account as the new folder.
+    // stays on the message) and matched_filter_ids is left stale.
     const updates = emailUpdates();
     expect(updates).toHaveLength(1);
     expect(updates[0]!.payload).toEqual({
@@ -687,6 +690,56 @@ describe("createFolderAndAssign (audit path 7 — assembles its own patch)", () 
     expect(modifyMessage).not.toHaveBeenCalled();
 
     expect(invalidateAccountContext).toHaveBeenCalledWith(ACC);
+  });
+
+  it("never writes to email ids the caller does not own or that belong to another account", async () => {
+    // Regression: the encrypted writer is a SECURITY DEFINER RPC keyed by
+    // id alone, and this handler used to call it for every client-supplied
+    // id before checking ownership — a cross-tenant write.
+    const VICTIM_EMAIL = "33333333-3333-4333-8333-333333333333";
+    const OTHER_ACC_EMAIL = "44444444-4444-4444-8444-444444444444";
+    const OTHER_ACC = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    fake.seed("gmail_accounts", [{ id: ACC, user_id: TEST_USER }]);
+    fake.seed("emails", [
+      { id: EMAIL_1, user_id: TEST_USER, gmail_account_id: ACC },
+      { id: VICTIM_EMAIL, user_id: "victim", gmail_account_id: ACC },
+      { id: OTHER_ACC_EMAIL, user_id: TEST_USER, gmail_account_id: OTHER_ACC },
+    ]);
+    nextFolderInsertId = NEW_FOLDER;
+
+    await createFolderAndAssign({
+      data: {
+        account_id: ACC,
+        name: "Vendors",
+        color: "#ff0000",
+        ai_rule: "",
+        email_ids: [EMAIL_1, VICTIM_EMAIL, OTHER_ACC_EMAIL],
+      },
+    });
+
+    expect(updateEmailEncrypted).toHaveBeenCalledTimes(1);
+    expect(updateEmailEncrypted).toHaveBeenCalledWith({
+      email_id: EMAIL_1,
+      classification_reason: 'Moved into new folder "Vendors"',
+    });
+    const updates = emailUpdates();
+    expect(updates).toHaveLength(1);
+    expect(updates[0]!.filters).toEqual([
+      { op: "eq", col: "user_id", value: TEST_USER },
+      { op: "in", col: "id", value: [EMAIL_1] },
+    ]);
+  });
+
+  it("skips the email writes entirely when none of the ids are the caller's", async () => {
+    fake.seed("gmail_accounts", [{ id: ACC, user_id: TEST_USER }]);
+    fake.seed("emails", [{ id: EMAIL_1, user_id: "victim", gmail_account_id: ACC }]);
+    nextFolderInsertId = NEW_FOLDER;
+    const res = await createFolderAndAssign({
+      data: { account_id: ACC, name: "V", color: "#ff0000", ai_rule: "", email_ids: [EMAIL_1] },
+    });
+    expect(res).toEqual({ folder_id: NEW_FOLDER });
+    expect(updateEmailEncrypted).not.toHaveBeenCalled();
+    expect(emailUpdates()).toHaveLength(0);
   });
 
   it("denies a caller who does not own the account before creating anything", async () => {

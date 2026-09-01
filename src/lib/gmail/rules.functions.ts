@@ -779,23 +779,37 @@ export const createFolderAndAssign = createServerFn({ method: "POST" })
     }
 
     if (data.email_ids.length > 0) {
-      await Promise.all(
-        data.email_ids.map((id) =>
-          updateEmailEncrypted({
-            email_id: id,
-            classification_reason: `Moved into new folder "${data.name}"`,
-          }),
-        ),
-      );
-      await supabaseAdmin
+      // Scope the client-supplied ids to rows this user owns on THIS
+      // account before any write. `update_email_encrypted` is a
+      // SECURITY DEFINER RPC keyed by id alone, so writing to an
+      // unverified id would let a caller overwrite another tenant's row.
+      const { data: ownedRows, error: ownedErr } = await supabaseAdmin
         .from("emails")
-        .update({
-          folder_id: folder.id,
-          classified_by: "manual_move",
-          ai_confidence: 1,
-        })
+        .select("id")
         .eq("user_id", context.userId)
+        .eq("gmail_account_id", data.account_id)
         .in("id", data.email_ids);
+      if (ownedErr) throw new Error(ownedErr.message);
+      const ownedIds = (ownedRows ?? []).map((r) => r.id);
+      if (ownedIds.length > 0) {
+        await Promise.all(
+          ownedIds.map((id) =>
+            updateEmailEncrypted({
+              email_id: id,
+              classification_reason: `Moved into new folder "${data.name}"`,
+            }),
+          ),
+        );
+        await supabaseAdmin
+          .from("emails")
+          .update({
+            folder_id: folder.id,
+            classified_by: "manual_move",
+            ai_confidence: 1,
+          })
+          .eq("user_id", context.userId)
+          .in("id", ownedIds);
+      }
     }
 
     invalidateAccountContext(data.account_id);
