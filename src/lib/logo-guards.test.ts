@@ -115,9 +115,19 @@ describe("logo-guards: IP classifiers", () => {
       "fe80::1",
       "ff02::1",
       "::ffff:127.0.0.1",
+      // Hex-form IPv4-mapped addresses (the dotted form above was the only
+      // one recognised, so ::ffff:7f00:1 bypassed the loopback check).
+      "::ffff:7f00:1",
+      "::ffff:a00:1",
+      "::ffff:c0a8:101",
+      "[::ffff:ac10:1]",
     ]) {
-      expect(ipv6IsPrivate(ip)).toBe(true);
+      expect(ipv6IsPrivate(ip), ip).toBe(true);
     }
+  });
+
+  it("keeps a hex-mapped PUBLIC IPv4 public", () => {
+    expect(ipv6IsPrivate("::ffff:808:808")).toBe(false); // 8.8.8.8
   });
 
   it("keeps public IPv6 public", () => {

@@ -5,6 +5,7 @@
 //     filter, and email, then applies the subset the user approved.
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { escapeLike } from "./escape-like";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { performMove } from "./move-email.server";
@@ -306,7 +307,9 @@ export const applyAssistantChanges = createServerFn({ method: "POST" })
       if (!value) return [];
 
       if (action.field === "from" || action.field === "domain") {
-        const v = value.toLowerCase().replace(/^@/, "");
+        // The value is user/model text going into an ILIKE pattern: escape
+        // % and _ so "50%_off" cannot become a wildcard match.
+        const v = escapeLike(value.toLowerCase().replace(/^@/, ""));
         let pattern: string;
         if (action.field === "domain") {
           // Domain match keys off the address host regardless of op.

@@ -232,6 +232,24 @@ export async function trashMessage(accountId: string, id: string) {
   return gmailFetch(accountId, `/users/me/messages/${id}/trash`, { method: "POST" });
 }
 
+/** Collapse CR/LF (and other control chars) in a header value so a
+ * crafted subject or address cannot inject additional RFC 822 headers. */
+export function headerValue(v: string): string {
+  let out = "";
+  let pendingSpace = false;
+  for (const ch of v) {
+    const code = ch.charCodeAt(0);
+    if (code < 0x20 || code === 0x7f) {
+      pendingSpace = true;
+      continue;
+    }
+    if (pendingSpace && out.length > 0) out += " ";
+    pendingSpace = false;
+    out += ch;
+  }
+  return out.trim();
+}
+
 export async function sendMessage(
   accountId: string,
   to: string,
@@ -241,10 +259,10 @@ export async function sendMessage(
   inReplyTo?: string,
 ) {
   const headers = [
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    inReplyTo ? `In-Reply-To: ${inReplyTo}` : "",
-    inReplyTo ? `References: ${inReplyTo}` : "",
+    `To: ${headerValue(to)}`,
+    `Subject: ${headerValue(subject)}`,
+    inReplyTo ? `In-Reply-To: ${headerValue(inReplyTo)}` : "",
+    inReplyTo ? `References: ${headerValue(inReplyTo)}` : "",
     'Content-Type: text/plain; charset="UTF-8"',
   ]
     .filter(Boolean)
@@ -269,10 +287,10 @@ export async function createDraft(
   inReplyTo?: string,
 ) {
   const headers = [
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    inReplyTo ? `In-Reply-To: ${inReplyTo}` : "",
-    inReplyTo ? `References: ${inReplyTo}` : "",
+    `To: ${headerValue(to)}`,
+    `Subject: ${headerValue(subject)}`,
+    inReplyTo ? `In-Reply-To: ${headerValue(inReplyTo)}` : "",
+    inReplyTo ? `References: ${headerValue(inReplyTo)}` : "",
     'Content-Type: text/plain; charset="UTF-8"',
   ]
     .filter(Boolean)

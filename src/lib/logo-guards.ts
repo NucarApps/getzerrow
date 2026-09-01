@@ -55,6 +55,13 @@ export function ipv6IsPrivate(ip: string): boolean {
   if (s.startsWith("ff")) return true;
   const mappedV4 = s.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
   if (mappedV4) return ipv4IsPrivate(mappedV4);
+  // Hex-form mapped v4 (`::ffff:7f00:1` = 127.0.0.1) — same range checks.
+  const mappedHex = s.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (mappedHex) {
+    const hi = parseInt(mappedHex[1]!, 16);
+    const lo = parseInt(mappedHex[2]!, 16);
+    return ipv4IsPrivate(`${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`);
+  }
   return false;
 }
 

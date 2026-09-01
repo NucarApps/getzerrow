@@ -280,6 +280,29 @@ describe("batchModifyMessages", () => {
 });
 
 describe("sendMessage", () => {
+  it("collapses CR/LF in To/Subject so a crafted value cannot inject headers", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: "sent-1" }));
+    await sendMessage(
+      "acc-1",
+      "to@x.com\r\nBcc: victim@x.com",
+      "Hi\r\nX-Injected: 1\nSubject: fake",
+      "body text",
+    );
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string) as {
+      raw: string;
+    };
+    const decoded = Buffer.from(body.raw, "base64url").toString("utf-8");
+    const headerBlock = decoded.split("\r\n\r\n")[0]!;
+    // The injected text survives only as part of the original header's
+    // value — never as a header line of its own.
+    const lines = headerBlock.split("\r\n");
+    expect(lines).toEqual([
+      "To: to@x.com Bcc: victim@x.com",
+      "Subject: Hi X-Injected: 1 Subject: fake",
+      'Content-Type: text/plain; charset="UTF-8"',
+    ]);
+  });
+
   it("encodes the RFC 822 payload as unpadded base64url", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: "sent-1" }));
     await sendMessage("acc-1", "to@x.com", "Hi", "body text");

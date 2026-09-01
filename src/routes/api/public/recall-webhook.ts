@@ -11,12 +11,25 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { syncMeetingFromRecall, mapStatus } from "@/lib/meetings.server";
 import { logError, logInfo, newRunId } from "@/lib/log.server";
 
+/** Svix's documented replay window: reject timestamps further than this
+ * from now, in either direction. */
+export const SVIX_TOLERANCE_SECONDS = 5 * 60;
+
 /** Verify a Svix-signed webhook. Secret format: `whsec_<base64>`. */
-function verifySvix(secret: string, headers: Headers, body: string): boolean {
+export function verifySvix(
+  secret: string,
+  headers: Headers,
+  body: string,
+  now: number = Date.now(),
+): boolean {
   const id = headers.get("svix-id");
   const timestamp = headers.get("svix-timestamp");
   const signature = headers.get("svix-signature");
   if (!id || !timestamp || !signature) return false;
+  // Without this a captured webhook replays forever: the signature covers
+  // the timestamp, so a stale one is the only thing that ages it out.
+  const ts = Number(timestamp);
+  if (!Number.isFinite(ts) || Math.abs(now / 1000 - ts) > SVIX_TOLERANCE_SECONDS) return false;
 
   const raw = secret.startsWith("whsec_") ? secret.slice(6) : secret;
   let key: Buffer;
