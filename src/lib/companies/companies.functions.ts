@@ -296,6 +296,17 @@ export const updateCompany = createServerFn({ method: "POST" })
       if (!key) throw new Error("Invalid company name");
       update.name_key = key;
     }
+    // The linked group is a client-supplied id; it must be this user's.
+    if (patch.linked_group_id) {
+      const { data: group, error: gErr } = await supabase
+        .from("contact_groups")
+        .select("id")
+        .eq("id", patch.linked_group_id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (gErr) throw new Error(gErr.message);
+      if (!group) throw new Error("Group not found");
+    }
     const { error } = await supabase
       .from("companies")
       .update(update as never)
@@ -338,6 +349,18 @@ export const addCompanyDomain = createServerFn({ method: "POST" })
     // emailDomain no longer enforces a dot (that moved to isRoutableDomain), so
     // validate explicitly — this value becomes the company_domains key.
     if (!domain || !isRoutableDomain(domain)) throw new Error("Invalid domain");
+    // The insert below keys company_domains by the client-supplied company
+    // id; make sure it is this user's company before attaching anything.
+    {
+      const { data: company, error: cErr } = await supabase
+        .from("companies")
+        .select("id")
+        .eq("id", data.id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (cErr) throw new Error(cErr.message);
+      if (!company) throw new Error("Company not found");
+    }
 
     // Two companies can't own the same domain. Instead of the previous
     // silent upsert (which would reassign a domain out from under another

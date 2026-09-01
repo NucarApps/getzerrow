@@ -392,9 +392,11 @@ export const updateGroupRule = createServerFn({ method: "POST" })
       .from("contact_group_rules")
       .update(patch)
       .eq("id", data.id)
+      .eq("user_id", userId)
       .select("group_id,rule_type,value,auto_apply")
       .maybeSingle();
     if (error) throw new Error(error.message);
+    if (!row) throw new Error("Rule not found");
     // Re-sync: an autoApply flip or value change adds/removes materialized rows.
     if (row) {
       await syncCompanyRuleMemberships(supabase, userId, {
@@ -414,8 +416,14 @@ export const deleteGroupRule = createServerFn({ method: "POST" })
       .from("contact_group_rules")
       .select("group_id")
       .eq("id", data.id)
+      .eq("user_id", userId)
       .maybeSingle();
-    const { error } = await supabase.from("contact_group_rules").delete().eq("id", data.id);
+    if (!row) throw new Error("Rule not found");
+    const { error } = await supabase
+      .from("contact_group_rules")
+      .delete()
+      .eq("id", data.id)
+      .eq("user_id", userId);
     if (error) throw new Error(error.message);
     // Cleanup: remove now-unjustified materialized rows. Scope to the
     // group's current rule-row holders — cheaper than a full scan.

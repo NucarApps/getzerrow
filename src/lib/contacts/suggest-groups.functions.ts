@@ -543,6 +543,20 @@ export async function applySuggestionImpl(
   if (!row) throw new Error("Suggestion not found");
   if (row.status !== "pending") throw new Error("Already handled");
 
+  // A client-chosen target group must belong to this user: the members
+  // upsert below is keyed by group_id, and `supabase` may be the admin
+  // client (background gate), so RLS is not a given.
+  if (args.target_group_id) {
+    const { data: target, error: tErr } = await supabase
+      .from("contact_groups")
+      .select("id")
+      .eq("id", args.target_group_id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (tErr) throw new Error(tErr.message);
+    if (!target) throw new Error("Target group not found");
+  }
+
   let groupId: string | null = args.target_group_id ?? row.existing_group_id;
 
   if (!groupId) {
