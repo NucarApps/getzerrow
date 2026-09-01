@@ -28,6 +28,34 @@ export type ClassifyFolder = {
   examples?: Array<{ from_addr: string | null; subject: string | null }>;
 };
 
+/**
+ * Render the "Folders:" block of a classifier prompt. `learned_profile` and
+ * the example subjects/senders are derived from email headers (folder
+ * learning), so they are attacker-influenced just like the email under
+ * test — but they sit OUTSIDE the <untrusted_email> boundary. Run them
+ * through the same sanitizer so a crafted subject cannot close the
+ * boundary or inject a role line via a folder's examples.
+ */
+export function renderFolderList(folders: ClassifyFolder[], maxExamples: number): string {
+  const clean = (v: string | null | undefined, max: number) =>
+    v ? sanitizeUntrustedText(v, max).text : "";
+  return folders
+    .map((f, i) => {
+      const parts = [`${i + 1}. "${f.name}"`];
+      if (f.ai_rule) parts.push(`Rule: ${f.ai_rule}`);
+      if (f.learned_profile) parts.push(`Learned profile: ${clean(f.learned_profile, 600)}`);
+      if (maxExamples > 0 && f.examples && f.examples.length) {
+        const ex = f.examples
+          .slice(0, maxExamples)
+          .map((e) => `  - "${clean(e.subject, 200)}" from ${clean(e.from_addr, 120)}`)
+          .join("\n");
+        parts.push(`Recent examples:\n${ex}`);
+      }
+      return parts.join("\n   ");
+    })
+    .join("\n\n");
+}
+
 export async function classifyEmail(
   email: {
     from_addr: string;
@@ -44,21 +72,7 @@ export async function classifyEmail(
     return { folder_id: null as string | null, confidence: 0, summary: "", reason: "" };
 
   function buildFolderList(includeExamples: boolean) {
-    return folders
-      .map((f, i) => {
-        const parts = [`${i + 1}. "${f.name}"`];
-        if (f.ai_rule) parts.push(`Rule: ${f.ai_rule}`);
-        if (f.learned_profile) parts.push(`Learned profile: ${f.learned_profile}`);
-        if (includeExamples && f.examples && f.examples.length) {
-          const ex = f.examples
-            .slice(0, 5)
-            .map((e) => `  - "${e.subject ?? ""}" from ${e.from_addr ?? ""}`)
-            .join("\n");
-          parts.push(`Recent examples:\n${ex}`);
-        }
-        return parts.join("\n   ");
-      })
-      .join("\n\n");
+    return renderFolderList(folders, includeExamples ? 5 : 0);
   }
 
   const folderNames = folders.map((f) => f.name);
@@ -364,21 +378,7 @@ export async function classifyEmailsBatch(
     return emails.map(() => ({ folder_id: null, confidence: 0, summary: "", reason: "" }));
   }
 
-  const folderList = folders
-    .map((f, i) => {
-      const parts = [`${i + 1}. "${f.name}"`];
-      if (f.ai_rule) parts.push(`Rule: ${f.ai_rule}`);
-      if (f.learned_profile) parts.push(`Learned profile: ${f.learned_profile}`);
-      if (f.examples?.length) {
-        const ex = f.examples
-          .slice(0, 3)
-          .map((e) => `  - "${e.subject ?? ""}" from ${e.from_addr ?? ""}`)
-          .join("\n");
-        parts.push(`Recent examples:\n${ex}`);
-      }
-      return parts.join("\n   ");
-    })
-    .join("\n\n");
+  const folderList = renderFolderList(folders, 3);
 
   // Per-email sanitization; each email's flags cap its own result below.
   const guardedEmails = emails.map((e) => sanitizeEmailForPrompt(e));
