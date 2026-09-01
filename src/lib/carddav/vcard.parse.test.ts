@@ -13,7 +13,8 @@ const IOS_VCARD =
   "EMAIL;TYPE=INTERNET;TYPE=WORK;TYPE=pref:jane@acme.com\r\n" +
   "TEL;TYPE=CELL;TYPE=VOICE;TYPE=pref:+1 415 555 0100\r\n" +
   "TEL;TYPE=WORK;TYPE=VOICE:+1 415 555 0200\r\n" +
-  "ADR;TYPE=WORK:;;123 Main St, Suite 4;San Francisco;CA;94105;USA\r\n" +
+  // Apple Contacts separates street lines with an escaped newline.
+  "ADR;TYPE=WORK:;;123 Main St\\nSuite 4;San Francisco;CA;94105;USA\r\n" +
   "URL;TYPE=LinkedIn:https://linkedin.com/in/jane\r\n" +
   "NOTE:Loves coffee\\, tea\\; and cake\r\n" +
   "END:VCARD\r\n";
@@ -47,6 +48,33 @@ describe("parseVCard", () => {
     expect(p.city).toBe("San Francisco");
     expect(p.region).toBe("CA");
     expect(p.postal_code).toBe("94105");
+    expect(p.country).toBe("USA");
+  });
+
+  it("keeps a comma inside a street line (commas are not line separators)", () => {
+    const card =
+      "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:X\r\n" +
+      "ADR;TYPE=WORK:;;Suite 4\\, Building 2;Austin;TX;78701;USA\r\nEND:VCARD\r\n";
+    const p = parseVCard(card)!;
+    expect(p.address_line1).toBe("Suite 4, Building 2");
+    expect(p.address_line2).toBeNull();
+    expect(p.city).toBe("Austin");
+  });
+
+  it("splits N / ORG / ADR on unescaped semicolons only", () => {
+    // Regression: `split(";")` ran before unescaping, so an escaped `\;`
+    // inside a component shifted every following field.
+    const card =
+      "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Ann Lee\r\n" +
+      "N:Lee\\; Jr.;Ann;;;\r\n" +
+      "ORG:Acme\\; Inc;Sales\r\n" +
+      "ADR;TYPE=WORK:;;Suite 4\\; Bldg 2;Austin;TX;78701;USA\r\nEND:VCARD\r\n";
+    const p = parseVCard(card)!;
+    expect(p.company).toBe("Acme; Inc");
+    expect(p.address_line1).toBe("Suite 4; Bldg 2");
+    expect(p.city).toBe("Austin");
+    expect(p.region).toBe("TX");
+    expect(p.postal_code).toBe("78701");
     expect(p.country).toBe("USA");
   });
 

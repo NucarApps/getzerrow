@@ -259,7 +259,7 @@ export function contactToVCard(
     contact.country;
   if (hasAddr) {
     // ADR: pobox;ext;street;locality;region;postal;country
-    const street = [contact.address_line1, contact.address_line2].filter(Boolean).join(", ");
+    const street = [contact.address_line1, contact.address_line2].filter(Boolean).join("\n");
     const adr = [
       "", // pobox
       "", // ext
@@ -397,6 +397,29 @@ export type ParsedVCard = {
   presentFields: Set<PresentField>;
 };
 
+/** Split a structured value (N / ORG / ADR) on UNESCAPED semicolons. The
+ * serializer emits `\;` for a literal semicolon inside a component, so a
+ * naive `split(";")` shifted every following field ("Suite 4; Bldg 2" moved
+ * the city into the region slot on the next iOS edit). */
+export function splitStructured(raw: string): string[] {
+  const parts: string[] = [];
+  let buf = "";
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i]!;
+    if (c === "\\" && i + 1 < raw.length) {
+      buf += c + raw[i + 1];
+      i++;
+    } else if (c === ";") {
+      parts.push(buf);
+      buf = "";
+    } else {
+      buf += c;
+    }
+  }
+  parts.push(buf);
+  return parts;
+}
+
 function unescapeValue(v: string): string {
   const out: string[] = [];
   for (let i = 0; i < v.length; i++) {
@@ -518,14 +541,14 @@ export function parseVCard(text: string): ParsedVCard | null {
         break;
       }
       case "N": {
-        const segs = p.value.split(";").map(unescapeValue);
+        const segs = splitStructured(p.value).map(unescapeValue);
         nFamily = segs[0]?.trim() || null;
         nGiven = segs[1]?.trim() || null;
         if (nFamily || nGiven) out.presentFields.add("FN");
         break;
       }
       case "ORG": {
-        const c = unescapeValue(p.value.split(";")[0] ?? "").trim();
+        const c = unescapeValue(splitStructured(p.value)[0] ?? "").trim();
         if (c) {
           out.company = c;
           out.presentFields.add("ORG");
@@ -572,11 +595,14 @@ export function parseVCard(text: string): ParsedVCard | null {
         break;
       }
       case "ADR": {
-        const segs = p.value.split(";").map(unescapeValue);
+        const segs = splitStructured(p.value).map(unescapeValue);
+        // Street is multi-line (Apple Contacts and the serializer below use
+        // a newline between line 1 and line 2). Splitting on commas here
+        // used to migrate "Suite 4, Building 2" into line 2 on every edit.
         const street = (segs[2] ?? "").trim();
-        const streetParts = street.split(/,\s*/);
+        const streetParts = street.split(/\r?\n/).map((x) => x.trim());
         const line1 = streetParts[0] || null;
-        const line2 = streetParts.slice(1).join(", ") || null;
+        const line2 = streetParts.slice(1).filter(Boolean).join("\n") || null;
         const city = (segs[3] ?? "").trim() || null;
         const region = (segs[4] ?? "").trim() || null;
         const postal = (segs[5] ?? "").trim() || null;
