@@ -75,7 +75,7 @@ const baseMeeting = {
   id: "m1",
   user_id: "u1",
   recall_bot_id: "bot-1",
-  status: "joining",
+  status: "joining" as const,
   title: "Weekly sync",
 };
 

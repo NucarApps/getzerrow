@@ -2,56 +2,225 @@
 // the ad-hoc builders in sync/history-concurrency.test.ts and
 // sync/batch-ai-idempotency.test.ts so new tests stop re-implementing it.
 //
-// Reads (`select`) resolve from seeded per-table rows with real filtering for
-// eq/neq/gt/gte/lt/lte/in/is plus order/limit; every other modifier is a
-// recorded pass-through. Writes (`insert`/`update`/`upsert`/`delete`) do NOT
-// mutate the seeded rows — they are recorded into `calls` and resolve
-// `{ error: null }` unless a per-table handler says otherwise. RPCs dispatch
-// to handlers registered via `onRpc` (or the `rpc` init map) and are always
-// recorded in order.
+// Reads (`select`) resolve from seeded per-table rows with real filtering
+// for eq/neq/gt/gte/lt/lte/in/is/not/like/ilike/contains/or/match plus
+// order/limit/range. Unimplemented modifiers are recorded pass-throughs
+// unless the fake is constructed with `strict: true`, in which case they
+// throw so a gap can never silently return every row.
 //
-// Lives in __fixtures__ so it is excluded from the `src/**/*.test.ts` glob
-// and never ships: only test files import it, inside vi.mock factories:
+// Writes (`insert`/`update`/`upsert`/`delete`) are recorded into `calls`
+// and resolve `{ error: null }` unless a per-table handler says otherwise.
+// By default they do NOT mutate the seeded rows; pass `applyWrites: true`
+// to have them applied (insert appends, update patches matching rows,
+// delete removes them, upsert merges on the `onConflict` columns or `id`),
+// which makes read-after-write inside one server fn observable.
+//
+// RPCs dispatch to handlers registered via `onRpc` (or the `rpc` init map)
+// and are always recorded in order. `auth.admin.{listUsers,getUserById,
+// deleteUser}` dispatch to `onAuth` handlers and are recorded in
+// `calls.auth`.
+//
+// Table names given to `seed` / `on*` are typed against the generated
+// `Database` type so a typo fails typecheck instead of seeding a table
+// nothing reads. `from(table)` itself stays `string` because production
+// code is what calls it.
+//
+// Lives in __fixtures__ so it is excluded from the coverage/test globs and
+// never ships. Consume it from a test like this — the deferred wrapper is
+// REQUIRED because `vi.mock` factories are hoisted above `const fake`:
 //
 //   const fake = makeSupabaseFake();
 //   vi.mock("@/integrations/supabase/client.server", () => ({
-//     supabaseAdmin: fake.supabaseAdmin,
+//     supabaseAdmin: mockSupabaseAdmin(() => fake),
 //   }));
+//
+// (`mockSupabaseAdmin` takes a thunk for the same hoisting reason; it
+// forwards `from`/`rpc`/`auth`/`storage` lazily on every call.)
+
+import type { Database } from "@/integrations/supabase/types";
+
+type PublicTables = Database["public"]["Tables"];
+export type TableName = keyof PublicTables;
+export type RowOf<T extends TableName> = PublicTables[T]["Row"];
+/** A seeded row: any subset of the real columns, each also accepting
+ * `null` (tests routinely seed null for NOT NULL columns they don't care
+ * about). Unknown keys are rejected by excess-property checking, which is
+ * the point: a typo can no longer seed a column nothing reads. */
+export type SeedRow<T extends TableName> = { [K in keyof RowOf<T>]?: RowOf<T>[K] | null };
+export type RpcName = keyof Database["public"]["Functions"];
 
 export type FakeRow = Record<string, unknown>;
 
-export type FakeError = { message: string; code?: string };
+export type FakeError = { message: string; code?: string; details?: string };
 
 export type RpcResult = { data?: unknown; error?: FakeError | null };
 
 export type RpcHandler = (args: Record<string, unknown>) => RpcResult | unknown;
 
-/** May return an error to fail the write, or throw to simulate a network throw. */
-export type WriteHandler = (
-  payload: unknown,
-  filters: Array<{ op: string; col?: string; value?: unknown }>,
-) => FakeError | null | undefined | void;
+export type Filter = { op: string; col?: string; value?: unknown; extra?: unknown };
+
+/** Returned by a write handler. `FakeError` (has `message`) fails the
+ * write; `{ data }` overrides the rows a trailing `.select()` resolves
+ * (e.g. to inject a DB-generated id); nullish keeps the default. Throw to
+ * simulate a network-level rejection. */
+export type WriteHandlerResult = FakeError | { data: unknown } | null | undefined | void;
+export type WriteHandler = (payload: unknown, filters: Filter[]) => WriteHandlerResult;
+
+/** Returned by a select handler: an error fails the read, `{ data }`
+ * overrides the resolved rows, nullish keeps the seeded result. */
+export type SelectHandlerResult = FakeError | { data: FakeRow[] } | null | undefined | void;
+export type SelectHandler = (filters: Filter[], columns: string | undefined) => SelectHandlerResult;
+
+export type AuthHandler = (args: unknown) => { data?: unknown; error?: FakeError | null } | unknown;
 
 export type RecordedSelect = {
   table: string;
   columns: string | undefined;
-  filters: Array<{ op: string; col?: string; value?: unknown }>;
+  filters: Filter[];
 };
 export type RecordedWrite = {
   table: string;
   payload: unknown;
   options?: unknown;
-  filters: Array<{ op: string; col?: string; value?: unknown }>;
+  filters: Filter[];
 };
 export type RecordedRpc = { fn: string; args: Record<string, unknown> };
+export type RecordedAuth = { method: string; args: unknown };
 
-export function makeSupabaseFake(init?: {
-  tables?: Record<string, FakeRow[]>;
-  rpc?: Record<string, RpcHandler>;
-}) {
+/** The filter surface shared by read and write builders. */
+export type FilterOps<B> = {
+  eq(col: string, value: unknown): B;
+  neq(col: string, value: unknown): B;
+  gt(col: string, value: unknown): B;
+  gte(col: string, value: unknown): B;
+  lt(col: string, value: unknown): B;
+  lte(col: string, value: unknown): B;
+  in(col: string, value: unknown): B;
+  is(col: string, value: unknown): B;
+  like(col: string, value: unknown): B;
+  ilike(col: string, value: unknown): B;
+  contains(col: string, value: unknown): B;
+  match(query: Record<string, unknown>): B;
+  not(col: string, op: string, value: unknown): B;
+  or(expr: string): B;
+  /** Generic `.filter(col, op, value)`; maps to the same ops. */
+  filter(col: string, op: string, value: unknown): B;
+};
+
+export type SingleResult = { data: FakeRow | null; error: FakeError | null };
+export type ManyResult = { data: FakeRow[] | null; error: FakeError | null; count: number | null };
+
+export interface SelectBuilder extends FilterOps<SelectBuilder> {
+  order(col: string, o?: { ascending?: boolean }): SelectBuilder;
+  limit(n: number): SelectBuilder;
+  range(from: number, to: number): SelectBuilder;
+  single(): Promise<SingleResult>;
+  maybeSingle(): Promise<SingleResult>;
+  then<T>(resolve: (v: ManyResult) => T, reject?: (e: unknown) => T): Promise<T>;
+}
+
+export type WriteSelectBuilder = {
+  single(): Promise<SingleResult>;
+  maybeSingle(): Promise<SingleResult>;
+  then<T>(resolve: (v: ManyResult) => T, reject?: (e: unknown) => T): Promise<T>;
+};
+
+export type WriteResult = { data: null; error: FakeError | null; count: number | null };
+
+export interface WriteBuilder extends FilterOps<WriteBuilder> {
+  select(columns?: string): WriteSelectBuilder;
+  then<T>(resolve: (v: WriteResult) => T, reject?: (e: unknown) => T): Promise<T>;
+}
+
+export type SupabaseFakeInit = {
+  tables?: Partial<{ [T in TableName]: SeedRow<T>[] }>;
+  rpc?: Partial<Record<RpcName, RpcHandler>>;
+  /** Apply writes to the seeded rows (default false: record only). */
+  applyWrites?: boolean;
+  /** Throw on any filter/modifier the fake does not implement (default:
+   * record it as a pass-through). */
+  strict?: boolean;
+};
+
+/** PostgREST `.single()` error code for "zero rows". */
+export const PGRST_NO_ROWS = "PGRST116";
+
+function likeToRegExp(pattern: string, caseInsensitive: boolean): RegExp {
+  // SQL LIKE: `%` = any run, `_` = one char; everything else literal.
+  const src = pattern
+    .split("")
+    .map((ch) => (ch === "%" ? ".*" : ch === "_" ? "." : ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
+    .join("");
+  return new RegExp(`^${src}$`, caseInsensitive ? "is" : "s");
+}
+
+/** Parse a PostgREST `.or("a.eq.1,b.is.null,and(c.gt.2,d.lt.5)")` string
+ * into a filter tree. Values are kept as strings (PostgREST semantics) and
+ * compared loosely against row values. */
+type OrNode = { kind: "and" | "or"; parts: Array<OrNode | Filter> };
+function parseLogic(expr: string, kind: "and" | "or"): OrNode {
+  const parts: Array<OrNode | Filter> = [];
+  let depth = 0;
+  let cur = "";
+  const flush = () => {
+    const s = cur.trim();
+    cur = "";
+    if (!s) return;
+    const nested = /^(and|or)\((.*)\)$/s.exec(s);
+    if (nested) {
+      parts.push(parseLogic(nested[2]!, nested[1] as "and" | "or"));
+      return;
+    }
+    const m = /^([^.]+)\.(not\.)?([a-z]+)\.(.*)$/s.exec(s);
+    if (!m) throw new Error(`supabase-fake: cannot parse or() term "${s}"`);
+    const [, col, negate, op, raw] = m;
+    let value: unknown = raw;
+    if (op === "in") {
+      value = raw!
+        .replace(/^\(|\)$/g, "")
+        .split(",")
+        .map((v) => v.trim().replace(/^"|"$/g, ""));
+    } else if (op === "is") {
+      value = raw === "null" ? null : raw === "true" ? true : raw === "false" ? false : raw;
+    }
+    parts.push({ op: negate ? `not.${op}` : op!, col: col!, value });
+  };
+  for (const ch of expr) {
+    if (ch === "(") depth++;
+    if (ch === ")") depth--;
+    if (ch === "," && depth === 0) {
+      flush();
+      continue;
+    }
+    cur += ch;
+  }
+  flush();
+  return { kind, parts };
+}
+
+function looseEq(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || a === undefined || b === null || b === undefined) return false;
+  return String(a) === String(b);
+}
+
+function cmp(a: unknown, b: unknown): number {
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  const na = Number(a);
+  const nb = Number(b);
+  if (typeof a === "number" && !Number.isNaN(nb)) return a - nb;
+  if (typeof b === "number" && !Number.isNaN(na)) return na - b;
+  return String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0;
+}
+
+export function makeSupabaseFake(init?: SupabaseFakeInit) {
   const tables = new Map<string, FakeRow[]>();
   const rpcHandlers = new Map<string, RpcHandler>();
   const writeHandlers = new Map<string, WriteHandler>(); // key: `${kind}:${table}`
+  const selectHandlers = new Map<string, SelectHandler>();
+  const authHandlers = new Map<string, AuthHandler>();
+  const applyWrites = init?.applyWrites === true;
+  const strict = init?.strict === true;
 
   const calls = {
     selects: [] as RecordedSelect[],
@@ -60,152 +229,240 @@ export function makeSupabaseFake(init?: {
     upserts: [] as RecordedWrite[],
     deletes: [] as RecordedWrite[],
     rpcs: [] as RecordedRpc[],
+    auth: [] as RecordedAuth[],
   };
 
-  function seed(table: string, rows: FakeRow[]) {
+  function seed<T extends TableName>(table: T, rows: SeedRow<T>[]) {
+    tables.set(
+      table,
+      rows.map((r) => ({ ...(r as FakeRow) })),
+    );
+  }
+  /** Escape hatch for a table the generated types don't know (a view, or a
+   * table added by a migration newer than types.ts). Prefer `seed`. */
+  function seedRaw(table: string, rows: FakeRow[]) {
     tables.set(
       table,
       rows.map((r) => ({ ...r })),
     );
   }
-  for (const [table, rows] of Object.entries(init?.tables ?? {})) seed(table, rows);
-  for (const [fn, handler] of Object.entries(init?.rpc ?? {})) rpcHandlers.set(fn, handler);
+  /** Current contents of a table (a copy). With `applyWrites` this is how
+   * a test observes the post-write state. */
+  function rows<T extends TableName>(table: T): Array<Partial<RowOf<T>>> {
+    return (tables.get(table) ?? []).map((r) => ({ ...r })) as Array<Partial<RowOf<T>>>;
+  }
 
-  function onRpc(fn: string, handler: RpcHandler) {
+  for (const [table, seedRows] of Object.entries(init?.tables ?? {})) {
+    seedRaw(table, (seedRows ?? []) as FakeRow[]);
+  }
+  for (const [fn, handler] of Object.entries(init?.rpc ?? {})) {
+    if (handler) rpcHandlers.set(fn, handler);
+  }
+
+  function onRpc(fn: RpcName | (string & {}), handler: RpcHandler) {
     rpcHandlers.set(fn, handler);
   }
-  function onInsert(table: string, handler: WriteHandler) {
+  function onSelect(table: TableName, handler: SelectHandler) {
+    selectHandlers.set(table, handler);
+  }
+  function onInsert(table: TableName, handler: WriteHandler) {
     writeHandlers.set(`insert:${table}`, handler);
   }
-  function onUpdate(table: string, handler: WriteHandler) {
+  function onUpdate(table: TableName, handler: WriteHandler) {
     writeHandlers.set(`update:${table}`, handler);
   }
-  function onUpsert(table: string, handler: WriteHandler) {
+  function onUpsert(table: TableName, handler: WriteHandler) {
     writeHandlers.set(`upsert:${table}`, handler);
   }
-  function onDelete(table: string, handler: WriteHandler) {
+  function onDelete(table: TableName, handler: WriteHandler) {
     writeHandlers.set(`delete:${table}`, handler);
+  }
+  function onAuth(
+    method: "listUsers" | "getUserById" | "deleteUser" | (string & {}),
+    handler: AuthHandler,
+  ) {
+    authHandlers.set(method, handler);
   }
 
   function reset() {
     tables.clear();
     rpcHandlers.clear();
     writeHandlers.clear();
+    selectHandlers.clear();
+    authHandlers.clear();
     for (const arr of Object.values(calls)) arr.length = 0;
   }
 
-  type Filter = { op: string; col?: string; value?: unknown };
+  function matchOne(row: FakeRow, f: Filter): boolean {
+    const v = f.col !== undefined ? row[f.col] : undefined;
+    switch (f.op) {
+      case "eq":
+        return looseEq(v, f.value);
+      case "neq":
+        return !looseEq(v, f.value);
+      case "gt":
+        return cmp(v, f.value) > 0;
+      case "gte":
+        return cmp(v, f.value) >= 0;
+      case "lt":
+        return cmp(v, f.value) < 0;
+      case "lte":
+        return cmp(v, f.value) <= 0;
+      case "in":
+        return Array.isArray(f.value) && (f.value as unknown[]).some((x) => looseEq(x, v));
+      case "is":
+        if (f.value === null) return v === null || v === undefined;
+        return v === f.value;
+      case "like":
+      case "ilike":
+        if (typeof v !== "string") return false;
+        return likeToRegExp(String(f.value), f.op === "ilike").test(v);
+      case "contains":
+        // Array column ⊇ value; jsonb object ⊇ value; text substring.
+        if (Array.isArray(v)) {
+          const want = Array.isArray(f.value) ? f.value : [f.value];
+          return (want as unknown[]).every((x) => (v as unknown[]).some((y) => looseEq(x, y)));
+        }
+        if (v && typeof v === "object" && f.value && typeof f.value === "object") {
+          return Object.entries(f.value as FakeRow).every(([k, x]) =>
+            looseEq((v as FakeRow)[k], x),
+          );
+        }
+        if (typeof v === "string") return v.includes(String(f.value));
+        return false;
+      case "match":
+        return Object.entries((f.value ?? {}) as FakeRow).every(([k, x]) => looseEq(row[k], x));
+      case "not": {
+        // `.not(col, op, value)` negates the inner op.
+        const inner = { op: String(f.extra ?? "is"), col: f.col, value: f.value };
+        return !matchOne(row, inner);
+      }
+      case "or":
+        return matchLogic(row, parseLogic(String(f.value), "or"));
+      default: {
+        if (f.op.startsWith("not.")) {
+          return !matchOne(row, { ...f, op: f.op.slice(4) });
+        }
+        if (strict) throw new Error(`supabase-fake: unimplemented filter "${f.op}"`);
+        return true; // pass-through modifier
+      }
+    }
+  }
 
-  function cmp(a: unknown, b: unknown): number {
-    if (typeof a === "number" && typeof b === "number") return a - b;
-    return String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0;
+  function matchLogic(row: FakeRow, node: OrNode): boolean {
+    const test = (p: OrNode | Filter) =>
+      "kind" in p ? matchLogic(row, p) : matchOne(row, p as Filter);
+    return node.kind === "and" ? node.parts.every(test) : node.parts.some(test);
   }
 
   function rowMatches(row: FakeRow, filters: Filter[]): boolean {
-    for (const f of filters) {
-      const v = f.col !== undefined ? row[f.col] : undefined;
-      switch (f.op) {
-        case "eq":
-          if (v !== f.value) return false;
-          break;
-        case "neq":
-          if (v === f.value) return false;
-          break;
-        case "gt":
-          if (!(cmp(v, f.value) > 0)) return false;
-          break;
-        case "gte":
-          if (!(cmp(v, f.value) >= 0)) return false;
-          break;
-        case "lt":
-          if (!(cmp(v, f.value) < 0)) return false;
-          break;
-        case "lte":
-          if (!(cmp(v, f.value) <= 0)) return false;
-          break;
-        case "in":
-          if (!Array.isArray(f.value) || !(f.value as unknown[]).includes(v)) return false;
-          break;
-        case "is":
-          if (f.value === null && v !== null && v !== undefined) return false;
-          break;
-        case "not":
-          // Only `.not(col, "is", null)` is given filtering semantics.
-          if (f.value === null && (v === null || v === undefined)) return false;
-          break;
-        default:
-          break; // pass-through modifier
-      }
-    }
-    return true;
+    return filters.every((f) => matchOne(row, f));
+  }
+
+  /** Filter methods shared by the read and write builders. `self` is a
+   * thunk so the builder object can be annotated and self-referential. */
+  function filterMethods<B>(filters: Filter[], self: () => B): FilterOps<B> {
+    const push = (op: string, col: string | undefined, value: unknown, extra?: unknown) => {
+      filters.push({ op, col, value, extra });
+      return self();
+    };
+    return {
+      eq: (col, value) => push("eq", col, value),
+      neq: (col, value) => push("neq", col, value),
+      gt: (col, value) => push("gt", col, value),
+      gte: (col, value) => push("gte", col, value),
+      lt: (col, value) => push("lt", col, value),
+      lte: (col, value) => push("lte", col, value),
+      in: (col, value) => push("in", col, value),
+      is: (col, value) => push("is", col, value),
+      like: (col, value) => push("like", col, value),
+      ilike: (col, value) => push("ilike", col, value),
+      contains: (col, value) => push("contains", col, value),
+      match: (query) => push("match", undefined, query),
+      not: (col, op, value) => push("not", col, value, op),
+      or: (expr) => push("or", undefined, expr),
+      filter: (col, op, value) => {
+        if (op.startsWith("not.")) return push("not", col, value, op.slice(4));
+        return push(op, col, value);
+      },
+    };
   }
 
   function makeSelectBuilder(table: string, columns: string | undefined, options?: unknown) {
     const filters: Filter[] = [];
     let orderBy: { col: string; ascending: boolean } | null = null;
     let limitN: number | null = null;
+    let offsetN = 0;
     const opts = options as { count?: string; head?: boolean } | undefined;
     calls.selects.push({ table, columns, filters });
 
-    function resolveRows(): FakeRow[] {
-      let rows = (tables.get(table) ?? []).filter((r) => rowMatches(r, filters));
+    function resolveRows(): { rows: FakeRow[]; error: FakeError | null; total: number } {
+      const handler = selectHandlers.get(table);
+      let base = tables.get(table) ?? [];
+      if (handler) {
+        const r = handler(filters, columns);
+        if (r && typeof r === "object" && "message" in r) {
+          return { rows: [], error: r as FakeError, total: 0 };
+        }
+        if (r && typeof r === "object" && "data" in r) base = (r as { data: FakeRow[] }).data;
+      }
+      let out = base.filter((r) => rowMatches(r, filters));
+      const total = out.length;
       if (orderBy) {
         const { col, ascending } = orderBy;
-        rows = [...rows].sort((a, b) => (ascending ? cmp(a[col], b[col]) : cmp(b[col], a[col])));
+        out = [...out].sort((a, b) => (ascending ? cmp(a[col], b[col]) : cmp(b[col], a[col])));
       }
-      if (limitN !== null) rows = rows.slice(0, limitN);
-      return rows;
+      if (offsetN > 0) out = out.slice(offsetN);
+      if (limitN !== null) out = out.slice(0, limitN);
+      return { rows: out, error: null, total };
     }
 
-    const builder = {
-      eq: (col: string, value: unknown) => pushFilter("eq", col, value),
-      neq: (col: string, value: unknown) => pushFilter("neq", col, value),
-      gt: (col: string, value: unknown) => pushFilter("gt", col, value),
-      gte: (col: string, value: unknown) => pushFilter("gte", col, value),
-      lt: (col: string, value: unknown) => pushFilter("lt", col, value),
-      lte: (col: string, value: unknown) => pushFilter("lte", col, value),
-      in: (col: string, value: unknown) => pushFilter("in", col, value),
-      is: (col: string, value: unknown) => pushFilter("is", col, value),
-      not: (col: string, _op: string, value: unknown) => pushFilter("not", col, value),
-      contains: (col: string, value: unknown) => pushFilter("contains", col, value),
-      ilike: (col: string, value: unknown) => pushFilter("ilike", col, value),
-      or: (expr: string) => pushFilter("or", undefined, expr),
-      order(col: string, o?: { ascending?: boolean }) {
+    const builder: SelectBuilder = {
+      ...filterMethods(filters, () => builder),
+      order(col, o) {
         orderBy = { col, ascending: o?.ascending !== false };
         return builder;
       },
-      limit(n: number) {
+      limit(n) {
         limitN = n;
         return builder;
       },
-      range(from: number, to: number) {
+      range(from, to) {
+        offsetN = from;
         limitN = to - from + 1;
         return builder;
       },
       async single() {
-        const rows = resolveRows();
-        return rows.length > 0
-          ? { data: rows[0], error: null }
-          : { data: null, error: { message: `no rows in ${table}` } };
+        const { rows: out, error } = resolveRows();
+        if (error) return { data: null, error };
+        if (out.length === 1) return { data: out[0]!, error: null };
+        return {
+          data: null,
+          error: {
+            message:
+              out.length === 0
+                ? `JSON object requested, multiple (or no) rows returned (no rows in ${table})`
+                : `JSON object requested, multiple (or no) rows returned (${out.length} rows in ${table})`,
+            code: PGRST_NO_ROWS,
+          },
+        };
       },
       async maybeSingle() {
-        const rows = resolveRows();
-        return { data: rows[0] ?? null, error: null };
+        const { rows: out, error } = resolveRows();
+        if (error) return { data: null, error };
+        return { data: out[0] ?? null, error: null };
       },
-      then<T>(
-        resolve: (v: { data: FakeRow[] | null; error: null; count: number | null }) => T,
-      ): Promise<T> {
-        const rows = resolveRows();
-        if (opts?.head && opts?.count) {
-          return Promise.resolve({ data: null, error: null, count: rows.length }).then(resolve);
-        }
-        return Promise.resolve({ data: rows, error: null, count: rows.length }).then(resolve);
+      then(resolve, reject) {
+        const { rows: out, error, total } = resolveRows();
+        const count = opts?.count ? total : null;
+        const result: ManyResult = error
+          ? { data: null, error, count: null }
+          : opts?.head
+            ? { data: null, error: null, count }
+            : { data: out, error: null, count };
+        return Promise.resolve(result).then(resolve, reject);
       },
     };
-    function pushFilter(op: string, col: string | undefined, value: unknown) {
-      filters.push({ op, col, value });
-      return builder;
-    }
     return builder;
   }
 
@@ -217,6 +474,8 @@ export function makeSupabaseFake(init?: {
   ) {
     const filters: Filter[] = [];
     let recorded = false;
+    let settled: Promise<{ data: FakeRow[]; error: FakeError | null; count: number }> | null = null;
+
     function record() {
       if (recorded) return;
       recorded = true;
@@ -226,65 +485,137 @@ export function makeSupabaseFake(init?: {
       else if (kind === "upsert") calls.upserts.push(entry);
       else calls.deletes.push(entry);
     }
-    function settle(): Promise<{ data: null; error: FakeError | null }> {
-      record();
-      const handler = writeHandlers.get(`${kind}:${table}`);
-      if (handler) {
-        // A throwing handler simulates a network-level rejection.
-        const error = handler(payload, filters) ?? null;
-        return Promise.resolve({ data: null, error });
-      }
-      return Promise.resolve({ data: null, error: null });
+
+    function payloadRows(): FakeRow[] {
+      if (payload === null || payload === undefined) return [];
+      return (Array.isArray(payload) ? payload : [payload]).map((r) => ({ ...(r as FakeRow) }));
     }
-    const builder = {
-      eq(col: string, value: unknown) {
-        filters.push({ op: "eq", col, value });
-        return builder;
-      },
-      in(col: string, value: unknown) {
-        filters.push({ op: "in", col, value });
-        return builder;
-      },
-      is(col: string, value: unknown) {
-        filters.push({ op: "is", col, value });
-        return builder;
-      },
-      lt(col: string, value: unknown) {
-        filters.push({ op: "lt", col, value });
-        return builder;
-      },
-      gte(col: string, value: unknown) {
-        filters.push({ op: "gte", col, value });
-        return builder;
-      },
-      not(col: string, _op: string, value: unknown) {
-        filters.push({ op: "not", col, value });
-        return builder;
-      },
-      select() {
-        return {
-          async single() {
-            const { error } = await settle();
-            if (error) return { data: null, error };
-            const first = Array.isArray(payload) ? payload[0] : payload;
-            return { data: (first as FakeRow) ?? null, error: null };
-          },
-          async maybeSingle() {
-            const { error } = await settle();
-            if (error) return { data: null, error };
-            const first = Array.isArray(payload) ? payload[0] : payload;
-            return { data: (first as FakeRow) ?? null, error: null };
-          },
-        };
-      },
-      then<T>(
-        resolve: (v: { data: null; error: FakeError | null }) => T,
-        reject?: (e: unknown) => T,
-      ): Promise<T> {
-        return settle().then(resolve, reject);
+
+    function apply(): FakeRow[] {
+      const current = tables.get(table) ?? [];
+      if (kind === "insert") {
+        const added = payloadRows();
+        tables.set(table, [...current, ...added]);
+        return added;
+      }
+      if (kind === "update") {
+        const patch = (payload ?? {}) as FakeRow;
+        const touched: FakeRow[] = [];
+        const next = current.map((r) => {
+          if (!rowMatches(r, filters)) return r;
+          const merged = { ...r, ...patch };
+          touched.push(merged);
+          return merged;
+        });
+        tables.set(table, next);
+        return touched;
+      }
+      if (kind === "delete") {
+        const removed = current.filter((r) => rowMatches(r, filters));
+        tables.set(
+          table,
+          current.filter((r) => !rowMatches(r, filters)),
+        );
+        return removed;
+      }
+      // upsert: merge on onConflict columns (default "id").
+      const conflict = String((options as { onConflict?: string } | undefined)?.onConflict ?? "id")
+        .split(",")
+        .map((s) => s.trim());
+      const out: FakeRow[] = [];
+      const next = [...current];
+      for (const row of payloadRows()) {
+        const idx = next.findIndex((r) => conflict.every((c) => looseEq(r[c], row[c])));
+        if (idx >= 0) {
+          next[idx] = { ...next[idx], ...row };
+          out.push(next[idx]!);
+        } else {
+          next.push(row);
+          out.push(row);
+        }
+      }
+      tables.set(table, next);
+      return out;
+    }
+
+    function settle() {
+      if (settled) return settled;
+      record();
+      settled = (async () => {
+        const handler = writeHandlers.get(`${kind}:${table}`);
+        let override: FakeRow[] | null = null;
+        if (handler) {
+          // A throwing handler simulates a network-level rejection.
+          const r = handler(payload, filters);
+          if (r && typeof r === "object" && "message" in r) {
+            return { data: [], error: r as FakeError, count: 0 };
+          }
+          if (r && typeof r === "object" && "data" in r) {
+            const d = (r as { data: unknown }).data;
+            override = d === null || d === undefined ? [] : Array.isArray(d) ? d : [d as FakeRow];
+          }
+        }
+        const affected = applyWrites
+          ? apply()
+          : kind === "update" || kind === "delete"
+            ? (tables.get(table) ?? [])
+                .filter((r) => rowMatches(r, filters))
+                .map((r) => (kind === "update" ? { ...r, ...((payload ?? {}) as FakeRow) } : r))
+            : payloadRows();
+        const data = override ?? affected;
+        return { data, error: null, count: data.length };
+      })();
+      return settled;
+    }
+
+    function selectBuilder(): WriteSelectBuilder {
+      return {
+        async single() {
+          const { data, error } = await settle();
+          if (error) return { data: null, error };
+          return { data: data[0] ?? null, error: null };
+        },
+        async maybeSingle() {
+          const { data, error } = await settle();
+          if (error) return { data: null, error };
+          return { data: data[0] ?? null, error: null };
+        },
+        then(resolve, reject) {
+          return settle()
+            .then(({ data, error, count }): ManyResult =>
+              error ? { data: null, error, count: null } : { data, error: null, count },
+            )
+            .then(resolve, reject);
+        },
+      };
+    }
+
+    const builder: WriteBuilder = {
+      ...filterMethods(filters, () => builder),
+      select: () => selectBuilder(),
+      then(resolve, reject) {
+        return settle()
+          .then(({ error, count }): WriteResult => ({
+            data: null,
+            error,
+            count: error ? null : count,
+          }))
+          .then(resolve, reject);
       },
     };
     return builder;
+  }
+
+  async function authCall(method: string, args: unknown) {
+    calls.auth.push({ method, args });
+    const handler = authHandlers.get(method);
+    if (!handler) return { data: null, error: null };
+    const result = handler(args);
+    if (result && typeof result === "object" && ("data" in result || "error" in result)) {
+      const r = result as { data?: unknown; error?: FakeError | null };
+      return { data: r.data ?? null, error: r.error ?? null };
+    }
+    return { data: result ?? null, error: null };
   }
 
   const supabaseAdmin = {
@@ -309,17 +640,65 @@ export function makeSupabaseFake(init?: {
       }
       return { data: result ?? null, error: null };
     },
+    auth: {
+      admin: {
+        listUsers: (args?: unknown) => authCall("listUsers", args),
+        getUserById: (id: string) => authCall("getUserById", id),
+        deleteUser: (id: string) => authCall("deleteUser", id),
+      },
+    },
   };
 
   return {
     supabaseAdmin,
+    /** The same object under the user-scoped client's name, for hooks and
+     * RLS-client server fns (`context.supabase`). */
+    client: supabaseAdmin,
     calls,
     seed,
+    seedRaw,
+    rows,
     reset,
     onRpc,
+    onSelect,
     onInsert,
     onUpdate,
     onUpsert,
     onDelete,
+    onAuth,
   };
+}
+
+export type SupabaseFake = ReturnType<typeof makeSupabaseFake>;
+
+/** Hoist-safe module mock body: every method resolves the fake lazily, so
+ * it can appear inside a `vi.mock` factory that runs before the test
+ * file's `const fake = makeSupabaseFake()` initializer. */
+export function mockSupabaseAdmin(get: () => SupabaseFake) {
+  return {
+    from: (table: string) => get().supabaseAdmin.from(table),
+    rpc: (fn: string, args?: Record<string, unknown>) => get().supabaseAdmin.rpc(fn, args),
+    auth: {
+      admin: {
+        listUsers: (args?: unknown) => get().supabaseAdmin.auth.admin.listUsers(args),
+        getUserById: (id: string) => get().supabaseAdmin.auth.admin.getUserById(id),
+        deleteUser: (id: string) => get().supabaseAdmin.auth.admin.deleteUser(id),
+      },
+    },
+  };
+}
+
+/** Sum of every recorded write, for "nothing was mutated" assertions. */
+export function writeCount(fake: SupabaseFake): number {
+  const { inserts, updates, upserts, deletes } = fake.calls;
+  return inserts.length + updates.length + upserts.length + deletes.length;
+}
+
+/** Recorded writes of one kind against one table. */
+export function writesTo(
+  fake: SupabaseFake,
+  kind: "inserts" | "updates" | "upserts" | "deletes",
+  table: TableName,
+): RecordedWrite[] {
+  return fake.calls[kind].filter((w) => w.table === table);
 }
