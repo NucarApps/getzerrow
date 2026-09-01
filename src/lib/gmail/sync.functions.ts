@@ -70,22 +70,27 @@ export const getBackfillStatus = createServerFn({ method: "POST" })
     z.object({ account_id: z.string().uuid().optional() }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    let q = supabaseAdmin
-      .from("backfill_jobs")
-      .select(
-        "id, gmail_account_id, status, months, total_found, total_enqueued, already_had, started_at, finished_at, last_error",
-      )
-      .eq("user_id", context.userId);
-    if (data.account_id) q = q.eq("gmail_account_id", data.account_id);
+    // A fresh builder per query: PostgREST builders mutate in place, so
+    // reusing one meant the fallback below still carried the active-status
+    // filter and could never find a finished job.
+    const base = () => {
+      const q = supabaseAdmin
+        .from("backfill_jobs")
+        .select(
+          "id, gmail_account_id, status, months, total_found, total_enqueued, already_had, started_at, finished_at, last_error",
+        )
+        .eq("user_id", context.userId);
+      return data.account_id ? q.eq("gmail_account_id", data.account_id) : q;
+    };
 
     // Prefer an active job; fall back to most recent finished one.
-    const { data: active } = await q
+    const { data: active } = await base()
       .in("status", ["listing", "processing"])
       .order("started_at", { ascending: false })
       .limit(1);
     let job = active?.[0] ?? null;
     if (!job) {
-      const { data: recent } = await q.order("started_at", { ascending: false }).limit(1);
+      const { data: recent } = await base().order("started_at", { ascending: false }).limit(1);
       job = recent?.[0] ?? null;
     }
     if (!job) return { job: null };
