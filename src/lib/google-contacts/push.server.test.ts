@@ -15,7 +15,7 @@
 //     tombstone, while a 5xx must keep it for retry.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
+import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
 import type { LocalContact, Person } from "./mapper";
 
 const fake = makeSupabaseFake();
@@ -41,10 +41,7 @@ const logErrorMock = vi.fn();
 // CRITICAL: factories must not touch module-level consts at factory time
 // (vi.mock hoisting) — every property access is deferred into method bodies.
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => fake.supabaseAdmin.from(table),
-    rpc: (fn: string, args: Record<string, unknown>) => fake.supabaseAdmin.rpc(fn, args),
-  },
+  supabaseAdmin: mockSupabaseAdmin(() => fake),
 }));
 vi.mock("@/lib/google-oauth.server", () => ({
   getAccessToken: async () => "test-token",
@@ -166,9 +163,11 @@ function writesTo(kind: "inserts" | "updates" | "deletes" | "upserts", table: st
 }
 
 beforeEach(() => {
+  // No inter-batch pacing in tests: the real 350 ms sleeps made this file
+  // ~6 s of the whole suite's wall time.
+  vi.stubEnv("GOOGLE_PUSH_BATCH_SPACING_MS", "0");
   fake.reset();
   currentContacts = [];
-  vi.clearAllMocks();
   loadLocalContactMock.mockImplementation(async (id: string) => localContact(id));
   loadContactPhotoBytesMock.mockResolvedValue(null);
   // Default: the resolved photo matches what was last pushed, so the photo

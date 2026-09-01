@@ -44,8 +44,13 @@ const PUSH_WALL_BUDGET_MS = 55_000;
 // per-minute per-user quotas are tight — keep this low and pace the batches.
 export const CONTACT_PUSH_CONCURRENCY = 3;
 // Spacing between batches so a large backlog spreads its reads/writes across
-// the minute instead of bursting into a 429.
-const PUSH_BATCH_SPACING_MS = 350;
+// the minute instead of bursting into a 429. Overridable (tests set it to 0;
+// the default suite otherwise spends ~6 s asleep here).
+const DEFAULT_PUSH_BATCH_SPACING_MS = 350;
+function pushBatchSpacingMs(): number {
+  const v = Number(process.env.GOOGLE_PUSH_BATCH_SPACING_MS);
+  return Number.isFinite(v) && v >= 0 ? v : DEFAULT_PUSH_BATCH_SPACING_MS;
+}
 
 export async function pushToGoogle(
   ids: Ids,
@@ -743,7 +748,7 @@ async function pushContacts(
     }
     await Promise.all(batch.map(processOne));
     if (!quotaExhausted && !budgetHit()) {
-      await new Promise((r) => setTimeout(r, PUSH_BATCH_SPACING_MS));
+      await new Promise((r) => setTimeout(r, pushBatchSpacingMs()));
     }
   }
   return count;

@@ -26,7 +26,9 @@ export default defineConfig({
           // vi.fn() call history; clear it before every test instead of
           // relying on per-file mockClear boilerplate.
           clearMocks: true,
-          testTimeout: 20_000,
+          // A test that needs longer than this is waiting on a real timer
+          // or real I/O — fake it instead (see push.server.test.ts).
+          testTimeout: 5_000,
         },
       },
       {
@@ -37,35 +39,53 @@ export default defineConfig({
           include: ["src/**/*.test.tsx"],
           setupFiles: ["./src/test-setup.ts", "./src/test-setup.dom.ts"],
           clearMocks: true,
-          testTimeout: 20_000,
+          testTimeout: 5_000,
         },
       },
     ],
     coverage: {
       provider: "v8",
       include: ["src/**"],
-      // Routes and components have no rendering-test harness yet (planned:
-      // jsdom + testing-library project); invader is an easter-egg game.
-      // Revisit these exclusions when component testing lands.
       exclude: [
-        "src/**/*.test.ts",
+        "src/**/*.test.{ts,tsx}",
         "src/**/__fixtures__/**",
         "src/test-setup.ts",
-        "src/routes/**",
-        "src/components/**",
-        "src/lib/invader/**",
+        "src/test-setup.dom.ts",
+        "src/integrations/supabase/types.ts",
         "src/routeTree.gen.ts",
+        // Easter-egg game; no product logic.
+        "src/lib/invader/**",
       ],
       reporter: ["text-summary", "json-summary", "html"],
-      // Ratchet floor, set ~2 points under the level achieved by the
-      // Sep 2026 coverage push (45.8% stmts / 47.3% lines; the pre-push
-      // baseline was 39.2% / 40.3%). Raise these as coverage grows —
-      // never lower them to make a PR pass.
+      // Ratchet floors. Every glob is measured on its own so the server
+      // code's floor cannot be diluted by (or hide) the UI's. Raise a floor
+      // as its area grows — never lower one to make a PR pass.
+      //
+      // Baselines when each floor was set (Sep 2026): lib 50.2% lines /
+      // 48.5% stmts / 47.9% fns / 42.7% br; routes/api 11.4 / 12.6 / 31.5 /
+      // 7.8 (the cron-auth sweep and route tests move it); components+hooks
+      // 5.1 / 5.3 / 5.4 / 3.5 (the jsdom *.test.tsx project moves it).
+      // Page routes (src/routes outside api/) are measured but have no floor
+      // yet: their logic is being extracted into src/lib first.
       thresholds: {
-        statements: 43,
-        branches: 38,
-        functions: 42,
-        lines: 45,
+        "src/lib/**": {
+          statements: 46,
+          branches: 40,
+          functions: 45,
+          lines: 48,
+        },
+        "src/routes/api/**": {
+          statements: 11,
+          branches: 6,
+          functions: 29,
+          lines: 10,
+        },
+        "src/{components,hooks}/**": {
+          statements: 4,
+          branches: 2,
+          functions: 4,
+          lines: 4,
+        },
       },
     },
   },
