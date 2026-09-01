@@ -4,7 +4,7 @@
 // runGoogleContactsSync for each linked Gmail account so the change lands in
 // Google People without waiting for the next cron tick.
 import { createServerFn } from "@tanstack/react-start";
-import { getRequestHost } from "@tanstack/react-start/server";
+import { kickHook } from "../self-url.server";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertOwnsContact, assertOwnsCompany } from "@/lib/ownership";
@@ -71,21 +71,12 @@ async function loadRecentFailures(
  *  inline can exceed Safari's fetch wall on large accounts (surfaces as
  *  "Load failed") and leaks the sync lease when the worker is killed. The
  *  hook endpoint runs in its own Worker request scoped by CRON_SECRET. */
-function triggerBackgroundSync(): boolean {
+async function triggerBackgroundSync(): Promise<boolean> {
   try {
-    const host = getRequestHost();
-    const cronSecret = process.env.CRON_SECRET;
-    if (!host || !cronSecret) return false;
     // keepalive lets the outbound fetch outlive the parent response on Workers.
-    void fetch(`https://${host}/api/public/hooks/google-contacts-sync`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${cronSecret}`,
-      },
-      body: "{}",
-      keepalive: true,
-    }).catch(() => {
+    const kicked = await kickHook("/api/public/hooks/google-contacts-sync", { keepalive: true });
+    if (!kicked) return false;
+    void kicked.response.catch(() => {
       // Non-fatal — the periodic cron will pick it up on the next tick.
     });
     return true;
@@ -141,7 +132,7 @@ export const pushContactPhotoToGoogleNow = createServerFn({ method: "POST" })
       };
     }
     await markGooglePhotoDirty(context.userId, data.contactId);
-    const queued = triggerBackgroundSync();
+    const queued = await triggerBackgroundSync();
     return {
       contactsMarked: 1,
       accountsQueued: queued ? accountIds.length : 0,
@@ -194,7 +185,7 @@ export const pushCompanyPhotoToGoogleNow = createServerFn({ method: "POST" })
       };
     }
     await markGooglePhotoDirtyMany(context.userId, contactIds);
-    const queued = triggerBackgroundSync();
+    const queued = await triggerBackgroundSync();
     return {
       contactsMarked: contactIds.length,
       accountsQueued: queued ? accountIds.length : 0,

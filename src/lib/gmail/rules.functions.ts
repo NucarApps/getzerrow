@@ -13,7 +13,7 @@ import {
 } from "../gmail.server";
 import { suggestFolderFromEmails } from "../ai.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { getRequestHost } from "@tanstack/react-start/server";
+import { selfBaseUrl } from "../self-url.server";
 import { logError } from "../log.server";
 import { removeLabelsFromCurrent } from "../sync/label-merge";
 import { buildGmailQueries } from "../sync/gmail-query-builder";
@@ -101,8 +101,9 @@ export const pingPubsubWebhook = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((d) => z.object({ realistic: z.boolean().optional() }).parse(d ?? {}))
   .handler(async ({ data, context }) => {
-    const host = getRequestHost();
-    const url = `https://${host}/api/public/gmail-webhook`;
+    const base = selfBaseUrl();
+    if (!base) throw new Error("Deployment URL unknown — set APP_BASE_URL");
+    const url = `${base}/api/public/gmail-webhook`;
 
     let envelope: Record<string, unknown> = { message: {} };
     let mode: "empty" | "realistic" = "empty";
