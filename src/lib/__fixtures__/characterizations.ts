@@ -149,6 +149,11 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "An email stamped classified_by=surfaced_to_inbox gets a 'Surfaced' badge, but describeReason has no branch for it and falls through to 'Imported with this folder / No classifier ran on this email yet'. The panel contradicts its own badge, and the surface check that filed the mail is never explained.",
     fixIn: "src/lib/ui/folder-history.ts — give describeReason a surfaced_to_inbox branch.",
   },
+  "inbox-override-duplicate-unguarded": {
+    what: "Adding an always-inbox entry does not look at the entries already on the list, so a repeat is only caught by inbox_overrides' UNIQUE (user_id, match_type, value). That key predates the gmail_account_id column and still ignores it, so the same domain cannot be listed on two Gmail accounts at all — and either way the user is shown the raw Postgres unique-violation text instead of a sentence.",
+    fixIn:
+      "src/lib/ui/inbox-overrides.ts and supabase/migrations — widen the unique key to include gmail_account_id and report a duplicate in the validator.",
+  },
   "reports-topsenders-address-only": {
     what: "getInboxReport never selects a sender display name, so parseSender's name branch is dead and topSenders can only ever show an address. There is no plaintext from_name column — only from_name_enc — so the fix is a decrypt pass over the window, not a wider select.",
     fixIn: "src/lib/reports.functions.ts — resolve display names via the decrypt reader.",

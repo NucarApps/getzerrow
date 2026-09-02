@@ -14,6 +14,7 @@ import {
 import { Trash2, ShieldOff, ChevronDown, ChevronRight, Plus, X } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { validateOverrideInput } from "@/lib/ui/inbox-overrides";
 
 type Override = {
   id: string;
@@ -93,20 +94,12 @@ export function InboxOverrides({
   });
 
   async function add() {
-    const v = value.trim().toLowerCase();
-    if (!v) return;
-    if (!accountId) {
-      toast.error("Pick a Gmail account first");
+    const checked = validateOverrideInput({ raw: value, matchType, accountId });
+    if (!checked.ok) {
+      if (checked.message) toast.error(checked.message);
       return;
     }
-    if (matchType === "email" && !v.includes("@")) {
-      toast.error("Enter a full email address");
-      return;
-    }
-    if (matchType === "domain" && v.includes("@")) {
-      toast.error("Enter a domain only (e.g. example.com)");
-      return;
-    }
+    const v = checked.value;
     setBusy(true);
     const { data: u } = await supabase.auth.getUser();
     if (!u.user) {
