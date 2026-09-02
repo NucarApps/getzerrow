@@ -61,6 +61,26 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "PROPFIND ignores the requested prop subset and always returns a fixed set, with no 404 propstat for props it does not have.",
     fixIn: "src/lib/carddav/handlers.server.ts",
   },
+  "meeting-stream-secret-unset-throws": {
+    what: "verifyRecordingStreamToken signs to compare, and the signer throws when MEETING_STREAM_SECRET is unset. Its route caller is outside a try/catch, so a deployment missing the secret answers 500 instead of 401 and leaks the misconfiguration.",
+    fixIn: "src/lib/meeting-stream.server.ts — return false when the secret is missing.",
+  },
+  "folder-chat-skips-conflict-check": {
+    what: "applyFolderChanges inserts folder_filters directly without calling checkRuleConflicts, so a rule created from chat can silently shadow an existing one — the rules editor warns.",
+    fixIn: "src/lib/folder-chat.functions.ts — run checkRuleConflicts before inserting.",
+  },
+  "summary-enqueue-no-dedupe": {
+    what: "enqueueFolderSummaryJob always inserts, with no pending-job check and no unique index behind it, so two clicks send two identical digests.",
+    fixIn: "src/lib/summaries.server.ts — skip when a pending job exists, or add a unique index.",
+  },
+  "assistant-prompt-unsanitized-email-text": {
+    what: "The inbox assistant's prompt builder interpolates email subject/snippet/from_name without sanitizeUntrustedText, unlike the classifier, so a crafted message reaches the instruction block verbatim.",
+    fixIn: "src/lib/ai-assistant.server.ts — wrap untrusted fields the way ai.server.ts does.",
+  },
+  "folder-chat-prompt-unsanitized-email-text": {
+    what: "The folder chat prompt builder interpolates email text without sanitizeUntrustedText, the same gap as the inbox assistant.",
+    fixIn: "src/lib/folder-chat.server.ts — wrap untrusted fields the way ai.server.ts does.",
+  },
   "carddav-addressbook-query-filter-ignored": {
     what: "addressbook-query ignores prop-filter/text-match entirely and returns every contact, so a filtering client does its own work over a full download.",
     fixIn: "src/lib/carddav/handlers.server.ts",
