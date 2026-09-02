@@ -1,5 +1,5 @@
 // Direct unit tests for the pure filter engine. These complement the
-// higher-level sync-classify.test.ts cases by exercising matchByFilters
+// higher-level decide-folder.test.ts cases by exercising matchByFilters
 // in isolation — useful for pinning the priority-ordering, exclude-rule,
 // and ReDoS-safety contracts.
 import { describe, it, expect } from "vitest";

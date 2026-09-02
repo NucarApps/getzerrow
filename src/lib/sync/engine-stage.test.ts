@@ -2,7 +2,7 @@
 // that matters during a live migration: shadow mode changes nothing, "on"
 // hands the decision to the amended engine, and an engine failure can
 // never stop mail from being filed.
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runEngineStage } from "./engine-stage";
 import type { AccountContext } from "./account-context";
 import type { ParsedEmailForClassify } from "./classify";
@@ -95,6 +95,13 @@ const matchingContext = () => {
   const filters = [filterRow("receipts", "from", "contains", "billing@netflix.com")];
   return context({ folders, filters });
 };
+
+// Pin the switch BEFORE each test rather than only cleaning up after: the
+// "shadows by default" case means "with the variable unset", and without
+// this it inherited whatever RULES_ENGINE_V2 the developer's shell carried.
+beforeEach(() => {
+  vi.stubEnv("RULES_ENGINE_V2", undefined);
+});
 
 afterEach(() => {
   vi.stubEnv("RULES_ENGINE_V2", undefined);

@@ -1,13 +1,15 @@
 // Unit tests for the AI layer of classification — classifyByAi and
-// applySurfaceRule. The rules layer (classifyByRules / classifyParsedEmail
-// routing order) is covered by src/lib/sync-classify.test.ts; these tests
-// cover only the gaps around the AI fallback:
+// applySurfaceRule. The deterministic ladder is specified in
+// ./decide-folder.test.ts and the seam that calls into here in
+// ./classify.test.ts; this file covers only the AI fallback itself:
 //
 //   * candidate-set construction (skip_ai folders and veto filters must
 //     never be offered to the AI — it can't place mail where hard rules
 //     would reject it),
 //   * per-folder min_ai_confidence gating and the ai_low_confidence stamp,
 //   * an AI-gateway throw becomes ai_error, never an exception,
+//   * the AI rung recorded on a REAL decision trace (noteAi early-returns
+//     when the base has none, so a hand-built base skips it silently),
 //   * applySurfaceRule builds the "me" identity (account email + folder
 //     aliases) and short-circuits without an AI call when there is no rule.
 
@@ -24,6 +26,7 @@ vi.mock("../ai.server", () => ({
 }));
 
 import { classifyByAi, applySurfaceRule, type ClassificationResult } from "./classify";
+import { decideFolder } from "./decide-folder";
 import type { AccountContext } from "./account-context";
 import type { Filter, Folder } from "./types";
 
@@ -226,6 +229,112 @@ describe("classifyByAi — confidence gating", () => {
     expect(out.classified_by).toBe("ai_error");
     expect(out.classification_reason).toBe("AI classifier failed: gateway 502");
     expect(out.folder_id).toBeNull();
+  });
+});
+
+// classifyByAi's noteAi early-returns when `base` carries no trace, so a
+// hand-built base() silently skips every trace assertion. These start from a
+// REAL decideFolder result — the shape production actually hands in.
+describe("classifyByAi — the AI rung on a real decision trace", () => {
+  const context = ctx({
+    folders: [folder({ id: "f-a", name: "Receipts", min_ai_confidence: 0.5 })],
+  });
+  /** What the deterministic ladder produces for mail nothing filed. */
+  const laddered = () => decideFolder(email(), context, { trigger: "arrival" });
+
+  it("the base really is AI-pending and already carries a trace", () => {
+    const b = laddered();
+    expect(b.needs_ai).toBe(true);
+    expect(b.trace?.version).toBe(1);
+    expect(b.trace?.ai).toBeUndefined();
+  });
+
+  it("an accepted suggestion records the folder, confidence, threshold and an applied step", async () => {
+    classifyEmailMock.mockResolvedValue({
+      folder_id: "f-a",
+      confidence: 0.9,
+      summary: "a receipt",
+      reason: "looks like a receipt",
+    });
+    const out = await classifyByAi(email(), context, laddered());
+    expect(out.trace?.ai).toStrictEqual({
+      suggested_folder_id: "f-a",
+      suggested_folder_name: "Receipts",
+      confidence: 0.9,
+      threshold: 0.5,
+      accepted: true,
+    });
+    expect(out.trace?.steps.at(-1)).toStrictEqual({
+      rung: "ai",
+      outcome: "applied",
+      detail: 'AI suggested "Receipts" at 90% (needs 50%)',
+    });
+  });
+
+  it("a below-threshold suggestion records accepted:false and a skipped step", async () => {
+    classifyEmailMock.mockResolvedValue({
+      folder_id: "f-a",
+      confidence: 0.3,
+      summary: "maybe",
+      reason: "unsure",
+    });
+    const out = await classifyByAi(email(), context, laddered());
+    expect(out.trace?.ai).toMatchObject({ accepted: false, confidence: 0.3, threshold: 0.5 });
+    expect(out.trace?.steps.at(-1)).toMatchObject({ rung: "ai", outcome: "skipped" });
+  });
+
+  it("an AI no-match records a null suggestion and says so in the step", async () => {
+    classifyEmailMock.mockResolvedValue({
+      folder_id: null,
+      confidence: 0.2,
+      summary: "s",
+      reason: "fits nothing",
+    });
+    const out = await classifyByAi(email(), context, laddered());
+    expect(out.trace?.ai).toStrictEqual({
+      suggested_folder_id: null,
+      suggested_folder_name: null,
+      confidence: 0.2,
+      threshold: 0,
+      accepted: false,
+    });
+    expect(out.trace?.steps.at(-1)).toMatchObject({
+      rung: "ai",
+      detail: "AI found no matching folder",
+    });
+  });
+
+  it("a second AI pass REPLACES the rung instead of appending a second one", async () => {
+    // withAiStep filters the existing "ai" step out before pushing. A retry
+    // (or a re-run over a stored trace) must leave exactly one ai step, or
+    // the drawer shows two contradictory AI verdicts for one message.
+    classifyEmailMock.mockResolvedValue({
+      folder_id: "f-a",
+      confidence: 0.3,
+      summary: "maybe",
+      reason: "unsure",
+    });
+    const first = await classifyByAi(email(), context, laddered());
+    expect(first.trace?.steps.filter((s) => s.rung === "ai")).toHaveLength(1);
+
+    classifyEmailMock.mockResolvedValue({
+      folder_id: "f-a",
+      confidence: 0.95,
+      summary: "a receipt",
+      reason: "certain now",
+    });
+    const second = await classifyByAi(email(), context, first);
+    expect(second.trace?.steps.filter((s) => s.rung === "ai")).toHaveLength(1);
+    expect(second.trace?.ai).toMatchObject({ confidence: 0.95, accepted: true });
+    expect(second.trace?.steps.at(-1)).toMatchObject({ outcome: "applied" });
+  });
+
+  it("an AI failure leaves the trace's AI rung unset rather than recording a verdict", async () => {
+    classifyEmailMock.mockRejectedValue(new Error("gateway 502"));
+    const out = await classifyByAi(email(), context, laddered());
+    expect(out.classified_by).toBe("ai_error");
+    expect(out.trace?.ai).toBeUndefined();
+    expect(out.trace?.steps.some((s) => s.rung === "ai" && s.outcome !== "pass")).toBe(false);
   });
 });
 

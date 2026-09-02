@@ -1,6 +1,6 @@
 // Unit tests for processGmailMessage / applyFolderActions — the single-
 // message ingest pipeline. The classification layers themselves are covered
-// elsewhere (sync-classify.test.ts, classify-ai.test.ts); here classifyByRules
+// elsewhere (decide-folder.test.ts, classify-ai.test.ts); here classifyByRules
 // / classifyByAi are mocked so each pipeline branch can be forced. The
 // contracts protected:
 //
