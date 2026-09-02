@@ -11,14 +11,15 @@
 // Skipped unless TEST_DATABASE_URL is set (CI starts a migrated local
 // Supabase Postgres; see .github/workflows/ci.yml "integration" job).
 // Read-only — SELECTs against an IMMUTABLE function, no fixtures needed.
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { it, expect, beforeAll, afterAll } from "vitest";
+import { laneDescribe } from "./lane-guard";
 import { Client } from "pg";
 import spec from "../src/lib/companies/__fixtures__/normalize-cases.json";
 import { normalizeCompanyNameDbSynced } from "../src/lib/companies/normalize";
 
 const DB_URL = process.env.TEST_DATABASE_URL;
 const enabled = !!DB_URL;
-const d = enabled ? describe : describe.skip;
+const d = laneDescribe(enabled, "DB-backed integration suite", ["TEST_DATABASE_URL"]);
 
 d("public.normalize_company_name matches the TS implementation", () => {
   let client: Client;

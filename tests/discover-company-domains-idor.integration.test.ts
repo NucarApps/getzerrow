@@ -23,12 +23,13 @@
 //
 // Run:
 //   TEST_DATABASE_URL=postgres://... bun run test:integration
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { it, expect, beforeAll, afterAll } from "vitest";
+import { laneDescribe } from "./lane-guard";
 import { Client } from "pg";
 
 const DB_URL = process.env.TEST_DATABASE_URL;
 const enabled = !!DB_URL;
-const d = enabled ? describe : describe.skip;
+const d = laneDescribe(enabled, "DB-backed integration suite", ["TEST_DATABASE_URL"]);
 
 // Deterministic fixture ids so a leaked row (should never happen — we roll
 // back) is obvious and easy to purge.

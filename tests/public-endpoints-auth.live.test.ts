@@ -17,11 +17,12 @@
 // with their own auth scheme are excluded below, each with the reason.
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { describe, it, expect } from "vitest";
+import { it, expect } from "vitest";
+import { laneDescribe } from "./lane-guard";
 
 const BASE = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "");
 const enabled = !!BASE;
-const d = enabled ? describe : describe.skip;
+const d = laneDescribe(enabled, "live endpoint smoke", ["PUBLIC_BASE_URL"]);
 
 // Routes under /api/public that are NOT gated by the shared cron secret.
 // Every entry must name its own auth story; anything not listed here is

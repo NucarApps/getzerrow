@@ -13,12 +13,13 @@
 //   PUBLIC_BASE_URL=https://preview.example.com \
 //     CRON_SECRET=$(op read op://...) \
 //     bun run test:live
-import { describe, it, expect } from "vitest";
+import { it, expect } from "vitest";
+import { laneDescribe } from "./lane-guard";
 
 const BASE = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "");
 const SECRET = process.env.CRON_SECRET;
 const enabled = !!BASE && !!SECRET;
-const d = enabled ? describe : describe.skip;
+const d = laneDescribe(enabled, "live sync-flow smoke", ["PUBLIC_BASE_URL", "CRON_SECRET"]);
 
 async function authedPost(path: string, body: unknown = {}) {
   return fetch(`${BASE}${path}`, {

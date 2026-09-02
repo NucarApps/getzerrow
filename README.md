@@ -39,6 +39,12 @@ bun run test:live               # tests/*.live.test.ts — HTTP smokes against a
                                 # deployed PUBLIC_BASE_URL (manual dispatch in CI)
 ```
 
+Both lanes in `tests/` skip themselves when their environment is absent, so
+neither blocks a local `bun run test`. Under `CI=1` they fail instead
+(`tests/lane-guard.ts`): a job that exists to run those suites must not
+report success having run nothing, which is how the DB-backed suites went
+months without executing while the check looked green.
+
 Test conventions (see `docs/test-suite-plan.md` for the backlog):
 
 - **Placement / naming.** `<module>.test.ts` beside the module. Two suffix
