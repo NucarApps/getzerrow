@@ -22,6 +22,12 @@ import {
   runAccountDiagnostic,
 } from "@/lib/account-health.functions";
 import { DlqDrawer } from "./DlqDrawer";
+import {
+  describeDiagnostic,
+  emptyAccountsMessage,
+  requeuedMessage,
+  watchStatus,
+} from "@/lib/ui/account-health";
 
 export function AccountHealthPanel({ accountId }: { accountId: string | null }) {
   const qc = useQueryClient();
@@ -53,9 +59,7 @@ export function AccountHealthPanel({ accountId }: { accountId: string | null }) 
   if (accounts.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-        {allAccounts.length === 0
-          ? "No Gmail accounts connected yet."
-          : "Pick an inbox above to see its status."}
+        {emptyAccountsMessage(allAccounts.length)}
       </div>
     );
   }
@@ -64,7 +68,7 @@ export function AccountHealthPanel({ accountId }: { accountId: string | null }) 
     setBusy(accountId);
     try {
       const r = await retryAll({ data: { account_id: accountId } });
-      toast.success(`Requeued ${r.requeued} failed job${r.requeued === 1 ? "" : "s"}`);
+      toast.success(requeuedMessage(r.requeued));
       qc.invalidateQueries({ queryKey: ["account-health"] });
     } catch (e) {
       toast.error((e as Error).message);
@@ -76,16 +80,12 @@ export function AccountHealthPanel({ accountId }: { accountId: string | null }) 
   async function handleDiagnose(accountId: string) {
     setDiagBusy(accountId);
     try {
-      const r = await diagnose({ data: { account_id: accountId } });
-      if (r.accessToken === "needs_reconnect") {
-        toast.error("Reconnect required: " + (r.error ?? "OAuth token expired"));
-      } else if (r.accessToken === "error" || r.watch === "error") {
-        toast.error(r.error ?? "Diagnostic failed");
-      } else {
-        toast.success(
-          `OAuth ok · watch ${r.watch}${r.watchExpiresAt ? " · " + formatRelativeTime(r.watchExpiresAt, { fallback: "never" }) : ""}`,
-        );
-      }
+      const outcome = describeDiagnostic(
+        await diagnose({ data: { account_id: accountId } }),
+        (iso) => formatRelativeTime(iso, { fallback: "never" }),
+      );
+      if (outcome.kind === "ok") toast.success(outcome.message);
+      else toast.error(outcome.message);
       qc.invalidateQueries({ queryKey: ["account-health"] });
     } catch (e) {
       toast.error((e as Error).message);
@@ -103,9 +103,7 @@ export function AccountHealthPanel({ accountId }: { accountId: string | null }) 
     <>
       <div className="space-y-3">
         {accounts.map((a) => {
-          const watchExp = a.watchExpiresAt ? new Date(a.watchExpiresAt) : null;
-          const watchActive = watchExp && watchExp > new Date();
-          const watchSoon = watchExp && watchExp.getTime() - Date.now() < 24 * 60 * 60 * 1000;
+          const watch = watchStatus(a.watchExpiresAt, Date.now());
           const dlqColor = a.dlq === 0 ? "text-muted-foreground" : "text-destructive";
 
           return (
@@ -126,14 +124,14 @@ export function AccountHealthPanel({ accountId }: { accountId: string | null }) 
                       {formatRelativeTime(a.lastPushAt, { fallback: "never" })}
                     </span>
                     <span
-                      className={`inline-flex items-center gap-1 ${watchActive ? "" : "text-destructive"}`}
+                      className={`inline-flex items-center gap-1 ${watch.healthy ? "" : "text-destructive"}`}
                     >
-                      {watchActive ? (
+                      {watch.healthy ? (
                         <CheckCircle2 className="h-3 w-3" />
                       ) : (
                         <AlertTriangle className="h-3 w-3" />
                       )}
-                      watch {watchActive ? (watchSoon ? "expiring " : "renews ") : "expired "}
+                      watch {`${watch.state} `}
                       {a.watchExpiresAt
                         ? formatRelativeTime(a.watchExpiresAt, { fallback: "never" })
                         : "—"}
