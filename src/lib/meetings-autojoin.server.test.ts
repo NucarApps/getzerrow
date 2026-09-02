@@ -232,11 +232,14 @@ describe("scheduleUpcomingMeetingBots", () => {
       }),
     );
 
+    // The row is claimed before the bot exists (the unique index on
+    // user_id + calendar_event_id is what makes the claim atomic), then
+    // stamped with the bot id.
     const meetingInsert = fake.calls.inserts.find((i) => i.table === "meetings");
     expect(meetingInsert?.payload).toMatchObject({
       user_id: "u1",
       gmail_account_id: "acct-1",
-      recall_bot_id: "bot-new",
+      recall_bot_id: null,
       calendar_event_id: "evt-1",
       meeting_url: "https://meet.google.com/abc-defg-hij",
       platform: "google_meet",
@@ -244,6 +247,8 @@ describe("scheduleUpcomingMeetingBots", () => {
       source: "calendar",
       scheduled_start: "2026-09-01T12:10:00.000Z",
     });
+    const stamp = fake.calls.updates.find((u) => u.table === "meetings");
+    expect(stamp?.payload).toEqual({ recall_bot_id: "bot-new" });
 
     // Participants exclude the account owner and are lowercased.
     const partInsert = fake.calls.inserts.find((i) => i.table === "meeting_participants");
@@ -269,12 +274,24 @@ describe("scheduleUpcomingMeetingBots", () => {
     expect((await scheduleUpcomingMeetingBots("run-3")).scheduled).toBe(0);
     expect(createBot).not.toHaveBeenCalled();
 
-    // Recall failure: no meeting row lands, so the next cron pass retries.
+    // Recall failure: the claim row is rolled back, so the next cron pass
+    // retries the event instead of leaving a bot-less meeting behind.
     fake.reset();
     fake.seed("gmail_accounts", [ACCOUNT]);
     vi.mocked(createBot).mockRejectedValue(new Error("recall 502"));
     const { scheduled } = await scheduleUpcomingMeetingBots("run-4");
     expect(scheduled).toBe(0);
-    expect(fake.calls.inserts).toHaveLength(0);
+    expect(fake.calls.deletes.filter((d) => d.table === "meetings")).toHaveLength(1);
+  });
+
+  it("a concurrent run that loses the insert race creates no bot", async () => {
+    // Two cron ticks can overlap; both see no existing meeting. The unique
+    // index means only one insert survives, and the loser must stop before
+    // spending money on a second bot for the same call.
+    fake.onInsert("meetings", () => ({ message: "duplicate key value", code: "23505" }));
+    const { scheduled } = await scheduleUpcomingMeetingBots("run-5");
+    expect(scheduled).toBe(0);
+    expect(createBot).not.toHaveBeenCalled();
+    expect(fake.calls.inserts.filter((i) => i.table === "meeting_participants")).toHaveLength(0);
   });
 });

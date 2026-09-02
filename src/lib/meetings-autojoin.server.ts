@@ -767,6 +767,44 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
         continue;
       }
 
+      // Claim the calendar event by inserting the row FIRST. The unique
+      // index on (user_id, calendar_event_id) makes that atomic, so two
+      // overlapping cron runs cannot both go on to create a bot — bots
+      // cost money and a duplicate joins the call twice.
+      const { data: claimed, error: claimErr } = await supabaseAdmin
+        .from("meetings")
+        .insert({
+          user_id: account.user_id,
+          gmail_account_id: account.id,
+          recall_bot_id: null,
+          title: event.summary ?? null,
+          meeting_url: meetingUrl,
+          platform: detectPlatform(meetingUrl),
+          status: "scheduled",
+          source: "calendar",
+          calendar_event_id: event.id,
+          scheduled_start: start,
+        })
+        .select("id")
+        .single();
+      if (claimErr || !claimed) {
+        if ((claimErr as { code?: string } | null)?.code === "23505") {
+          logInfo("meeting_autojoin_skipped_duplicate", {
+            runId,
+            accountId: account.id,
+            eventId: event.id,
+          });
+        } else {
+          logError(
+            "meeting_autojoin_claim_failed",
+            { runId, accountId: account.id, eventId: event.id },
+            claimErr,
+          );
+        }
+        continue;
+      }
+
+      const inserted = claimed;
       try {
         const bot = await createBot({
           meetingUrl,
@@ -780,25 +818,13 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
             ? botCfg.autoLeaveMinutes * 60
             : null,
         });
-        const { data: inserted, error } = await supabaseAdmin
+        const { error } = await supabaseAdmin
           .from("meetings")
-          .insert({
-            user_id: account.user_id,
-            gmail_account_id: account.id,
-            recall_bot_id: bot.id,
-            title: event.summary ?? null,
-            meeting_url: meetingUrl,
-            platform: detectPlatform(meetingUrl),
-            status: "scheduled",
-            source: "calendar",
-            calendar_event_id: event.id,
-            scheduled_start: start,
-          })
-          .select("id")
-          .single();
+          .update({ recall_bot_id: bot.id })
+          .eq("id", inserted.id);
         if (error) throw error;
 
-        if (inserted && participants.length) {
+        if (participants.length) {
           const dedup = [...new Map(participants.map((p) => [p.email, p])).values()];
           await supabaseAdmin
             .from("meeting_participants")
@@ -811,6 +837,9 @@ export async function scheduleUpcomingMeetingBots(runId: string): Promise<{ sche
           { runId, accountId: account.id, eventId: event.id },
           e,
         );
+        // Release the claim so the next run can retry this event instead of
+        // leaving a bot-less "scheduled" meeting behind forever.
+        await supabaseAdmin.from("meetings").delete().eq("id", inserted.id);
       }
     }
   }

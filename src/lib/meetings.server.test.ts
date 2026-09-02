@@ -233,6 +233,35 @@ describe("syncMeetingFromRecall", () => {
     expect(getTranscript).not.toHaveBeenCalled();
   });
 
+  it("a webhook replay after the abort does not re-finalize the meeting", async () => {
+    // Recall retries its webhook. Without a current-status guard the replay
+    // ran the whole sync again and saved the recording we had just
+    // discarded — the abort has to be sticky.
+    vi.mocked(latestStatusCode).mockReturnValue("done");
+    const status = await syncMeetingFromRecall({ ...baseMeeting, status: "failed" });
+    expect(status).toBe("failed");
+    expect(getBot).not.toHaveBeenCalled();
+    expect(meetingUpdates()).toHaveLength(0);
+    expect(getTranscript).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the do-not-record check itself errors", async () => {
+    vi.useFakeTimers({ now: NOW });
+    vi.mocked(latestStatusCode).mockReturnValue("in_call_recording");
+    vi.mocked(extractParticipantEmails).mockReturnValue(["someone@x.com"]);
+    vi.mocked(findBlockedEmailForUser).mockRejectedValue(new Error("db down"));
+
+    const status = await syncMeetingFromRecall(baseMeeting);
+
+    expect(status).toBe("failed");
+    expect(meetingUpdates()[0]!.payload).toEqual({
+      status: "failed",
+      error: "Recording stopped — could not check the do-not-record list.",
+      ended_at: NOW_ISO,
+    });
+    expect(getTranscript).not.toHaveBeenCalled();
+  });
+
   it("records the failure message from Recall's status change on a failed bot", async () => {
     vi.mocked(latestStatusCode).mockReturnValue("fatal");
     vi.mocked(getBot).mockResolvedValue({

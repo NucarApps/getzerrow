@@ -255,6 +255,10 @@ export async function linkParticipantsToContacts(meetingId: string, userId: stri
  */
 export async function syncMeetingFromRecall(meeting: MeetingRow): Promise<string> {
   if (!meeting.recall_bot_id) return meeting.status;
+  // A meeting we already abandoned stays abandoned: Recall retries its
+  // webhook, and without this a replay after a blocklist abort re-ran the
+  // sync and finalized the very recording we pulled the bot out of.
+  if (meeting.status === "failed") return meeting.status;
 
   let bot: RecallBot;
   try {
@@ -276,6 +280,7 @@ export async function syncMeetingFromRecall(meeting: MeetingRow): Promise<string
       const emails = extractParticipantEmails(bot);
       const { findBlockedEmailForUser } = await import("./meetings-autojoin.server");
       const blocked = await findBlockedEmailForUser(meeting.user_id, emails);
+      // (a lookup failure is handled by the catch below — see the comment there)
       if (blocked) {
         await leaveBot(meeting.recall_bot_id);
         await supabaseAdmin
@@ -289,7 +294,19 @@ export async function syncMeetingFromRecall(meeting: MeetingRow): Promise<string
         return "failed";
       }
     } catch (e) {
+      // Fail closed: if we cannot tell whether someone blocked is in the
+      // call, do not save the recording. The user can retry the meeting;
+      // recording someone who asked not to be recorded is not recoverable.
       logError("meeting_sync_blocklist_failed", { meetingId: meeting.id }, e);
+      await supabaseAdmin
+        .from("meetings")
+        .update({
+          status: "failed",
+          error: "Recording stopped — could not check the do-not-record list.",
+          ended_at: new Date().toISOString(),
+        })
+        .eq("id", meeting.id);
+      return "failed";
     }
   }
 
