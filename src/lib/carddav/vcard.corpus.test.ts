@@ -6,7 +6,7 @@
 //   macos14    the same family plus X-ABShowAs and custom-labelled URLs
 //   davx5-v4   vCard 4.0 with TEL;VALUE=uri:tel:… (Android/DAVx5)
 //   thunderbird vCard 4.0 with KIND and an ADR;LABEL= parameter
-//   android-qp vCard 2.1 with ENCODING=QUOTED-PRINTABLE
+//   android-qp vCard 2.1 with ENCODING=QUOTED-PRINTABLE and soft "=" wraps
 //
 // Fixtures are stored with LF for readability and converted to CRLF here,
 // which is what the wire format uses and what the unfolder must cope with.
@@ -231,19 +231,62 @@ describe("Thunderbird (vCard 4.0, KIND + ADR;LABEL)", () => {
 });
 
 describe("Android exporter (vCard 2.1, quoted-printable)", () => {
-  // CHARACTERIZATION(carddav-quoted-printable-not-decoded)
-  it("stores quoted-printable text verbatim instead of decoding it", () => {
+  it("decodes ENCODING=QUOTED-PRINTABLE values back to their real text", () => {
     // vCard 2.1 exporters (the Android Contacts "share" flow, several
-    // Windows address books) escape non-ASCII as ENCODING=QUOTED-PRINTABLE.
-    // The parser ignores the parameter, so "Jürgen Müller" is stored as
-    // "J=C3=BCrgen M=C3=BCller" — visible in the app, pushed to Google, and
-    // round-tripped back to the phone that way. Decoding it means handling
-    // the soft "=" line continuations too, which is why this is pinned
-    // rather than patched here.
+    // Windows address books) escape every non-ASCII byte as
+    // ENCODING=QUOTED-PRINTABLE. Left undecoded, "Jürgen Müller" would be
+    // stored, displayed and pushed to Google as "J=C3=BCrgen M=C3=BCller".
     const parsed = loadCard("android-qp.vcf");
-    expect(parsed.name).toBe("J=C3=BCrgen M=C3=BCller");
-    expect(parsed.company).toBe("B=C3=A4ckerei Nord");
-    expect(parsed.notes).toBe("Gru=C3=9Fe aus M=C3=BCnchen");
+    expect(parsed.name).toBe("Jürgen Müller");
+    expect(parsed.company).toBe("Bäckerei Nord");
+  });
+
+  it("unfolds a soft '=' line break before splitting a structured ADR value", () => {
+    // The ADR value wraps mid-component ("M=C3=BCnch" + "en"). Splitting on
+    // ';' before joining the continuation would put half of "München" in the
+    // street slot and shift every following component along by one.
+    const parsed = loadCard("android-qp.vcf");
+    expect({
+      address_line1: parsed.address_line1,
+      address_line2: parsed.address_line2,
+      city: parsed.city,
+      region: parsed.region,
+      postal_code: parsed.postal_code,
+      country: parsed.country,
+    }).toStrictEqual({
+      address_line1: "Hauptstraße 12",
+      address_line2: null,
+      city: "München",
+      region: "Bayern",
+      postal_code: "80331",
+      country: "Deutschland",
+    });
+  });
+
+  it("joins a value soft-wrapped across three lines, including a split escape", () => {
+    // The NOTE spans three physical lines and the em dash's own escape is
+    // torn across the first break ("=E2=80=" + "=94"), so the continuation
+    // has to be joined before any '=XX' is decoded.
+    expect(loadCard("android-qp.vcf").notes).toBe(
+      "Grüße aus München — wir sehen uns in der Bäckerei, Gruß an alle.",
+    );
+  });
+
+  it("leaves a plain 3.0 value alone when no ENCODING parameter is present", () => {
+    // Decoding must be opt-in per property: an unencoded value that happens
+    // to contain '=' (a URL query, a base64-looking token) must survive.
+    const parsed = parseVCard(
+      [
+        "BEGIN:VCARD",
+        "VERSION:3.0",
+        "FN:A=C3=BC B",
+        "URL:https://x.test/?a=3D1",
+        "END:VCARD",
+        "",
+      ].join("\r\n"),
+    );
+    expect(parsed?.name).toBe("A=C3=BC B");
+    expect(parsed?.website).toBe("https://x.test/?a=3D1");
   });
 
   it("still reads the ASCII fields, so the card is not a total loss", () => {

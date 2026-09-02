@@ -12,6 +12,12 @@ import { setContactEncryptedFields } from "@/lib/sync/encrypted-writer";
 import { snapshotContact } from "@/lib/contacts/revisions.server";
 import { logInfo, logError } from "@/lib/log.server";
 import { buildCardDavContactPatch } from "./merge";
+import {
+  cardMatchesFilter,
+  parseAddressbookFilter,
+  type AddressbookFilter,
+  type CardFields,
+} from "./query-filter";
 import { saveContactPhoto, loadContactPhotoBytes } from "@/lib/contacts/photos.server";
 
 import {
@@ -29,11 +35,38 @@ import {
   davResponse,
   MULTISTATUS_CLOSE,
   MULTISTATUS_OPEN,
+  NS_CALENDARSERVER,
+  NS_CARDDAV,
+  NS_DAV,
   parseMultigetHrefs,
+  parseRequestedProps,
   parseSyncCollection,
+  propfindResponseBlock,
   responseBlock,
+  statusResponseBlock,
   xmlEscape,
+  type PropSpec,
+  type RequestedProp,
 } from "./xml";
+
+/** The one address-data declaration both collection blocks advertise. */
+const SUPPORTED_ADDRESS_DATA =
+  `<C:supported-address-data>` +
+  `<C:address-data-type content-type="text/vcard" version="3.0"/>` +
+  `</C:supported-address-data>`;
+
+/** Props carried by a member resource — a contact or a group .vcf. */
+function memberProps(etag: string): PropSpec[] {
+  return [
+    { ns: NS_DAV, name: "resourcetype", xml: `<D:resourcetype/>` },
+    { ns: NS_DAV, name: "getetag", xml: `<D:getetag>${xmlEscape(etag)}</D:getetag>` },
+    {
+      ns: NS_DAV,
+      name: "getcontenttype",
+      xml: `<D:getcontenttype>text/vcard; charset=utf-8</D:getcontenttype>`,
+    },
+  ];
+}
 
 const BASE = "/api/public/carddav";
 const GOOGLE_SYNC_DIRTY_SENTINEL = "1970-01-01T00:00:00.000Z";
@@ -356,28 +389,52 @@ export function handleOptions(): Response {
 
 // Root or principal-level PROPFIND: point iOS at the user's principal +
 // addressbook home.
-function propfindPrincipal(email: string, depth: string): Response {
+function propfindPrincipal(email: string, depth: string, wanted: RequestedProp[] | null): Response {
   const principal = principalHref(email);
   const book = addressbookHref(email);
 
-  const principalProps =
-    `<D:resourcetype><D:collection/><D:principal/></D:resourcetype>` +
-    `<D:displayname>${xmlEscape(email)}</D:displayname>` +
-    `<D:current-user-principal><D:href>${principal}</D:href></D:current-user-principal>` +
-    `<D:principal-URL><D:href>${principal}</D:href></D:principal-URL>` +
-    `<C:addressbook-home-set><D:href>${principal}</D:href></C:addressbook-home-set>`;
+  const principalProps: PropSpec[] = [
+    {
+      ns: NS_DAV,
+      name: "resourcetype",
+      xml: `<D:resourcetype><D:collection/><D:principal/></D:resourcetype>`,
+    },
+    { ns: NS_DAV, name: "displayname", xml: `<D:displayname>${xmlEscape(email)}</D:displayname>` },
+    {
+      ns: NS_DAV,
+      name: "current-user-principal",
+      xml: `<D:current-user-principal><D:href>${principal}</D:href></D:current-user-principal>`,
+    },
+    {
+      ns: NS_DAV,
+      name: "principal-URL",
+      xml: `<D:principal-URL><D:href>${principal}</D:href></D:principal-URL>`,
+    },
+    {
+      ns: NS_CARDDAV,
+      name: "addressbook-home-set",
+      xml: `<C:addressbook-home-set><D:href>${principal}</D:href></C:addressbook-home-set>`,
+    },
+  ];
 
-  let body = MULTISTATUS_OPEN + responseBlock(principal, principalProps);
+  let body = MULTISTATUS_OPEN + propfindResponseBlock(principal, principalProps, wanted);
 
   if (depth === "1") {
-    const bookProps =
-      `<D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>` +
-      `<D:displayname>Atzro Contacts</D:displayname>` +
-      `<C:addressbook-description>Contacts synced from Atzro</C:addressbook-description>` +
-      `<C:supported-address-data>` +
-      `<C:address-data-type content-type="text/vcard" version="3.0"/>` +
-      `</C:supported-address-data>`;
-    body += responseBlock(book, bookProps);
+    const bookProps: PropSpec[] = [
+      {
+        ns: NS_DAV,
+        name: "resourcetype",
+        xml: `<D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>`,
+      },
+      { ns: NS_DAV, name: "displayname", xml: `<D:displayname>Atzro Contacts</D:displayname>` },
+      {
+        ns: NS_CARDDAV,
+        name: "addressbook-description",
+        xml: `<C:addressbook-description>Contacts synced from Atzro</C:addressbook-description>`,
+      },
+      { ns: NS_CARDDAV, name: "supported-address-data", xml: SUPPORTED_ADDRESS_DATA },
+    ];
+    body += propfindResponseBlock(book, bookProps, wanted);
   }
   body += MULTISTATUS_CLOSE;
   return davResponse(body);
@@ -388,47 +445,54 @@ async function propfindAddressbook(
   userId: string,
   email: string,
   depth: string,
+  wanted: RequestedProp[] | null,
 ): Promise<Response> {
   const book = addressbookHref(email);
   const ctag = await computeBookCTag(userId);
   const snap = await currentSyncSnapshot(userId);
   const syncToken = buildSyncToken(userId, snap.updatedAt, snap.seq);
 
-  const bookProps =
-    `<D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>` +
-    `<D:displayname>Atzro Contacts</D:displayname>` +
-    `<CS:getctag>${xmlEscape(ctag)}</CS:getctag>` +
-    `<D:sync-token>${xmlEscape(syncToken)}</D:sync-token>` +
-    `<D:supported-report-set>` +
-    `<D:supported-report><D:report><D:sync-collection/></D:report></D:supported-report>` +
-    `<D:supported-report><D:report><C:addressbook-multiget/></D:report></D:supported-report>` +
-    `<D:supported-report><D:report><C:addressbook-query/></D:report></D:supported-report>` +
-    `</D:supported-report-set>` +
-    `<C:supported-address-data>` +
-    `<C:address-data-type content-type="text/vcard" version="3.0"/>` +
-    `</C:supported-address-data>`;
+  const bookProps: PropSpec[] = [
+    {
+      ns: NS_DAV,
+      name: "resourcetype",
+      xml: `<D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>`,
+    },
+    { ns: NS_DAV, name: "displayname", xml: `<D:displayname>Atzro Contacts</D:displayname>` },
+    { ns: NS_CALENDARSERVER, name: "getctag", xml: `<CS:getctag>${xmlEscape(ctag)}</CS:getctag>` },
+    { ns: NS_DAV, name: "sync-token", xml: `<D:sync-token>${xmlEscape(syncToken)}</D:sync-token>` },
+    {
+      ns: NS_DAV,
+      name: "supported-report-set",
+      xml:
+        `<D:supported-report-set>` +
+        `<D:supported-report><D:report><D:sync-collection/></D:report></D:supported-report>` +
+        `<D:supported-report><D:report><C:addressbook-multiget/></D:report></D:supported-report>` +
+        `<D:supported-report><D:report><C:addressbook-query/></D:report></D:supported-report>` +
+        `</D:supported-report-set>`,
+    },
+    { ns: NS_CARDDAV, name: "supported-address-data", xml: SUPPORTED_ADDRESS_DATA },
+  ];
 
-  let body = MULTISTATUS_OPEN + responseBlock(book, bookProps);
+  let body = MULTISTATUS_OPEN + propfindResponseBlock(book, bookProps, wanted);
 
   if (depth === "1") {
     const rows = await listContactRows(userId);
     for (const row of rows) {
-      const etag = contactETag(row.id, row.updated_at);
-      const props =
-        `<D:resourcetype/>` +
-        `<D:getetag>${xmlEscape(etag)}</D:getetag>` +
-        `<D:getcontenttype>text/vcard; charset=utf-8</D:getcontenttype>`;
-      body += responseBlock(contactHref(email, row.id), props);
+      body += propfindResponseBlock(
+        contactHref(email, row.id),
+        memberProps(contactETag(row.id, row.updated_at)),
+        wanted,
+      );
     }
     // Groups appear as their own vCards (Apple X-ADDRESSBOOKSERVER-KIND).
     const groups = await listGroupRows(userId);
     for (const g of groups) {
-      const etag = groupETag(g.id, g.updated_at);
-      const props =
-        `<D:resourcetype/>` +
-        `<D:getetag>${xmlEscape(etag)}</D:getetag>` +
-        `<D:getcontenttype>text/vcard; charset=utf-8</D:getcontenttype>`;
-      body += responseBlock(groupHref(email, g.id), props);
+      body += propfindResponseBlock(
+        groupHref(email, g.id),
+        memberProps(groupETag(g.id, g.updated_at)),
+        wanted,
+      );
     }
   }
   body += MULTISTATUS_CLOSE;
@@ -442,6 +506,16 @@ export async function handlePropfind(
   path: string,
 ): Promise<Response> {
   const depth = request.headers.get("depth") ?? "0";
+  // The prop subset the client asked for, or null when it asked for allprop /
+  // sent no body / sent XML we cannot read. Reading the body must never fail
+  // the request: iOS retries a 5xx hard.
+  const wanted: RequestedProp[] | null = await (async () => {
+    try {
+      return parseRequestedProps(await request.text());
+    } catch {
+      return null;
+    }
+  })();
   // path is what came after /api/public/carddav/, e.g. "" or "<email>/" or
   // "<email>/contacts/".
   const trimmed = path.replace(/^\/+|\/+$/g, "");
@@ -449,10 +523,10 @@ export async function handlePropfind(
 
   if (segments.length <= 1) {
     // "/" or "/<email>/" -> principal view
-    return propfindPrincipal(email, depth);
+    return propfindPrincipal(email, depth, wanted);
   }
   if (segments.length === 2 && segments[1] === "contacts") {
-    return propfindAddressbook(userId, email, depth);
+    return propfindAddressbook(userId, email, depth, wanted);
   }
   // Unknown depth: fall back to empty multistatus so iOS doesn't error.
   return davResponse(MULTISTATUS_OPEN + MULTISTATUS_CLOSE);
@@ -461,28 +535,46 @@ export async function handlePropfind(
 // -----------------------------------------------------------------------------
 // REPORT (addressbook-multiget / addressbook-query)
 
+/** The property values an addressbook-query filter is evaluated against.
+ * They mirror what `contactToVCard` actually emits, so a filter cannot
+ * select a card on a value the client will not find in the vCard it gets. */
+function contactCardFields(
+  row: { id: string; name?: string | null; email?: string | null; phone?: string | null },
+  phones: PhoneRow[],
+  emails: EmailRow[],
+): CardFields {
+  const displayName = (row.name && row.name.trim()) || row.email || "Unknown";
+  const addresses = emails.length ? emails.map((e) => e.address) : row.email ? [row.email] : [];
+  const numbers = [...phones.map((p) => p.number), ...(row.phone ? [row.phone] : [])];
+  return {
+    FN: [displayName],
+    EMAIL: addresses.filter((a) => !!a),
+    TEL: numbers.filter((n) => !!n),
+    UID: [row.id],
+  };
+}
+
+/** Returns the `<D:response>` block for a contact, or "" when an
+ * addressbook-query filter excluded it. */
 async function buildContactResponse(
   userId: string,
   email: string,
   contactId: string,
   includeVcard: boolean,
+  filter?: AddressbookFilter | null,
 ): Promise<string> {
   const { row } = await getContactDecrypted(contactId);
-  if (!row) {
-    return (
-      `<D:response>` +
-      `<D:href>${contactHref(email, contactId)}</D:href>` +
-      `<D:status>HTTP/1.1 404 Not Found</D:status>` +
-      `</D:response>`
-    );
-  }
-  const [phones, categories, emails, photo, includeSummary] = await Promise.all([
+  if (!row) return statusResponseBlock(contactHref(email, contactId));
+  const [phones, categories, emails, includeSummary] = await Promise.all([
     fetchPhones(contactId),
     fetchCategoriesForContact(userId, contactId),
     fetchEmails(contactId),
-    includeVcard ? loadContactPhotoOrLogo(userId, row) : Promise.resolve(null),
     getIncludeSummaryInNotes(userId),
   ]);
+  // Evaluate the filter BEFORE the photo: loading one can reach out for a
+  // company logo, which a card that is about to be dropped must not pay for.
+  if (filter && !cardMatchesFilter(filter, contactCardFields(row, phones, emails))) return "";
+  const photo = includeVcard ? await loadContactPhotoOrLogo(userId, row) : null;
   const vcard = contactToVCard(row, phones, categories, emails, photo, { includeSummary });
 
   const etag = contactETag(row.id, row.updated_at);
@@ -499,6 +591,7 @@ async function buildGroupResponse(
   includeVcard: boolean,
   style: GroupNameStyle,
   treeMap?: GroupTreeMap,
+  filter?: AddressbookFilter | null,
 ): Promise<string> {
   const { data: group } = await supabaseAdmin
     .from("contact_groups")
@@ -506,18 +599,17 @@ async function buildGroupResponse(
     .eq("id", groupId)
     .eq("user_id", userId)
     .maybeSingle();
-  if (!group) {
-    return (
-      `<D:response>` +
-      `<D:href>${groupHref(email, groupId)}</D:href>` +
-      `<D:status>HTTP/1.1 404 Not Found</D:status>` +
-      `</D:response>`
-    );
+  if (!group) return statusResponseBlock(groupHref(email, groupId));
+  const displayName = await resolveGroupDisplayName(userId, group.id, group.name, style, treeMap);
+  const uid = group.carddav_uid ?? `group-${group.id}`;
+  // A group card carries an FN and a UID and nothing else a filter can name,
+  // so an EMAIL or TEL prop-filter can never select one.
+  if (filter && !cardMatchesFilter(filter, { FN: [displayName], EMAIL: [], TEL: [], UID: [uid] })) {
+    return "";
   }
   const members = await fetchGroupMembers(group.id);
-  const displayName = await resolveGroupDisplayName(userId, group.id, group.name, style, treeMap);
   const vcard = buildGroupVCard({
-    uid: group.carddav_uid ?? `group-${group.id}`,
+    uid,
     name: displayName,
     memberContactIds: members,
     updatedAt: group.updated_at,
@@ -562,6 +654,33 @@ async function resolveGroupDisplayName(
 
 const TOMBSTONE_PRUNE_DAYS = 90;
 
+/** Ceiling on the changes one sync-collection REPORT will report when the
+ * client did not ask for a smaller one. Reaching it is a truncation like any
+ * other: 507 plus a token covering only what was sent. */
+const MAX_SYNC_RESULTS = 5000;
+
+/**
+ * How many of `rows` (ordered by `at`, ascending) may be reported so that the
+ * token minted from the last one does not strand its neighbours.
+ *
+ * The token carries a single millisecond and the next request asks for rows
+ * strictly greater than it, so a cut between two rows stamped the SAME
+ * millisecond — routine after a bulk import — would lose the ones left
+ * behind. The prefix is therefore pulled back to a timestamp boundary; when
+ * that would report nothing at all, the whole leading block of equal
+ * timestamps is reported instead, overrunning the budget rather than making
+ * no progress.
+ */
+function prefixEndingOnATimestampBoundary(rows: Array<{ at: string }>, budget: number): number {
+  let k = Math.min(rows.length, Math.max(0, budget));
+  while (k > 0 && k < rows.length && rows[k]!.at === rows[k - 1]!.at) k--;
+  if (k === 0 && rows.length > 0) {
+    k = 1;
+    while (k < rows.length && rows[k]!.at === rows[0]!.at) k++;
+  }
+  return k;
+}
+
 async function handleSyncCollection(raw: string, userId: string, email: string): Promise<Response> {
   const { syncToken, syncLevel, limit } = parseSyncCollection(raw);
   const includeVcard = raw.toLowerCase().includes("address-data");
@@ -600,6 +719,12 @@ async function handleSyncCollection(raw: string, userId: string, email: string):
     since = parsed;
   }
 
+  // ONE budget across all three change streams. It used to be pushed into
+  // each query separately, so an nresults of N could return up to 3N rows.
+  // Each query fetches one row past the budget so "there is more" can be told
+  // from "that was everything".
+  const budget = limit ?? MAX_SYNC_RESULTS;
+  const probe = budget + 1;
   const [{ data: cRows }, { data: gRows }, { data: tRows }] = await Promise.all([
     supabaseAdmin
       .from("contacts")
@@ -607,46 +732,83 @@ async function handleSyncCollection(raw: string, userId: string, email: string):
       .eq("user_id", userId)
       .gt("updated_at", since.updatedSince)
       .order("updated_at", { ascending: true })
-      .limit(limit ?? 5000),
+      .limit(probe),
     supabaseAdmin
       .from("contact_groups")
       .select("id,updated_at")
       .eq("user_id", userId)
       .gt("updated_at", since.updatedSince)
       .order("updated_at", { ascending: true })
-      .limit(limit ?? 1000),
+      .limit(probe),
     supabaseAdmin
       .from("carddav_tombstones")
       .select("resource_type,resource_id,sync_seq")
       .eq("user_id", userId)
       .gt("sync_seq", since.seqSince)
       .order("sync_seq", { ascending: true })
-      .limit(limit ?? 5000),
+      .limit(probe),
   ]);
+
+  const contactRows = (cRows as Array<{ id: string; updated_at: string }> | null) ?? [];
+  const groupRows = (gRows as Array<{ id: string; updated_at: string }> | null) ?? [];
+  const tombRows =
+    (tRows as Array<{ resource_type: string; resource_id: string; sync_seq: number }> | null) ?? [];
+
+  // Resource changes are one stream ordered by updated_at, because that is
+  // the single value the sync token can carry for them.
+  const resources = [
+    ...contactRows.map((r) => ({ kind: "contact" as const, id: r.id, at: r.updated_at })),
+    ...groupRows.map((r) => ({ kind: "group" as const, id: r.id, at: r.updated_at })),
+  ].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+
+  const takeResources = prefixEndingOnATimestampBoundary(resources, budget);
+  const takeTombs = Math.max(0, Math.min(tombRows.length, budget - takeResources));
+  // More is waiting when a prefix was cut, or when a query came back with the
+  // extra probe row (so the database had at least one more to give).
+  const truncated =
+    takeResources < resources.length ||
+    takeTombs < tombRows.length ||
+    contactRows.length > budget ||
+    groupRows.length > budget ||
+    tombRows.length > budget;
 
   const style = await getGroupNameStyle(userId);
   const treeMap = style === "leaf" ? undefined : await loadGroupTreeMap(userId);
   let body = MULTISTATUS_OPEN;
 
-  for (const row of (cRows as Array<{ id: string; updated_at: string }> | null) ?? []) {
-    body += await buildContactResponse(userId, email, row.id, includeVcard);
+  for (const r of resources.slice(0, takeResources)) {
+    body +=
+      r.kind === "contact"
+        ? await buildContactResponse(userId, email, r.id, includeVcard)
+        : await buildGroupResponse(userId, email, r.id, includeVcard, style, treeMap);
   }
-  for (const row of (gRows as Array<{ id: string; updated_at: string }> | null) ?? []) {
-    body += await buildGroupResponse(userId, email, row.id, includeVcard, style, treeMap);
-  }
-  for (const t of (tRows as Array<{ resource_type: string; resource_id: string }> | null) ?? []) {
+  for (const t of tombRows.slice(0, takeTombs)) {
     const href =
       t.resource_type === "group"
         ? groupHref(email, t.resource_id)
         : contactHref(email, t.resource_id);
-    body +=
-      `<D:response>` +
-      `<D:href>${href}</D:href>` +
-      `<D:status>HTTP/1.1 404 Not Found</D:status>` +
-      `</D:response>`;
+    body += statusResponseBlock(href);
   }
 
-  const newToken = buildSyncToken(userId, snap.updatedAt, snap.seq);
+  // RFC 6578 §3.6: a truncated response says so, and its token must describe
+  // exactly what was reported. Minting the full snapshot here would tell the
+  // client it had seen changes it was never sent, losing them for good.
+  if (truncated) {
+    body += statusResponseBlock(
+      addressbookHref(email),
+      "HTTP/1.1 507 Insufficient Storage",
+      `<D:error><D:number-of-matches-within-limits/></D:error>`,
+    );
+  }
+  const lastResource = resources[takeResources - 1];
+  const lastTomb = tombRows[takeTombs - 1];
+  const newToken = truncated
+    ? buildSyncToken(
+        userId,
+        lastResource?.at ?? since.updatedSince,
+        lastTomb?.sync_seq ?? since.seqSince,
+      )
+    : buildSyncToken(userId, snap.updatedAt, snap.seq);
   body += `<D:sync-token>${xmlEscape(newToken)}</D:sync-token>`;
   body += MULTISTATUS_CLOSE;
   return davResponse(body);
@@ -665,24 +827,47 @@ export async function handleReport(
     return handleSyncCollection(raw, userId, email);
   }
 
-  const contactIds: string[] = [];
-  const groupIds: string[] = [];
+  // One ordered list so the response blocks come back in the order the
+  // client listed its hrefs, contacts and groups interleaved as sent.
+  type Target =
+    | { kind: "contact"; id: string; href: string }
+    | { kind: "group"; id: string; href: string }
+    // A member href (…/<something>.vcf) that names no resource of ours.
+    | { kind: "unresolvable"; href: string };
+  const targets: Target[] = [];
+  // Only a multiget carries client-chosen hrefs that may not resolve; a
+  // query enumerates rows we already know exist.
+  let verifyOwnership = false;
+  // The addressbook-query filter, when there is one this server can evaluate.
+  let filter: AddressbookFilter | null = null;
+
   if (lower.includes("addressbook-multiget")) {
-    const hrefs = parseMultigetHrefs(raw);
-    for (const h of hrefs) {
-      const gid = h.match(/group-([0-9a-f-]{36})\.vcf$/i)?.[1];
+    verifyOwnership = true;
+    for (const href of parseMultigetHrefs(raw)) {
+      const gid = href.match(/group-([0-9a-f-]{36})\.vcf$/i)?.[1];
       if (gid) {
-        groupIds.push(gid);
+        targets.push({ kind: "group", id: gid, href });
         continue;
       }
-      const cid = h.match(/([0-9a-f-]{36})\.vcf$/i)?.[1];
-      if (cid) contactIds.push(cid);
+      const cid = href.match(/([0-9a-f-]{36})\.vcf$/i)?.[1];
+      if (cid) {
+        targets.push({ kind: "contact", id: cid, href });
+        continue;
+      }
+      // Anything else that looks like a member resource is reported gone.
+      // A href for a collection (no .vcf) names something that does exist,
+      // so it is skipped rather than 404'd.
+      if (/\.vcf$/i.test(href.trim())) targets.push({ kind: "unresolvable", href });
     }
   } else if (lower.includes("addressbook-query")) {
-    // A full-collection query legitimately returns everything.
+    // A query with no filter — or one built from something this server does
+    // not evaluate — legitimately returns the whole collection.
+    const parsedFilter = parseAddressbookFilter(raw);
+    if (parsedFilter.kind === "filter") filter = parsedFilter.filter;
     const [rows, groups] = await Promise.all([listContactRows(userId), listGroupRows(userId)]);
-    contactIds.push(...rows.map((r) => r.id));
-    groupIds.push(...groups.map((g) => g.id));
+    for (const r of rows)
+      targets.push({ kind: "contact", id: r.id, href: contactHref(email, r.id) });
+    for (const g of groups) targets.push({ kind: "group", id: g.id, href: groupHref(email, g.id) });
   } else {
     // Empty or unrecognized REPORT body: do NOT fall through to a full
     // decrypted address-book dump (+ per-contact logo fetches). Return an
@@ -691,32 +876,51 @@ export async function handleReport(
     return davResponse(MULTISTATUS_OPEN + MULTISTATUS_CLOSE);
   }
 
-  let body = MULTISTATUS_OPEN;
-  if (contactIds.length > 0) {
-    const { data } = await supabaseAdmin
-      .from("contacts")
-      .select("id")
-      .eq("user_id", userId)
-      .in("id", contactIds);
-    const owned = new Set(((data as Array<{ id: string }> | null) ?? []).map((r) => r.id));
-    for (const id of contactIds) {
-      if (!owned.has(id)) continue;
-      body += await buildContactResponse(userId, email, id, includeVcard);
+  // Resolve ownership in one round trip per table. A row the caller does not
+  // own is answered EXACTLY like one that never existed — a bare 404 block —
+  // so a multiget cannot be used to probe whether an id exists on another
+  // account.
+  const ownedContacts = new Set<string>();
+  const ownedGroups = new Set<string>();
+  if (verifyOwnership) {
+    const contactIds = targets.filter((t) => t.kind === "contact").map((t) => t.id);
+    const groupIds = targets.filter((t) => t.kind === "group").map((t) => t.id);
+    const [contactsRes, groupsRes] = await Promise.all([
+      contactIds.length
+        ? supabaseAdmin.from("contacts").select("id").eq("user_id", userId).in("id", contactIds)
+        : Promise.resolve({ data: [] }),
+      groupIds.length
+        ? supabaseAdmin.from("contact_groups").select("id").eq("user_id", userId).in("id", groupIds)
+        : Promise.resolve({ data: [] }),
+    ]);
+    for (const r of (contactsRes.data as Array<{ id: string }> | null) ?? []) {
+      ownedContacts.add(r.id);
     }
+    for (const r of (groupsRes.data as Array<{ id: string }> | null) ?? []) ownedGroups.add(r.id);
   }
-  if (groupIds.length > 0) {
-    const { data } = await supabaseAdmin
-      .from("contact_groups")
-      .select("id")
-      .eq("user_id", userId)
-      .in("id", groupIds);
-    const owned = new Set(((data as Array<{ id: string }> | null) ?? []).map((r) => r.id));
-    const style = await getGroupNameStyle(userId);
-    const treeMap = style === "leaf" ? undefined : await loadGroupTreeMap(userId);
-    for (const id of groupIds) {
-      if (!owned.has(id)) continue;
-      body += await buildGroupResponse(userId, email, id, includeVcard, style, treeMap);
+  const owns = (t: Target): boolean => {
+    if (!verifyOwnership) return true;
+    if (t.kind === "contact") return ownedContacts.has(t.id);
+    if (t.kind === "group") return ownedGroups.has(t.id);
+    return false;
+  };
+
+  // Group display names need the tree; load it once, and only if a group
+  // block is actually going to be rendered.
+  const needsGroups = targets.some((t) => t.kind === "group" && owns(t));
+  const style = needsGroups ? await getGroupNameStyle(userId) : "leaf";
+  const treeMap = needsGroups && style !== "leaf" ? await loadGroupTreeMap(userId) : undefined;
+
+  let body = MULTISTATUS_OPEN;
+  for (const t of targets) {
+    if (t.kind === "unresolvable" || !owns(t)) {
+      body += statusResponseBlock(t.href);
+      continue;
     }
+    body +=
+      t.kind === "contact"
+        ? await buildContactResponse(userId, email, t.id, includeVcard, filter)
+        : await buildGroupResponse(userId, email, t.id, includeVcard, style, treeMap, filter);
   }
   body += MULTISTATUS_CLOSE;
   return davResponse(body);

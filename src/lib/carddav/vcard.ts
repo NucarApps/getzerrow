@@ -436,12 +436,59 @@ function unescapeValue(v: string): string {
   return out.join("");
 }
 
+/** True when a logical line's parameter section declares quoted-printable.
+ * Only the head (before the first colon) is inspected — a value is free to
+ * contain the literal text "ENCODING=QUOTED-PRINTABLE". */
+function declaresQuotedPrintable(logicalLine: string): boolean {
+  const colon = logicalLine.indexOf(":");
+  if (colon < 0) return false;
+  return /ENCODING=QUOTED-PRINTABLE/i.test(logicalLine.slice(0, colon));
+}
+
+/**
+ * Decode an RFC 2045 quoted-printable value. Bytes are accumulated and then
+ * decoded as UTF-8 in one pass, because a single non-ASCII character is
+ * spelled as several `=XX` escapes (`M=C3=BCller`) that only mean anything
+ * together. A `=` that is not followed by two hex digits is left alone rather
+ * than dropped — real exporters emit the odd stray one.
+ */
+function decodeQuotedPrintable(v: string): string {
+  const bytes: number[] = [];
+  for (let i = 0; i < v.length; i++) {
+    const c = v[i]!;
+    if (c === "=" && i + 2 < v.length) {
+      const hex = v.slice(i + 1, i + 3);
+      if (/^[0-9a-f]{2}$/i.test(hex)) {
+        bytes.push(Number.parseInt(hex, 16));
+        i += 2;
+        continue;
+      }
+    }
+    for (const b of encoder.encode(c)) bytes.push(b);
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
+/**
+ * Join physical lines into logical ones. Two continuation mechanisms:
+ *
+ *  - RFC 2425/6350 folding: the next line starts with a space or tab.
+ *  - vCard 2.1 quoted-printable SOFT line breaks: the line ends with a bare
+ *    `=` and the continuation carries no leading space. This has to happen
+ *    here, before the value is split or decoded, because Android wraps in the
+ *    middle of a `=XX` escape and in the middle of an ADR component.
+ */
 function unfold(text: string): string[] {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   const out: string[] = [];
   for (const l of lines) {
-    if ((l.startsWith(" ") || l.startsWith("\t")) && out.length > 0) {
-      out[out.length - 1] += l.slice(1);
+    const prev = out.length > 0 ? out[out.length - 1]! : null;
+    if (prev !== null && (l.startsWith(" ") || l.startsWith("\t"))) {
+      out[out.length - 1] = prev + l.slice(1);
+    } else if (prev !== null && prev.endsWith("=") && declaresQuotedPrintable(prev)) {
+      // A literal '=' inside a quoted-printable value is always spelled
+      // '=3D', so a trailing bare '=' can only be a soft break.
+      out[out.length - 1] = prev.slice(0, -1) + l;
     } else {
       out.push(l);
     }
@@ -449,7 +496,13 @@ function unfold(text: string): string[] {
   return out.filter((l) => l.length > 0);
 }
 
-type ParsedLine = { name: string; params: Record<string, string[]>; value: string };
+type ParsedLine = {
+  name: string;
+  params: Record<string, string[]>;
+  value: string;
+  /** ENCODING=QUOTED-PRINTABLE was on this property. */
+  quotedPrintable: boolean;
+};
 
 function parseLine(raw: string): ParsedLine | null {
   const colonIdx = raw.indexOf(":");
@@ -475,7 +528,8 @@ function parseLine(raw: string): ParsedLine | null {
       (params[key] ??= []).push(...vals.map((v) => v.toUpperCase()));
     }
   }
-  return { name, params, value };
+  const quotedPrintable = (params.ENCODING ?? []).some((e) => e.trim() === "QUOTED-PRINTABLE");
+  return { name, params, value, quotedPrintable };
 }
 
 /** vCard 4.0 (DAVx5, Thunderbird, Google's exporter) writes phone numbers as
@@ -538,7 +592,13 @@ export function parseVCard(text: string): ParsedVCard | null {
   let nFamily: string | null = null;
 
   for (const p of parsed) {
-    const v = unescapeValue(p.value);
+    // Quoted-printable is decoded LAST, after the backslash unescape and
+    // after a structured value has been split: a component separator in a
+    // 2.1 card is a literal ';', while a semicolon inside a component is
+    // written '=3B', so decoding first would split the value in the wrong
+    // places.
+    const decode = (s: string): string => (p.quotedPrintable ? decodeQuotedPrintable(s) : s);
+    const v = decode(unescapeValue(p.value));
     switch (p.name) {
       case "UID":
         out.uid = v.trim() || null;
@@ -552,14 +612,14 @@ export function parseVCard(text: string): ParsedVCard | null {
         break;
       }
       case "N": {
-        const segs = splitStructured(p.value).map(unescapeValue);
+        const segs = splitStructured(p.value).map((s) => decode(unescapeValue(s)));
         nFamily = segs[0]?.trim() || null;
         nGiven = segs[1]?.trim() || null;
         if (nFamily || nGiven) out.presentFields.add("FN");
         break;
       }
       case "ORG": {
-        const c = unescapeValue(splitStructured(p.value)[0] ?? "").trim();
+        const c = decode(unescapeValue(splitStructured(p.value)[0] ?? "")).trim();
         if (c) {
           out.company = c;
           out.presentFields.add("ORG");
@@ -606,7 +666,7 @@ export function parseVCard(text: string): ParsedVCard | null {
         break;
       }
       case "ADR": {
-        const segs = splitStructured(p.value).map(unescapeValue);
+        const segs = splitStructured(p.value).map((s) => decode(unescapeValue(s)));
         // Street is multi-line (Apple Contacts and the serializer below use
         // a newline between line 1 and line 2). Splitting on commas here
         // used to migrate "Suite 4, Building 2" into line 2 on every edit.

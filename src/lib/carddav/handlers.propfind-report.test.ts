@@ -12,12 +12,19 @@
 //   - the probe guard: an unrecognized REPORT body must never fall through
 //     to a full decrypted address-book dump;
 //   - sync-collection token semantics (RFC 6578): strictly-greater
-//     filtering, idempotence when nothing changed, and 403 on foreign /
-//     garbage / expired tokens so clients fall back to a full resync instead
-//     of silently missing deletes;
-//   - PROPFIND resilience: missing Depth header, unknown/deep paths, and
-//     request bodies (malformed XML or prop subsets) — iOS retries hard on
-//     5xx, so every one of these must come back as a 2xx multistatus;
+//     filtering, idempotence when nothing changed, 403 on foreign / garbage /
+//     expired tokens so clients fall back to a full resync instead of
+//     silently missing deletes, and a truncated run that reports 507 with a
+//     token covering only what it actually sent;
+//   - multiget href resolution: an href naming nothing comes back as a 404
+//     block, and another user's contact is answered identically so the
+//     report cannot be used to probe for ids;
+//   - PROPFIND resilience and prop subsets: missing Depth header,
+//     unknown/deep paths, malformed bodies — iOS retries hard on 5xx, so
+//     every one must come back as a 2xx multistatus — plus the requested
+//     prop subset, with a 404 propstat for props this server does not carry;
+//   - the addressbook-query filter subset, and the fallback to the whole
+//     collection for filter constructs it cannot evaluate;
 //   - the flattened group-name styles iOS needs, resolved from a single
 //     tree query rather than one per group.
 //
@@ -58,6 +65,7 @@ const {
   EMAIL,
   C1,
   C2,
+  C_NEW,
   FOREIGN,
   NEVER_EXISTED,
   DELETED,
@@ -68,6 +76,7 @@ const {
   TG,
   contactHref,
   groupHref,
+  bookHref,
   multigetBody,
   syncCollectionBody,
   syncToken,
@@ -210,9 +219,9 @@ describe("PROPFIND", () => {
     expect(await res2.text()).toBe(MULTISTATUS_OPEN + MULTISTATUS_CLOSE);
   });
 
-  it("malformed XML body on PROPFIND is ignored — response is still a 207 multistatus", async () => {
-    // The handler never parses the PROPFIND body, so broken XML cannot 500
-    // into an iOS retry loop.
+  it("malformed XML body on PROPFIND falls back to the full prop set, not a 500", async () => {
+    // A body with no readable <D:prop> is treated as allprop, so broken XML
+    // cannot 500 into an iOS retry loop.
     const res = await propfind(`${EMAIL}`, { depth: "0" }, "<propfind><not-closed");
     expect(res.status).toBe(207);
     const body = await res.text();
@@ -220,12 +229,10 @@ describe("PROPFIND", () => {
     expect(body).toContain("<C:addressbook-home-set>");
   });
 
-  // CHARACTERIZATION(carddav-prop-subset-ignored)
-  it("requested-prop subsets are ignored — fixed prop set, no 404 propstat", async () => {
-    // RFC 4918 wants un-requested props omitted and unknown props reported in
-    // a 404 propstat. This server always returns its fixed prop set with a
-    // single 200 propstat. Benign for iOS (it tolerates extra props), but a
-    // documented deviation: unknown props are silently absent, not 404'd.
+  it("returns only the requested props, and 404s the ones it does not have", async () => {
+    // RFC 4918 §9.1: un-requested props are omitted and props the resource
+    // does not carry come back in their own 404 propstat, so the client can
+    // tell "not supported here" from "supported but empty".
     const reqBody =
       '<?xml version="1.0"?>' +
       '<D:propfind xmlns:D="DAV:" xmlns:X="urn:example:custom">' +
@@ -234,12 +241,52 @@ describe("PROPFIND", () => {
     const res = await propfind(`${EMAIL}/contacts`, { depth: "0" }, reqBody);
     expect(res.status).toBe(207);
     const body = await res.text();
-    // Props the client did NOT ask for are still returned...
+    expect(body).toContain(
+      "<D:propstat><D:prop><D:displayname>Atzro Contacts</D:displayname></D:prop>" +
+        "<D:status>HTTP/1.1 200 OK</D:status></D:propstat>",
+    );
+    expect(body).toContain(
+      '<D:propstat><D:prop><x:no-such-prop xmlns:x="urn:example:custom"/></D:prop>' +
+        "<D:status>HTTP/1.1 404 Not Found</D:status></D:propstat>",
+    );
+    // Props the client did not ask for are gone.
+    expect(body).not.toContain("<CS:getctag>");
+    expect(body).not.toContain("<D:sync-token>");
+    expect(body).not.toContain("<D:resourcetype>");
+  });
+
+  it("matches a requested prop by namespace, not by the prefix the client chose", async () => {
+    // Clients bind DAV: to whatever prefix they like; a `displayname` in some
+    // other namespace is a different property and must 404.
+    const reqBody =
+      '<?xml version="1.0"?>' +
+      '<A:propfind xmlns:A="DAV:" xmlns:B="urn:example:other">' +
+      "<A:prop><A:displayname/><B:displayname/></A:prop>" +
+      "</A:propfind>";
+    const body = await (await propfind(`${EMAIL}/contacts`, { depth: "0" }, reqBody)).text();
+    expect(body).toContain("<D:displayname>Atzro Contacts</D:displayname>");
+    expect(body).toContain('<x:displayname xmlns:x="urn:example:other"/>');
+    expect(body).toContain("<D:status>HTTP/1.1 404 Not Found</D:status>");
+  });
+
+  it("applies the requested subset to every member block of a depth-1 listing", async () => {
+    const reqBody =
+      '<?xml version="1.0"?>' +
+      '<D:propfind xmlns:D="DAV:"><D:prop><D:getetag/></D:prop></D:propfind>';
+    const body = await (await propfind(`${EMAIL}/contacts`, { depth: "1" }, reqBody)).text();
+    expect(body).toContain(xmlEscape(contactETag(C1, T1)));
+    expect(body).toContain(xmlEscape(groupETag(G1, TG)));
+    // getcontenttype was not asked for, so no block carries it.
+    expect(body).not.toContain("getcontenttype");
+    // The collection itself has no getetag → its own 404 propstat.
+    expect(body).toContain("<D:status>HTTP/1.1 404 Not Found</D:status>");
+  });
+
+  it("an empty body still returns the full prop set (allprop)", async () => {
+    const body = await (await propfind(`${EMAIL}/contacts`, { depth: "0" })).text();
     expect(body).toContain("<CS:getctag>");
     expect(body).toContain("<D:sync-token>");
-    // ...and the unknown prop produces no 404 propstat block.
     expect(body).not.toContain("404");
-    expect(body).not.toContain("no-such-prop");
   });
 });
 
@@ -262,14 +309,26 @@ describe("REPORT probe guard", () => {
 });
 
 describe("REPORT addressbook-multiget", () => {
-  it("silently drops hrefs for contacts the authed user does not own", async () => {
+  it("reports a href for another user's contact as 404 without decrypting it", async () => {
     const res = await report(multigetBody([contactHref(C1), contactHref(FOREIGN)]));
     const body = await res.text();
     expect(body).toContain(contactHref(C1));
-    expect(body).not.toContain(FOREIGN);
+    expect(body).toContain(
+      `<D:response><D:href>${contactHref(FOREIGN)}</D:href>` +
+        "<D:status>HTTP/1.1 404 Not Found</D:status></D:response>",
+    );
     // The foreign id must not even reach the decrypt boundary.
     expect(mocks.getContactDecrypted).toHaveBeenCalledTimes(1);
     expect(mocks.getContactDecrypted).toHaveBeenCalledWith(C1);
+  });
+
+  it("answers a foreign contact exactly as it answers one that never existed", async () => {
+    // The two responses must be indistinguishable apart from the href, or
+    // the multiget becomes an oracle for "does this contact id exist on
+    // some other account".
+    const foreign = await (await report(multigetBody([contactHref(FOREIGN)]))).text();
+    const missing = await (await report(multigetBody([contactHref(NEVER_EXISTED)]))).text();
+    expect(foreign.replaceAll(FOREIGN, "<ID>")).toBe(missing.replaceAll(NEVER_EXISTED, "<ID>"));
   });
 
   it("returns a 404 response block for an owned contact whose decrypt comes back empty", async () => {
@@ -301,36 +360,58 @@ describe("REPORT addressbook-multiget", () => {
     expect(text).toContain(`UID:group-${G1}`);
   });
 
-  it("drops unowned group hrefs and ignores hrefs that do not name a resource", async () => {
+  it("404s an unowned group href and any other .vcf that resolves to nothing", async () => {
+    const bogus = `/api/public/carddav/${encodeURIComponent(EMAIL)}/contacts/bogus.vcf`;
+    const collection = `/api/public/carddav/${encodeURIComponent(EMAIL)}/contacts/`;
     const res = await report(
-      multigetBody([
-        groupHref(G1),
-        groupHref(FOREIGN_GROUP), // not in contact_groups → ownership filter drops it
-        `/api/public/carddav/${encodeURIComponent(EMAIL)}/contacts/`, // collection itself
-        `/api/public/carddav/${encodeURIComponent(EMAIL)}/contacts/bogus.vcf`, // non-UUID
-      ]),
+      multigetBody([groupHref(G1), groupHref(FOREIGN_GROUP), collection, bogus]),
     );
     expect(res.status).toBe(207);
     const text = await res.text();
     expect(text).toContain(groupHref(G1));
-    expect(text).not.toContain(FOREIGN_GROUP);
-    expect(text).not.toContain("bogus.vcf");
+    expect(text).toContain(
+      `<D:response><D:href>${groupHref(FOREIGN_GROUP)}</D:href>` +
+        "<D:status>HTTP/1.1 404 Not Found</D:status></D:response>",
+    );
+    expect(text).toContain(
+      `<D:response><D:href>${bogus}</D:href>` +
+        "<D:status>HTTP/1.1 404 Not Found</D:status></D:response>",
+    );
+    // The collection itself is not a member resource — it names something
+    // that DOES exist, so it must not be reported as gone.
+    expect(text).not.toContain(`<D:href>${collection}</D:href>`);
   });
 
-  // CHARACTERIZATION(carddav-multiget-missing-href-omitted)
-  it("a href for a contact that never existed is silently omitted, not 404'd", async () => {
-    // RFC 6352 §8.7 says unresolvable multiget hrefs SHOULD come back as
-    // 404 response blocks. This server filters by ownership first, so a
-    // never-existed (or foreign) contact simply vanishes from the response.
-    // iOS copes (it treats absence as "gone"), but this is a deviation worth
-    // knowing about when debugging ghost contacts on devices.
+  it("returns a 404 response block for a contact href that never existed", async () => {
+    // RFC 6352 §8.7: an href in a multiget that names no resource comes back
+    // as a 404 response block, so the client learns the resource is gone
+    // instead of having to infer it from the href's absence.
     const res = await report(multigetBody([contactHref(C1), contactHref(NEVER_EXISTED)]));
     const text = await res.text();
     expect(text).toContain(contactHref(C1));
-    expect(text).not.toContain(NEVER_EXISTED);
-    expect(text).not.toContain("404");
+    expect(text).toContain(
+      `<D:response><D:href>${contactHref(NEVER_EXISTED)}</D:href>` +
+        "<D:status>HTTP/1.1 404 Not Found</D:status></D:response>",
+    );
     expect(mocks.getContactDecrypted).toHaveBeenCalledTimes(1);
     expect(mocks.getContactDecrypted).toHaveBeenCalledWith(C1);
+  });
+
+  it("keeps response blocks in the order the client listed the hrefs", async () => {
+    const text = await (
+      await report(multigetBody([contactHref(NEVER_EXISTED), groupHref(G1), contactHref(C1)]))
+    ).text();
+    expect([
+      text.indexOf(contactHref(NEVER_EXISTED)),
+      text.indexOf(groupHref(G1)),
+      text.indexOf(contactHref(C1)),
+    ]).toStrictEqual(
+      [
+        text.indexOf(contactHref(NEVER_EXISTED)),
+        text.indexOf(groupHref(G1)),
+        text.indexOf(contactHref(C1)),
+      ].sort((a, b) => a - b),
+    );
   });
 
   it("etag-only multiget (no address-data prop) omits the vCard payload", async () => {
@@ -343,19 +424,74 @@ describe("REPORT addressbook-multiget", () => {
 });
 
 describe("REPORT addressbook-query", () => {
-  // CHARACTERIZATION(carddav-addressbook-query-filter-ignored): the
-  // <C:filter> element is never parsed — every owned contact comes back
-  // whatever the client asked to match.
-  it("enumerates every owned contact and group with inline vCards, ignoring the filter", async () => {
-    const body =
+  /** An addressbook-query asking for etags + inline vCards, with `filterXml`
+   * dropped in as the <C:filter> element (pass "" for no filter at all). */
+  function queryBody(filterXml: string): string {
+    return (
       '<?xml version="1.0"?>' +
       '<C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">' +
       "<D:prop><D:getetag/><C:address-data/></D:prop>" +
-      // A filter that should match nothing: both contacts still return.
-      '<C:filter><C:prop-filter name="FN"><C:text-match>zzzz-no-such-name</C:text-match>' +
-      "</C:prop-filter></C:filter>" +
-      "</C:addressbook-query>";
-    const res = await report(body);
+      filterXml +
+      "</C:addressbook-query>"
+    );
+  }
+
+  /** The contact hrefs (not group hrefs) a query answered with. */
+  async function matchedContacts(filterXml: string): Promise<string[]> {
+    const text = await (await report(queryBody(filterXml))).text();
+    return [C1, C2].filter((id) => text.includes(contactHref(id)));
+  }
+
+  beforeEach(() => {
+    // Distinct names / addresses / numbers so a filter can tell them apart.
+    decryptedRows.set(
+      C1,
+      H.contactFixture(C1, T1, { name: "Erica Roy", email: "erica@acme.example" }),
+    );
+    decryptedRows.set(
+      C2,
+      H.contactFixture(C2, T2, { name: "Jordan Baker", email: "jordan@northwind.example" }),
+    );
+    fake.seed("contact_emails", [
+      {
+        contact_id: C1,
+        user_id: USER,
+        label: "work",
+        address: "erica@acme.example",
+        is_primary: true,
+        position: 0,
+      },
+      {
+        contact_id: C2,
+        user_id: USER,
+        label: "work",
+        address: "jordan@northwind.example",
+        is_primary: true,
+        position: 0,
+      },
+    ]);
+    fake.seed("contact_phones", [
+      {
+        contact_id: C1,
+        user_id: USER,
+        label: "mobile",
+        number: "+1 555 0101",
+        is_primary: true,
+        position: 0,
+      },
+      {
+        contact_id: C2,
+        user_id: USER,
+        label: "work",
+        number: "+1 555 0202",
+        is_primary: true,
+        position: 0,
+      },
+    ]);
+  });
+
+  it("enumerates every owned contact and group with inline vCards when no filter is sent", async () => {
+    const res = await report(queryBody(""));
     expect(res.status).toBe(207);
     const text = await res.text();
     expect(text).toContain(contactHref(C1));
@@ -363,10 +499,154 @@ describe("REPORT addressbook-query", () => {
     expect(text).toContain(groupHref(G1));
     expect(text).toContain(xmlEscape(contactETag(C1, T1)));
     expect(text).toContain(xmlEscape(groupETag(G1, TG)));
-    // address-data was requested → full vCards inline, group card included.
     expect(text).toContain("BEGIN:VCARD");
     expect(text).toContain("X-ADDRESSBOOKSERVER-KIND:group");
-    expect(mocks.getContactDecrypted).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns only the contacts a FN text-match selects", async () => {
+    expect(
+      await matchedContacts(
+        '<C:filter><C:prop-filter name="FN">' +
+          "<C:text-match>jordan</C:text-match>" +
+          "</C:prop-filter></C:filter>",
+      ),
+    ).toStrictEqual([C2]);
+  });
+
+  it("returns nothing at all when the filter matches nothing", async () => {
+    const text = await (
+      await report(
+        queryBody(
+          '<C:filter><C:prop-filter name="FN">' +
+            "<C:text-match>zzzz-no-such-name</C:text-match>" +
+            "</C:prop-filter></C:filter>",
+        ),
+      )
+    ).text();
+    expect(text).toBe(MULTISTATUS_OPEN + MULTISTATUS_CLOSE);
+  });
+
+  it("honours every match-type, defaulting to contains", async () => {
+    const fn = (attrs: string, value: string) =>
+      `<C:filter><C:prop-filter name="FN"><C:text-match ${attrs}>${value}</C:text-match></C:prop-filter></C:filter>`;
+    expect(await matchedContacts(fn('match-type="equals"', "Erica Roy"))).toStrictEqual([C1]);
+    expect(await matchedContacts(fn('match-type="equals"', "Erica"))).toStrictEqual([]);
+    expect(await matchedContacts(fn('match-type="starts-with"', "Erica"))).toStrictEqual([C1]);
+    expect(await matchedContacts(fn('match-type="starts-with"', "Roy"))).toStrictEqual([]);
+    expect(await matchedContacts(fn('match-type="ends-with"', "Baker"))).toStrictEqual([C2]);
+    expect(await matchedContacts(fn('match-type="contains"', "a R"))).toStrictEqual([C1]);
+    // No match-type attribute at all is "contains".
+    expect(await matchedContacts(fn("", "rica"))).toStrictEqual([C1]);
+  });
+
+  it("matches case-insensitively, per the default unicode-casemap collation", async () => {
+    expect(
+      await matchedContacts(
+        '<C:filter><C:prop-filter name="FN"><C:text-match>ERICA</C:text-match></C:prop-filter></C:filter>',
+      ),
+    ).toStrictEqual([C1]);
+  });
+
+  it("inverts a text-match carrying negate-condition=yes", async () => {
+    expect(
+      await matchedContacts(
+        '<C:filter><C:prop-filter name="FN">' +
+          '<C:text-match negate-condition="yes">Erica</C:text-match>' +
+          "</C:prop-filter></C:filter>",
+      ),
+    ).toStrictEqual([C2]);
+  });
+
+  it("filters on EMAIL, TEL and UID as well as FN", async () => {
+    expect(
+      await matchedContacts(
+        '<C:filter><C:prop-filter name="EMAIL"><C:text-match>northwind</C:text-match></C:prop-filter></C:filter>',
+      ),
+    ).toStrictEqual([C2]);
+    expect(
+      await matchedContacts(
+        '<C:filter><C:prop-filter name="TEL"><C:text-match>0101</C:text-match></C:prop-filter></C:filter>',
+      ),
+    ).toStrictEqual([C1]);
+    expect(
+      await matchedContacts(
+        `<C:filter><C:prop-filter name="UID"><C:text-match match-type="equals">${C2}</C:text-match></C:prop-filter></C:filter>`,
+      ),
+    ).toStrictEqual([C2]);
+  });
+
+  it("combines prop-filters with the filter's test attribute (anyof by default)", async () => {
+    const two = (test: string) =>
+      `<C:filter${test}>` +
+      '<C:prop-filter name="FN"><C:text-match>Erica</C:text-match></C:prop-filter>' +
+      '<C:prop-filter name="EMAIL"><C:text-match>northwind</C:text-match></C:prop-filter>' +
+      "</C:filter>";
+    expect(await matchedContacts(two(""))).toStrictEqual([C1, C2]);
+    expect(await matchedContacts(two(' test="anyof"'))).toStrictEqual([C1, C2]);
+    expect(await matchedContacts(two(' test="allof"'))).toStrictEqual([]);
+
+    const bothOnC1 =
+      '<C:filter test="allof">' +
+      '<C:prop-filter name="FN"><C:text-match>Erica</C:text-match></C:prop-filter>' +
+      '<C:prop-filter name="EMAIL"><C:text-match>acme</C:text-match></C:prop-filter>' +
+      "</C:filter>";
+    expect(await matchedContacts(bothOnC1)).toStrictEqual([C1]);
+  });
+
+  it("matches group cards on their rendered FN and skips them for contact-only props", async () => {
+    const byName = await (
+      await report(
+        queryBody(
+          '<C:filter><C:prop-filter name="FN"><C:text-match>Clients</C:text-match></C:prop-filter></C:filter>',
+        ),
+      )
+    ).text();
+    expect(byName).toContain(groupHref(G1));
+    expect(byName).not.toContain(contactHref(C1));
+
+    // A group card carries no TEL, so a TEL filter can never select it.
+    const byTel = await (
+      await report(
+        queryBody(
+          '<C:filter><C:prop-filter name="TEL"><C:text-match>0101</C:text-match></C:prop-filter></C:filter>',
+        ),
+      )
+    ).text();
+    expect(byTel).not.toContain(groupHref(G1));
+  });
+
+  it("does not fetch a photo for a contact the filter excluded", async () => {
+    // The photo load can reach out for a company logo; a filtered-out card
+    // must not pay for one.
+    seedSettings({ use_company_logo_fallback: true, photo_priority: "personal_first" });
+    await report(
+      queryBody(
+        '<C:filter><C:prop-filter name="FN"><C:text-match>Erica</C:text-match></C:prop-filter></C:filter>',
+      ),
+    );
+    expect(mocks.resolveCompanyLogoDomainForContact).toHaveBeenCalledTimes(1);
+  });
+
+  // CHARACTERIZATION(carddav-addressbook-query-filter-ignored)
+  it("falls back to the whole collection for filter constructs it cannot evaluate", async () => {
+    // Only prop-filter/text-match on FN, EMAIL, TEL and UID are evaluated.
+    // Anything else — is-not-defined, param-filter, another property name, a
+    // non-default collation — is answered with the unfiltered collection,
+    // which is a superset the client can narrow itself. Silent, but never
+    // wrong in the dangerous direction; see the register entry.
+    const unsupported = [
+      '<C:filter><C:prop-filter name="NICKNAME"><C:text-match>x</C:text-match></C:prop-filter></C:filter>',
+      '<C:filter><C:prop-filter name="EMAIL"><C:is-not-defined/></C:prop-filter></C:filter>',
+      '<C:filter><C:prop-filter name="TEL"><C:param-filter name="TYPE">' +
+        "<C:text-match>WORK</C:text-match></C:param-filter></C:prop-filter></C:filter>",
+      '<C:filter><C:prop-filter name="FN">' +
+        '<C:text-match collation="i;octet">Erica</C:text-match></C:prop-filter></C:filter>',
+      '<C:filter><C:prop-filter name="FN">' +
+        '<C:text-match match-type="regex">Erica</C:text-match></C:prop-filter></C:filter>',
+    ];
+    for (const filterXml of unsupported) {
+      expect(await matchedContacts(filterXml), filterXml).toStrictEqual([C1, C2]);
+    }
   });
 });
 
@@ -493,27 +773,90 @@ describe("REPORT sync-collection", () => {
     expect(text).toContain(xmlEscape(syncToken(USER, new Date(TG).getTime(), 3)));
   });
 
-  // CHARACTERIZATION(carddav-nresults-token-covers-full-snapshot)
-  it("nresults truncates the change list but the token still covers the full snapshot", async () => {
-    // With <D:limit><D:nresults>1</D:nresults></D:limit>, only the oldest
-    // changed contact is returned — but the sync-token is minted from the
-    // CURRENT snapshot (newest updated_at overall). A client that honors the
-    // token verbatim would never fetch C2. RFC 6578 §3.6 requires a
-    // truncated response to carry a token consistent with what was actually
-    // returned plus a 507 insufficient-storage marker. iOS does not send
-    // nresults in practice, which is why this has not bitten; if a client
-    // ever does, this is silent data loss on that device. Pinned here so a
-    // future fix flips these assertions deliberately.
+  it("nresults truncates the change list, marks it 507, and mints a matching token", async () => {
+    // RFC 6578 §3.6: a truncated response carries a 507 response block for
+    // the collection and a sync-token consistent with what was actually
+    // returned. Minting the full-snapshot token here would skip C2 and the
+    // group on that device forever.
     const res = await report(syncCollectionBody({ limit: 1 }));
     expect(res.status).toBe(207);
     const text = await res.text();
     expect(text).toContain(contactHref(C1)); // oldest change, within limit
-    expect(text).not.toContain(contactHref(C2)); // truncated away
-    // No insufficient-storage marker. Matched as a status line rather than
-    // a bare "507", which used to fail whenever the sync token's epoch
-    // millis happened to contain those digits.
+    expect(text).not.toContain(contactHref(C2));
+    expect(text).not.toContain(`group-${G1}.vcf`);
+    expect(text).toContain(
+      `<D:response><D:href>${bookHref()}</D:href>` +
+        "<D:status>HTTP/1.1 507 Insufficient Storage</D:status>" +
+        "<D:error><D:number-of-matches-within-limits/></D:error></D:response>",
+    );
+    // Token covers exactly the one change that was reported.
+    expect(text).toContain(xmlEscape(syncToken(USER, new Date(T1).getTime(), 0)));
+  });
+
+  it("spends the nresults budget across all three change streams, not per table", async () => {
+    // The limit used to be pushed into each query separately, so nresults=1
+    // could return one contact AND one group AND one tombstone.
+    fake.seed("carddav_tombstones", [
+      { user_id: USER, resource_type: "contact", resource_id: DELETED, sync_seq: 3 },
+    ]);
+    const text = await (await report(syncCollectionBody({ limit: 1 }))).text();
+    expect(text.match(/<D:href>/g)).toHaveLength(2); // one change + the 507 block
+    expect(text).toContain(contactHref(C1));
+    expect(text).not.toContain(`${DELETED}.vcf`);
+  });
+
+  it("a client honouring the truncated token gets the rest, losing nothing", async () => {
+    fake.seed("carddav_tombstones", [
+      { user_id: USER, resource_type: "contact", resource_id: DELETED, sync_seq: 3 },
+    ]);
+    const seen: string[] = [];
+    let token = "";
+    for (let round = 0; round < 6; round++) {
+      const text = await (await report(syncCollectionBody({ token, limit: 1 }))).text();
+      for (const m of text.matchAll(/<D:href>([^<]*\.vcf)<\/D:href>/g)) seen.push(m[1]!);
+      const next = tokenFrom(text);
+      if (next === token) break;
+      token = next;
+    }
+    expect(seen).toStrictEqual([
+      contactHref(C1),
+      contactHref(C2),
+      groupHref(G1),
+      contactHref(DELETED),
+    ]);
+    // And the token it settles on is the one a full sync would have minted.
+    expect(token).toBe(syncToken(USER, new Date(TG).getTime(), 3));
+  });
+
+  it("never cuts between two changes sharing an updated_at, which the token could not express", async () => {
+    // The token carries a millisecond and the next request asks for rows
+    // strictly greater than it, so a cut between two rows stamped the same
+    // millisecond would lose the second one for good.
+    fake.seed("contacts", [
+      { id: C1, user_id: USER, updated_at: T1 },
+      { id: C2, user_id: USER, updated_at: T2 },
+      { id: C_NEW, user_id: USER, updated_at: T2 },
+    ]);
+    fake.seed("contact_groups", []);
+    decryptedRows.set(C_NEW, H.contactFixture(C_NEW, T2));
+
+    const first = await (await report(syncCollectionBody({ limit: 1 }))).text();
+    expect(first).toContain(contactHref(C1));
+    const second = await (
+      await report(syncCollectionBody({ token: tokenFrom(first), limit: 1 }))
+    ).text();
+    // The whole T2 block comes back together even though it overruns the
+    // budget of one.
+    expect(second).toContain(contactHref(C2));
+    expect(second).toContain(contactHref(C_NEW));
+    expect(tokenFrom(second)).toBe(syncToken(USER, new Date(T2).getTime(), 0));
+  });
+
+  it("an untruncated response carries no 507 block", async () => {
+    const text = await (await report(syncCollectionBody({ limit: 50 }))).text();
+    expect(text).toContain(contactHref(C1));
+    expect(text).toContain(contactHref(C2));
     expect(text).not.toMatch(/HTTP\/1\.1 507/);
-    // Token claims the FULL snapshot (TG > C2's T2), skipping C2 forever.
     expect(text).toContain(xmlEscape(syncToken(USER, new Date(TG).getTime(), 0)));
   });
 

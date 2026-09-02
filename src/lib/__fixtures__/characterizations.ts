@@ -44,31 +44,14 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "escapeHtml leaves ' unescaped (unsafe inside single-quoted attributes) and is not idempotent — escaping twice double-escapes the entities.",
     fixIn: "src/lib/escape-html.ts",
   },
-  "carddav-nresults-token-covers-full-snapshot": {
-    what: "A sync-collection REPORT with nresults truncates the change list but still mints a token covering the whole snapshot, so a limit-honouring client permanently misses the truncated contacts. RFC 6578 wants a 507 marker.",
-    fixIn:
-      "src/lib/carddav/handlers.server.ts — emit 507 and a token covering only what was returned.",
-  },
-  "carddav-multiget-missing-href-omitted": {
-    what: "A multiget href naming a contact that does not exist (or belongs to another user) is silently omitted instead of returning a 404 response block for that href.",
-    fixIn: "src/lib/carddav/handlers.server.ts",
-  },
-  "carddav-prop-subset-ignored": {
-    what: "PROPFIND ignores the requested prop subset and always returns a fixed set, with no 404 propstat for props it does not have.",
-    fixIn: "src/lib/carddav/handlers.server.ts",
-  },
   "folder-chat-skips-conflict-check": {
     what: "applyFolderChanges inserts folder_filters directly without calling checkRuleConflicts, so a rule created from chat can silently shadow an existing one — the rules editor warns.",
     fixIn: "src/lib/folder-chat.functions.ts — run checkRuleConflicts before inserting.",
   },
-  "carddav-quoted-printable-not-decoded": {
-    what: 'parseVCard ignores ENCODING=QUOTED-PRINTABLE, which vCard 2.1 exporters (Android\'s contact share, several Windows address books) use for every non-ASCII value. "Jürgen Müller" is stored, displayed and pushed to Google as "J=C3=BCrgen M=C3=BCller".',
-    fixIn:
-      'src/lib/carddav/vcard.ts — decode quoted-printable values, including the soft "=" line continuations, before unescaping.',
-  },
   "carddav-addressbook-query-filter-ignored": {
-    what: "addressbook-query ignores prop-filter/text-match entirely and returns every contact, so a filtering client does its own work over a full download.",
-    fixIn: "src/lib/carddav/handlers.server.ts",
+    what: "addressbook-query now evaluates prop-filter/text-match on FN, EMAIL, TEL and UID (match-type, negate-condition, anyof/allof). Everything else — is-not-defined, param-filter, any other property name, a non-default collation, an unknown match-type, and <D:limit> on a query — is answered with the WHOLE collection rather than a wrong subset. A superset is safe but the client still downloads the book to narrow it, and it is silent: nothing tells the client its filter was not applied.",
+    fixIn:
+      "src/lib/carddav/query-filter.ts — widen the grammar, and consider a 403 supported-filter precondition (RFC 6352 §8.6.2) for what stays unimplemented.",
   },
   "admin-ignores-email-verified": {
     what: "assertAdmin matches the JWT `email` claim against ADMIN_EMAILS without ever consulting `email_verified`, so an unverified identity that merely asserts an allowlisted address is granted the cross-tenant admin dashboard.",

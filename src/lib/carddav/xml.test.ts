@@ -5,11 +5,17 @@ import { describe, expect, it } from "vitest";
 import {
   parseSyncCollection,
   parseMultigetHrefs,
+  parseRequestedProps,
+  propfindResponseBlock,
   responseBlock,
+  statusResponseBlock,
   davResponse,
   xmlEscape,
   MULTISTATUS_OPEN,
   MULTISTATUS_CLOSE,
+  NS_CARDDAV,
+  NS_DAV,
+  type PropSpec,
 } from "./xml";
 import { contactToVCard } from "./vcard";
 import type { DecryptedContact } from "@/lib/sync/encrypted-reader";
@@ -78,6 +84,98 @@ describe("parseMultigetHrefs", () => {
   it("skips empty href elements and returns nothing for a body with none", () => {
     expect(parseMultigetHrefs("<D:href></D:href><D:href>   </D:href>")).toEqual([]);
     expect(parseMultigetHrefs("<D:propfind/>")).toEqual([]);
+  });
+});
+
+describe("parseRequestedProps", () => {
+  it("resolves each requested prop to (namespace, local name) via the xmlns bindings", () => {
+    const body =
+      '<?xml version="1.0"?>' +
+      '<A:propfind xmlns:A="DAV:" xmlns:B="urn:ietf:params:xml:ns:carddav">' +
+      "<A:prop><A:getetag/><B:address-data/></A:prop>" +
+      "</A:propfind>";
+    expect(parseRequestedProps(body)).toStrictEqual([
+      { ns: NS_DAV, name: "getetag" },
+      { ns: NS_CARDDAV, name: "address-data" },
+    ]);
+  });
+
+  it("honours a default xmlns for unprefixed children", () => {
+    const body = '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>';
+    expect(parseRequestedProps(body)).toStrictEqual([{ ns: NS_DAV, name: "displayname" }]);
+  });
+
+  it("returns null for allprop, an empty prop list, no body, and unreadable XML", () => {
+    // Null is "render the full set" — the behaviour every request got before
+    // subsets were honoured, so an odd request is never worse off.
+    expect(parseRequestedProps('<D:propfind xmlns:D="DAV:"><D:allprop/></D:propfind>')).toBeNull();
+    expect(
+      parseRequestedProps('<D:propfind xmlns:D="DAV:"><D:prop></D:prop></D:propfind>'),
+    ).toBeNull();
+    expect(parseRequestedProps("")).toBeNull();
+    expect(parseRequestedProps(undefined)).toBeNull();
+    expect(parseRequestedProps("<propfind><not-closed")).toBeNull();
+  });
+
+  it("does not mistake a REPORT's prop-filter for a prop element", () => {
+    // addressbook-query bodies carry <C:prop-filter>; matching it here would
+    // make a query look like a prop subset request.
+    const body =
+      '<C:addressbook-query xmlns:C="urn:ietf:params:xml:ns:carddav">' +
+      '<C:filter><C:prop-filter name="FN"/></C:filter>' +
+      "</C:addressbook-query>";
+    expect(parseRequestedProps(body)).toBeNull();
+  });
+});
+
+describe("propfindResponseBlock", () => {
+  const available: PropSpec[] = [
+    { ns: NS_DAV, name: "displayname", xml: "<D:displayname>Book</D:displayname>" },
+    { ns: NS_DAV, name: "getetag", xml: '<D:getetag>"e"</D:getetag>' },
+  ];
+
+  it("returns every available prop in one 200 propstat when nothing was requested", () => {
+    expect(propfindResponseBlock("/book/", available, null)).toBe(
+      responseBlock("/book/", '<D:displayname>Book</D:displayname><D:getetag>"e"</D:getetag>'),
+    );
+  });
+
+  it("splits the requested props into a 200 and a 404 propstat", () => {
+    const block = propfindResponseBlock("/book/", available, [
+      { ns: NS_DAV, name: "displayname" },
+      { ns: "urn:example:custom", name: "no-such-prop" },
+    ]);
+    expect(block).toBe(
+      "<D:response><D:href>/book/</D:href>" +
+        "<D:propstat><D:prop><D:displayname>Book</D:displayname></D:prop>" +
+        "<D:status>HTTP/1.1 200 OK</D:status></D:propstat>" +
+        '<D:propstat><D:prop><x:no-such-prop xmlns:x="urn:example:custom"/></D:prop>' +
+        "<D:status>HTTP/1.1 404 Not Found</D:status></D:propstat>" +
+        "</D:response>",
+    );
+  });
+
+  it("omits the 404 propstat entirely when every requested prop was found", () => {
+    const block = propfindResponseBlock("/book/", available, [{ ns: NS_DAV, name: "getetag" }]);
+    expect(block).not.toContain("404");
+    expect(block).toContain('<D:prop><D:getetag>"e"</D:getetag></D:prop>');
+  });
+
+  it("treats the same local name in another namespace as a different property", () => {
+    const block = propfindResponseBlock("/book/", available, [
+      { ns: "urn:example:other", name: "displayname" },
+    ]);
+    expect(block).toContain('<x:displayname xmlns:x="urn:example:other"/>');
+    expect(block).not.toContain("Book");
+  });
+});
+
+describe("statusResponseBlock", () => {
+  it("carries a bare status with no propstat, and escapes the href", () => {
+    expect(statusResponseBlock("/book/a&b.vcf")).toBe(
+      "<D:response><D:href>/book/a&amp;b.vcf</D:href>" +
+        "<D:status>HTTP/1.1 404 Not Found</D:status></D:response>",
+    );
   });
 });
 
