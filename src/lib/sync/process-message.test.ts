@@ -424,18 +424,19 @@ describe("new-message insert paths", () => {
   });
 
   it("persists the folder's snooze onto the fresh rules-final row", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-02T12:00:00.000Z"));
     const folderA = fullFolder({ snooze_hours: 2, gmail_label_id: null });
     classifyByRules.mockReturnValue(rules({ folder_id: "folder-A", classified_by: "filter" }));
-    const before = Date.now();
     await processGmailMessage(ACC, GMAIL_ID, USER, {
       prefetched: parsedFixture(),
       context: context([folderA]),
     });
     const snoozeUpdate = emailUpdates().find((u) => "snoozed_until" in (u.payload as object));
-    expect(snoozeUpdate).toBeDefined();
-    const until = Date.parse((snoozeUpdate!.payload as { snoozed_until: string }).snoozed_until);
-    expect(until).toBeGreaterThanOrEqual(before + 2 * 3600_000 - 1000);
-    expect(until).toBeLessThanOrEqual(Date.now() + 2 * 3600_000 + 1000);
+    expect(snoozeUpdate!.payload).toMatchObject({
+      snoozed_until: "2026-09-02T14:00:00.000Z",
+    });
+    vi.useRealTimers();
   });
 
   it("runs the surface check for a rules-final folder with a surface rule", async () => {
@@ -621,8 +622,13 @@ describe("applyFolderActions (direct)", () => {
   });
 
   it("a failed forward schedules a jittered retry instead of dropping silently", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-02T12:00:00.000Z"));
+    // jitter(60) with random 0.5 is exactly 60s; the ±25% spread itself is
+    // pinned in backoff.test.ts.
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
     sendMessage.mockRejectedValue(new Error("smtp down"));
-    const before = Date.now();
+
     await applyFolderActions(
       ACC,
       GMAIL_ID,
@@ -633,12 +639,12 @@ describe("applyFolderActions (direct)", () => {
       { persistFlags: false },
     );
     expect(emailUpdates()).toHaveLength(1);
-    const patch = emailUpdates()[0]!.payload as Record<string, unknown>;
-    expect(patch).toMatchObject({ forward_attempts: 1, forward_last_error: "smtp down" });
-    const retryAt = Date.parse(patch.forward_next_retry_at as string);
-    // jitter(60) → 45–75s from now.
-    expect(retryAt).toBeGreaterThanOrEqual(before + 45_000);
-    expect(retryAt).toBeLessThanOrEqual(Date.now() + 75_000 + 1000);
+    expect(emailUpdates()[0]!.payload).toMatchObject({
+      forward_attempts: 1,
+      forward_last_error: "smtp down",
+      forward_next_retry_at: "2026-09-02T12:01:00.000Z",
+    });
+    vi.useRealTimers();
   });
 
   it("swallows a modifyMessage throw — the local flag patch still lands", async () => {

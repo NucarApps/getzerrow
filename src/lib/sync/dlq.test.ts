@@ -2,7 +2,7 @@
 // transient (network/quota/5xx). Permanent failures (4xx auth, bad
 // payload, parse errors) must stay parked so we don't burn quota looping.
 import { describe, it, expect } from "vitest";
-import { isTransientDlqError } from "./sync.server";
+import { isTransientDlqError } from "./dlq";
 
 describe("isTransientDlqError", () => {
   it("matches Gmail 5xx server errors", () => {

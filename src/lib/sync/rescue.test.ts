@@ -13,7 +13,7 @@
 //   * exhausting RESCUE_MAX_ATTEMPTS goes terminal as 'unclassified' (visible
 //     in Inbox — the correct failure mode), otherwise back to 'pending_ai'.
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
 import type { AccountContext } from "./account-context";
 import type { Folder } from "./types";
@@ -134,6 +134,12 @@ function makeCtx(overrides: Partial<AccountContext> = {}): AccountContext {
   };
 }
 
+/** Fixed "now" for the whole file. rescueStrandedEmails filters on
+ * `created_at >= now - RESCUE_WINDOW_HOURS` and orders by it, so every row's
+ * age is expressed against this instant rather than against the wall clock. */
+const NOW = new Date("2026-07-19T12:00:00.000Z");
+const agedMs = (ms: number) => new Date(NOW.getTime() - ms).toISOString();
+
 /** Eligible stranded row: no folder, non-terminal state, fresh, under cap. */
 function strandedRow(id: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -150,7 +156,7 @@ function strandedRow(id: string, overrides: Record<string, unknown> = {}) {
     classify_attempts: 0,
     folder_id: null,
     classified_by: "pending_ai",
-    created_at: new Date(Date.now() - 60_000).toISOString(),
+    created_at: agedMs(60_000),
     ...overrides,
   };
 }
@@ -165,6 +171,11 @@ function attemptBumps() {
 
 beforeEach(() => {
   fake.reset();
+  // Pin the clock: the sweep's window filter and its created_at ordering
+  // are both relative to "now", so an unpinned wall clock makes a row's
+  // eligibility a function of when the suite happens to run.
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
   // Decrypt round-trip: every requested id comes back with the sensitive
   // fields the classifier needs.
   getEmailsDecrypted.mockImplementation(async (ids: string[]) => ({
@@ -187,6 +198,10 @@ beforeEach(() => {
   classifyEmailsBatch.mockImplementation(async (emails: unknown[]) =>
     emails.map(() => ({ folder_id: null, confidence: 0, summary: "", reason: "" })),
   );
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("eligibility scan", () => {
@@ -230,8 +245,8 @@ describe("live-job skip", () => {
 
   it("only rescues rows without a live job; done/dlq jobs do not block", async () => {
     fake.seed("emails", [
-      strandedRow("e1", { created_at: new Date(Date.now() - 1_000).toISOString() }),
-      strandedRow("e2", { created_at: new Date(Date.now() - 2_000).toISOString() }),
+      strandedRow("e1", { created_at: agedMs(1_000) }),
+      strandedRow("e2", { created_at: agedMs(2_000) }),
     ]);
     fake.seed("message_jobs", [
       { gmail_account_id: ACC, gmail_message_id: "gm-e1", status: "running" },
@@ -367,8 +382,8 @@ describe("batched AI pass", () => {
   it("falls back to single classifyEmail for indexes the batch response omitted", async () => {
     loadAccountContext.mockResolvedValue(makeCtx({ folders: [makeFolder()] }));
     fake.seed("emails", [
-      strandedRow("e1", { created_at: new Date(Date.now() - 1_000).toISOString() }),
-      strandedRow("e2", { created_at: new Date(Date.now() - 2_000).toISOString() }),
+      strandedRow("e1", { created_at: agedMs(1_000) }),
+      strandedRow("e2", { created_at: agedMs(2_000) }),
     ]);
     // Batch answers only the first message; the second index is undefined.
     classifyEmailsBatch.mockResolvedValueOnce([
@@ -393,8 +408,8 @@ describe("batched AI pass", () => {
   it("falls back per-message for the whole chunk when the batch call throws", async () => {
     loadAccountContext.mockResolvedValue(makeCtx({ folders: [makeFolder()] }));
     fake.seed("emails", [
-      strandedRow("e1", { created_at: new Date(Date.now() - 1_000).toISOString() }),
-      strandedRow("e2", { created_at: new Date(Date.now() - 2_000).toISOString() }),
+      strandedRow("e1", { created_at: agedMs(1_000) }),
+      strandedRow("e2", { created_at: agedMs(2_000) }),
     ]);
     classifyEmailsBatch.mockRejectedValueOnce(new Error("gateway 500"));
     classifyEmail.mockResolvedValue({
