@@ -39,6 +39,32 @@ vi.mock("./auto-company-subgroups.functions", () => ({
 // Logging is a no-op in tests.
 vi.mock("@/lib/log.server", () => ({ logInfo: vi.fn(), logError: vi.fn() }));
 
+// The AI judge. `NoObjectGeneratedError` is a real class here because the
+// judge branches on `NoObjectGeneratedError.isInstance(error)` and then
+// re-parses the raw text off it — a plain object could not exercise that.
+const ai = vi.hoisted(() => {
+  class NoObjectGeneratedError extends Error {
+    readonly text: string | undefined;
+    constructor(text?: string) {
+      super("No object generated");
+      this.text = text;
+    }
+    static isInstance(error: unknown): error is NoObjectGeneratedError {
+      return error instanceof NoObjectGeneratedError;
+    }
+  }
+  return {
+    NoObjectGeneratedError,
+    generateText: vi.fn<(args: unknown) => Promise<{ output: unknown }>>(),
+  };
+});
+vi.mock("ai", () => ({
+  generateText: ai.generateText,
+  NoObjectGeneratedError: ai.NoObjectGeneratedError,
+  Output: { object: (spec: unknown) => spec },
+}));
+vi.mock("@/lib/ai-gateway", () => ({ getModel: () => "test-model" }));
+
 // The encrypted reader is an id-keyed SECURITY DEFINER RPC in production;
 // spy on it so tests can assert it is never reached for a foreign id.
 const getContactDecrypted = vi.fn(async (_id: string) => ({ row: null, error: null }));
@@ -171,6 +197,23 @@ describe("mergeContactDuplicate — Google link collisions", () => {
     const filters = linkUpdates[0]!.filters;
     expect(filters).toContainEqual({ op: "eq", col: "gmail_account_id", value: "acct-2" });
     expect(filters).toContainEqual({ op: "eq", col: "resource_name", value: "people/dup2" });
+  });
+
+  // CHARACTERIZATION(suggested-merge-skips-google-tombstones): the AI-suggested
+  // merge drops a colliding Google link by cascade without tombstoning it —
+  // flip when fixed
+  it("writes no Google tombstone for the collision it discards, unlike the manual merge", async () => {
+    seedSuggestion();
+    fake.seed("google_contact_links", [
+      { gmail_account_id: "acct-1", contact_id: PRIMARY, resource_name: "people/primary" },
+      { gmail_account_id: "acct-1", contact_id: DUP, resource_name: "people/dup1" },
+    ]);
+
+    await mergeContactDuplicate({ data: { suggestionId: SUGGESTION_ID }, ...ctx });
+
+    expect(fake.calls.inserts.filter((i) => i.table === "google_contact_tombstones")).toHaveLength(
+      0,
+    );
   });
 });
 
@@ -443,5 +486,220 @@ describe("scanContactDuplicatesImpl", () => {
     expect(
       fake.calls.deletes.filter((d) => d.table === "contact_duplicate_suggestions"),
     ).toHaveLength(0);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* scanContactDuplicatesImpl — the batched AI judge                            */
+/* -------------------------------------------------------------------------- */
+
+describe("scanContactDuplicatesImpl — AI judge", () => {
+  const SCAN_USER = "judge-user";
+
+  beforeEach(() => {
+    vi.stubEnv("LOVABLE_API_KEY", "test-key");
+    ai.generateText.mockReset();
+  });
+
+  /** Two rows sharing a name but nothing deterministic: a "name_only"
+   * cluster, which is exactly the kind that has to go to the model. */
+  function seedAmbiguousPair() {
+    fake.seed("contacts", [
+      {
+        id: PRIMARY,
+        user_id: SCAN_USER,
+        name: "Jane Roe",
+        email: "jane.roe@acme.test",
+        company: null,
+        title: null,
+        city: null,
+        source: null,
+        created_at: "2020-01-01T00:00:00Z",
+      },
+      {
+        id: DUP,
+        user_id: SCAN_USER,
+        name: "Jane Roe",
+        email: "jroe@other.test",
+        company: null,
+        title: null,
+        city: null,
+        source: null,
+        created_at: "2020-01-02T00:00:00Z",
+      },
+    ]);
+  }
+
+  function verdict(cluster: number, same_person = true) {
+    return { cluster, same_person, confidence: "medium", reason: "same person" };
+  }
+
+  function suggestionInserts() {
+    return fake.calls.inserts.filter((i) => i.table === "contact_duplicate_suggestions");
+  }
+
+  function suggestionDeletes() {
+    return fake.calls.deletes.filter((d) => d.table === "contact_duplicate_suggestions");
+  }
+
+  it("records the model's verdict for the cluster it names", async () => {
+    seedAmbiguousPair();
+    ai.generateText.mockResolvedValue({ output: { verdicts: [verdict(1)] } });
+
+    const res = await scanContactDuplicatesImpl(SCAN_USER);
+
+    expect(res).toStrictEqual({
+      clustersAnalyzed: 1,
+      clustersTotal: 1,
+      created: 1,
+      truncated: false,
+      aiFailures: 0,
+    });
+    const payload = suggestionInserts()[0]?.payload as Record<string, unknown>;
+    expect(payload.confidence).toBe("medium");
+    expect(payload.signals).toStrictEqual({ blocking: "name_only", key: "name:jane roe" });
+  });
+
+  it("falls back to the raw text when the model returns unparsed JSON", async () => {
+    seedAmbiguousPair();
+    ai.generateText.mockRejectedValue(
+      new ai.NoObjectGeneratedError(JSON.stringify({ verdicts: [verdict(1)] })),
+    );
+
+    const res = await scanContactDuplicatesImpl(SCAN_USER);
+
+    expect(res.created).toBe(1);
+    expect(res.aiFailures).toBe(0);
+  });
+
+  it("counts an AI failure when the raw text cannot be parsed either", async () => {
+    seedAmbiguousPair();
+    ai.generateText.mockRejectedValue(new ai.NoObjectGeneratedError("I'm afraid I can't"));
+
+    const res = await scanContactDuplicatesImpl(SCAN_USER);
+
+    expect(res.created).toBe(0);
+    expect(res.aiFailures).toBe(1);
+    expect(suggestionInserts()).toHaveLength(0);
+  });
+
+  it("skips the whole batch without aborting the scan when the model call itself fails", async () => {
+    seedAmbiguousPair();
+    ai.generateText.mockRejectedValue(new Error("gateway 503"));
+
+    const res = await scanContactDuplicatesImpl(SCAN_USER);
+
+    expect(res).toStrictEqual({
+      clustersAnalyzed: 1,
+      clustersTotal: 1,
+      created: 0,
+      truncated: false,
+      aiFailures: 1,
+    });
+  });
+
+  it("ignores a verdict for a cluster index the model invented", async () => {
+    seedAmbiguousPair();
+    // Only cluster 1 was sent; 0 and 7 are not addressable.
+    ai.generateText.mockResolvedValue({
+      output: { verdicts: [verdict(0), verdict(7)] },
+    });
+
+    const res = await scanContactDuplicatesImpl(SCAN_USER);
+
+    expect(res.created).toBe(0);
+    expect(res.aiFailures).toBe(1);
+    expect(suggestionInserts()).toHaveLength(0);
+  });
+
+  it("keeps the first verdict when the model answers for the same cluster twice", async () => {
+    seedAmbiguousPair();
+    ai.generateText.mockResolvedValue({
+      output: {
+        verdicts: [
+          { cluster: 1, same_person: true, confidence: "high", reason: "first answer" },
+          { cluster: 1, same_person: false, confidence: "low", reason: "second answer" },
+        ],
+      },
+    });
+
+    const res = await scanContactDuplicatesImpl(SCAN_USER);
+
+    expect(res.created).toBe(1);
+    const payload = suggestionInserts()[0]?.payload as Record<string, unknown>;
+    expect(payload.confidence).toBe("high");
+    expect(payload.reason).toBe("first answer");
+  });
+
+  it("does not prune the user's pending suggestions when any batch failed", async () => {
+    seedAmbiguousPair();
+    fake.seed("contact_duplicate_suggestions", [
+      { primary_contact_id: "stale-primary", status: "pending", user_id: SCAN_USER },
+    ]);
+    ai.generateText.mockRejectedValue(new Error("gateway 503"));
+
+    const res = await scanContactDuplicatesImpl(SCAN_USER);
+
+    expect(res.aiFailures).toBe(1);
+    expect(suggestionDeletes()).toHaveLength(0);
+  });
+
+  it("prunes as usual when the model judged every cluster, including the ones it rejected", async () => {
+    seedAmbiguousPair();
+    fake.seed("contact_duplicate_suggestions", [
+      { primary_contact_id: "stale-primary", status: "pending", user_id: SCAN_USER },
+    ]);
+    ai.generateText.mockResolvedValue({ output: { verdicts: [verdict(1, false)] } });
+
+    const res = await scanContactDuplicatesImpl(SCAN_USER);
+
+    expect(res).toStrictEqual({
+      clustersAnalyzed: 1,
+      clustersTotal: 1,
+      created: 0,
+      truncated: false,
+      aiFailures: 0,
+    });
+    expect(suggestionDeletes()[0]?.filters).toContainEqual({
+      op: "in",
+      col: "primary_contact_id",
+      value: ["stale-primary"],
+    });
+  });
+
+  it("sends one model call per batch of clusters, not one per cluster", async () => {
+    // 9 independent ambiguous pairs → 9 clusters → 2 batches of ≤8.
+    const contacts = Array.from({ length: 9 }, (_, i) => [
+      {
+        id: `p-${i}`,
+        user_id: SCAN_USER,
+        name: `Person ${i}`,
+        email: `person.${i}@acme.test`,
+        company: null,
+        title: null,
+        city: null,
+        source: null,
+        created_at: `2020-01-01T00:00:0${i}Z`,
+      },
+      {
+        id: `d-${i}`,
+        user_id: SCAN_USER,
+        name: `Person ${i}`,
+        email: `p${i}@other.test`,
+        company: null,
+        title: null,
+        city: null,
+        source: null,
+        created_at: `2020-01-02T00:00:0${i}Z`,
+      },
+    ]).flat();
+    fake.seed("contacts", contacts);
+    ai.generateText.mockResolvedValue({ output: { verdicts: [] } });
+
+    const res = await scanContactDuplicatesImpl(SCAN_USER);
+
+    expect(res.clustersTotal).toBe(9);
+    expect(ai.generateText).toHaveBeenCalledTimes(2);
+    expect(res.aiFailures).toBe(9);
   });
 });
