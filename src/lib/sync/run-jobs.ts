@@ -395,8 +395,37 @@ export async function runMessageJobs(
   // request. Keeps push → ack well under Pub/Sub's ~10s redelivery deadline.
   const deferAiToCron = opts.deferAiToCron === true;
 
+  /** Release a job back to the queue instead of deleting it, so a failure
+   * that is not the message's fault (context load, persist error) retries
+   * rather than silently completing with the row left unclassified. */
+  const releaseJob = async (job: ClaimedJob, reason: string, delayMs = 30_000) => {
+    await supabaseAdmin
+      .from("message_jobs")
+      .update({
+        status: "pending",
+        locked_at: null,
+        last_error: reason.slice(0, 500),
+        next_run_at: new Date(Date.now() + delayMs).toISOString(),
+      })
+      .eq("id", job.id);
+    logError("queue.job.released", { run_id: runId, job_id: job.id, reason }, null);
+  };
+
   const processOne = async (job: ClaimedJob) => {
     const ctx = contextByAccount.get(job.gmail_account_id);
+    // No context means loadAccountContext failed above. Processing anyway
+    // would classify against zero folders and then DELETE the job, leaving
+    // the row stuck at pending_ai forever; requeue instead.
+    if (!ctx) {
+      await releaseJob(job, "account_context_unavailable");
+      results.push({
+        id: job.id,
+        ok: false,
+        error: "account_context_unavailable",
+        retryable: true,
+      });
+      return;
+    }
     // Backfill jobs (priority>=10) always defer AI to the batched pass; live
     // mail defers only during a burst so big bursts batch instead of doing
     // one slow inline AI call per message. The webhook drain (deferAiToCron)
@@ -419,6 +448,10 @@ export async function runMessageJobs(
       defer_ai: deferAi,
       lease_ms: JOB_TIMEOUT_MS,
     });
+    // The timeout timer must be cleared when the job wins the race —
+    // otherwise every completed job leaves a pending 25s timer behind and
+    // they accumulate for the life of the isolate.
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
     try {
       const result = (await Promise.race([
         processGmailMessage(job.gmail_account_id, job.gmail_message_id, job.user_id, {
@@ -427,8 +460,8 @@ export async function runMessageJobs(
           timings,
           publishedAtMs: job.published_at_ms,
         }),
-        new Promise((_, reject) =>
-          setTimeout(
+        new Promise((_, reject) => {
+          timeoutHandle = setTimeout(
             () =>
               reject(
                 new Error(
@@ -436,8 +469,8 @@ export async function runMessageJobs(
                 ),
               ),
             JOB_TIMEOUT_MS,
-          ),
-        ),
+          );
+        }),
       ])) as Awaited<ReturnType<typeof processGmailMessage>>;
 
       const needsAiPass =
@@ -503,6 +536,8 @@ export async function runMessageJobs(
       results.push({ id: job.id, ok: true });
     } catch (e: unknown) {
       await handleError(job, e);
+    } finally {
+      if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
     }
   };
 
@@ -565,11 +600,21 @@ export async function runMessageJobs(
                   return;
                 }
                 // Honor each folder's min_ai_confidence — match live behavior.
+                // A folder id the model invented is not in the candidate
+                // set; without this check it fell through with threshold 0
+                // and was persisted as a confident answer.
                 const candidate = r?.folder_id
-                  ? ctx.folders.find((f) => f.id === r.folder_id)
+                  ? (ctx.folders.find((f) => f.id === r.folder_id) ?? null)
                   : null;
+                if (r?.folder_id && !candidate) {
+                  logError(
+                    "sync.batch_ai.unknown_folder_id",
+                    { run_id: runId, job_id: c.job.id, folder_id: r.folder_id },
+                    null,
+                  );
+                }
                 const threshold = candidate?.min_ai_confidence ?? 0;
-                const passes = r?.folder_id && (r.confidence ?? 0) >= threshold;
+                const passes = !!candidate && (r?.confidence ?? 0) >= threshold;
                 // Re-check immediately before apply: the batch LLM call above
                 // takes seconds, and the user may have manually filed this
                 // email in that window. If so, respect the user's decision
@@ -593,18 +638,25 @@ export async function runMessageJobs(
                   const folder = resolveActionFolderFromContext(ctx, r.folder_id, c.parsed);
                   await applyClassifiedFolderActions(c.job, c.emailRowId, c.parsed, folder);
                 }
-                await updateEmailEncrypted({
+                const persist = await updateEmailEncrypted({
                   email_id: c.emailRowId,
                   folder_id: passes ? r!.folder_id : null,
                   ai_summary: r?.summary || null,
                   ai_confidence: r?.confidence ?? 0,
-                  classified_by: passes ? "ai" : r?.folder_id ? "ai_low_confidence" : "ai",
+                  classified_by: passes ? "ai" : candidate ? "ai_low_confidence" : "ai",
                   classification_reason: passes
                     ? r?.reason || null
-                    : r?.folder_id
-                      ? `AI suggested "${candidate?.name ?? "?"}" at ${((r?.confidence ?? 0) * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`
+                    : candidate
+                      ? `AI suggested "${candidate.name}" at ${((r?.confidence ?? 0) * 100).toFixed(0)}% < min ${(threshold * 100).toFixed(0)}%`
                       : r?.reason || null,
                 });
+                // A failed persist leaves the row at pending_ai; deleting
+                // the job here would strand it until the next reconcile.
+                if (persist?.error) {
+                  await releaseJob(c.job, `batch_ai_persist_failed: ${persist.error}`);
+                  results.push({ id: c.job.id, ok: false, error: persist.error, retryable: true });
+                  return;
+                }
                 if (passes && r?.folder_id) {
                   void bumpEmailsSinceLearn(r.folder_id);
                 }
@@ -673,7 +725,7 @@ export async function runMessageJobs(
                     await applyClassifiedFolderActions(c.job, c.emailRowId, c.parsed, folder);
                   }
 
-                  await updateEmailEncrypted({
+                  const persist = await updateEmailEncrypted({
                     email_id: c.emailRowId,
                     folder_id: single.folder_id,
                     ai_summary: single.summary || null,
@@ -681,6 +733,16 @@ export async function runMessageJobs(
                     classified_by: "ai",
                     classification_reason: single.reason || null,
                   });
+                  if (persist?.error) {
+                    await releaseJob(c.job, `batch_ai_fallback_persist_failed: ${persist.error}`);
+                    results.push({
+                      id: c.job.id,
+                      ok: false,
+                      error: persist.error,
+                      retryable: true,
+                    });
+                    return;
+                  }
                   if (single.folder_id) {
                     void bumpEmailsSinceLearn(single.folder_id);
                   }

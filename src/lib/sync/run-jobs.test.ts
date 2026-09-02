@@ -240,6 +240,91 @@ describe("completion policy", () => {
   });
 });
 
+describe("failure containment: a job must never complete on someone else's failure", () => {
+  it("releases the job when the account context could not be loaded, instead of deleting it", async () => {
+    // Without a context the message would be classified against zero
+    // folders and the job deleted, stranding the row at pending_ai.
+    claim([job()]);
+    loadAccountContext.mockRejectedValueOnce(new Error("db down"));
+    const summary = await runMessageJobs(10, 2);
+    expect(summary).toMatchObject({ processed: 1, ok: 0, retryable: 1 });
+    expect(processGmailMessage).not.toHaveBeenCalled();
+    expect(jobDeletes()).toHaveLength(0);
+    expect(jobUpdates()).toHaveLength(1);
+    expect(jobUpdates()[0]!.payload).toMatchObject({
+      status: "pending",
+      locked_at: null,
+      last_error: "account_context_unavailable",
+    });
+  });
+
+  it("releases the job when the batch-AI persist fails, instead of deleting it", async () => {
+    const jobs = seedBackfillBatch(1);
+    classifyEmailsBatch.mockResolvedValue([
+      { folder_id: "folder-A", confidence: 0.99, summary: "s", reason: "r" },
+    ]);
+    updateEmailEncrypted.mockResolvedValue({ error: "encrypt rpc failed" });
+    const summary = await runMessageJobs(10, 2);
+    expect(summary).toMatchObject({ ok: 0, retryable: 1 });
+    expect(deletedJobIds()).not.toContain(jobs[0]!.id);
+    expect(jobUpdates()[0]!.payload).toMatchObject({
+      status: "pending",
+      locked_at: null,
+      last_error: expect.stringContaining("batch_ai_persist_failed"),
+    });
+  });
+
+  it("releases the job when the per-message fallback persist fails", async () => {
+    const jobs = seedBackfillBatch(1);
+    classifyEmailsBatch.mockRejectedValue(new Error("gateway down"));
+    classifyEmail.mockResolvedValue({
+      folder_id: "folder-A",
+      confidence: 0.9,
+      summary: "s",
+      reason: "r",
+    });
+    updateEmailEncrypted.mockResolvedValue({ error: "encrypt rpc failed" });
+    await runMessageJobs(10, 2);
+    expect(deletedJobIds()).not.toContain(jobs[0]!.id);
+    expect(jobUpdates()[0]!.payload).toMatchObject({
+      last_error: expect.stringContaining("batch_ai_fallback_persist_failed"),
+    });
+  });
+
+  it("never persists a folder id the model invented (not in the candidate set)", async () => {
+    seedBackfillBatch(1);
+    classifyEmailsBatch.mockResolvedValue([
+      { folder_id: "folder-HALLUCINATED", confidence: 0.99, summary: "s", reason: "r" },
+    ]);
+    await runMessageJobs(10, 2);
+    expect(updateEmailEncrypted).toHaveBeenCalledTimes(1);
+    const payload = updateEmailEncrypted.mock.calls[0]![0] as Record<string, unknown>;
+    // Treated as "no folder": an unknown id has no min_ai_confidence to
+    // check against, so it used to sail through at threshold 0.
+    expect(payload.folder_id).toBeNull();
+    expect(payload.classified_by).toBe("ai");
+    expect(applyFolderActions).not.toHaveBeenCalled();
+    expect(bumpEmailsSinceLearn).not.toHaveBeenCalled();
+  });
+
+  it("leaves no pending timers behind: the per-job timeout is cleared when the job wins", async () => {
+    vi.useFakeTimers();
+    try {
+      claim([job({ id: "job-1" }), job({ id: "job-2", gmail_message_id: "gm-2" })]);
+      processGmailMessage.mockResolvedValue({
+        id: "e-1",
+        email_id: "e-1",
+        folder_id: "folder-A",
+        needs_ai: false,
+      });
+      await runMessageJobs(10, 2);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("claim protocol", () => {
   it("forwards the drain budget and priority lane to claim_message_jobs", async () => {
     claim([]);
