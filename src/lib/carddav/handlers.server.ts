@@ -654,6 +654,33 @@ async function resolveGroupDisplayName(
 
 const TOMBSTONE_PRUNE_DAYS = 90;
 
+/** Ceiling on the changes one sync-collection REPORT will report when the
+ * client did not ask for a smaller one. Reaching it is a truncation like any
+ * other: 507 plus a token covering only what was sent. */
+const MAX_SYNC_RESULTS = 5000;
+
+/**
+ * How many of `rows` (ordered by `at`, ascending) may be reported so that the
+ * token minted from the last one does not strand its neighbours.
+ *
+ * The token carries a single millisecond and the next request asks for rows
+ * strictly greater than it, so a cut between two rows stamped the SAME
+ * millisecond — routine after a bulk import — would lose the ones left
+ * behind. The prefix is therefore pulled back to a timestamp boundary; when
+ * that would report nothing at all, the whole leading block of equal
+ * timestamps is reported instead, overrunning the budget rather than making
+ * no progress.
+ */
+function prefixEndingOnATimestampBoundary(rows: Array<{ at: string }>, budget: number): number {
+  let k = Math.min(rows.length, Math.max(0, budget));
+  while (k > 0 && k < rows.length && rows[k]!.at === rows[k - 1]!.at) k--;
+  if (k === 0 && rows.length > 0) {
+    k = 1;
+    while (k < rows.length && rows[k]!.at === rows[0]!.at) k++;
+  }
+  return k;
+}
+
 async function handleSyncCollection(raw: string, userId: string, email: string): Promise<Response> {
   const { syncToken, syncLevel, limit } = parseSyncCollection(raw);
   const includeVcard = raw.toLowerCase().includes("address-data");
@@ -692,6 +719,12 @@ async function handleSyncCollection(raw: string, userId: string, email: string):
     since = parsed;
   }
 
+  // ONE budget across all three change streams. It used to be pushed into
+  // each query separately, so an nresults of N could return up to 3N rows.
+  // Each query fetches one row past the budget so "there is more" can be told
+  // from "that was everything".
+  const budget = limit ?? MAX_SYNC_RESULTS;
+  const probe = budget + 1;
   const [{ data: cRows }, { data: gRows }, { data: tRows }] = await Promise.all([
     supabaseAdmin
       .from("contacts")
@@ -699,34 +732,57 @@ async function handleSyncCollection(raw: string, userId: string, email: string):
       .eq("user_id", userId)
       .gt("updated_at", since.updatedSince)
       .order("updated_at", { ascending: true })
-      .limit(limit ?? 5000),
+      .limit(probe),
     supabaseAdmin
       .from("contact_groups")
       .select("id,updated_at")
       .eq("user_id", userId)
       .gt("updated_at", since.updatedSince)
       .order("updated_at", { ascending: true })
-      .limit(limit ?? 1000),
+      .limit(probe),
     supabaseAdmin
       .from("carddav_tombstones")
       .select("resource_type,resource_id,sync_seq")
       .eq("user_id", userId)
       .gt("sync_seq", since.seqSince)
       .order("sync_seq", { ascending: true })
-      .limit(limit ?? 5000),
+      .limit(probe),
   ]);
+
+  const contactRows = (cRows as Array<{ id: string; updated_at: string }> | null) ?? [];
+  const groupRows = (gRows as Array<{ id: string; updated_at: string }> | null) ?? [];
+  const tombRows =
+    (tRows as Array<{ resource_type: string; resource_id: string; sync_seq: number }> | null) ?? [];
+
+  // Resource changes are one stream ordered by updated_at, because that is
+  // the single value the sync token can carry for them.
+  const resources = [
+    ...contactRows.map((r) => ({ kind: "contact" as const, id: r.id, at: r.updated_at })),
+    ...groupRows.map((r) => ({ kind: "group" as const, id: r.id, at: r.updated_at })),
+  ].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+
+  const takeResources = prefixEndingOnATimestampBoundary(resources, budget);
+  const takeTombs = Math.max(0, Math.min(tombRows.length, budget - takeResources));
+  // More is waiting when a prefix was cut, or when a query came back with the
+  // extra probe row (so the database had at least one more to give).
+  const truncated =
+    takeResources < resources.length ||
+    takeTombs < tombRows.length ||
+    contactRows.length > budget ||
+    groupRows.length > budget ||
+    tombRows.length > budget;
 
   const style = await getGroupNameStyle(userId);
   const treeMap = style === "leaf" ? undefined : await loadGroupTreeMap(userId);
   let body = MULTISTATUS_OPEN;
 
-  for (const row of (cRows as Array<{ id: string; updated_at: string }> | null) ?? []) {
-    body += await buildContactResponse(userId, email, row.id, includeVcard);
+  for (const r of resources.slice(0, takeResources)) {
+    body +=
+      r.kind === "contact"
+        ? await buildContactResponse(userId, email, r.id, includeVcard)
+        : await buildGroupResponse(userId, email, r.id, includeVcard, style, treeMap);
   }
-  for (const row of (gRows as Array<{ id: string; updated_at: string }> | null) ?? []) {
-    body += await buildGroupResponse(userId, email, row.id, includeVcard, style, treeMap);
-  }
-  for (const t of (tRows as Array<{ resource_type: string; resource_id: string }> | null) ?? []) {
+  for (const t of tombRows.slice(0, takeTombs)) {
     const href =
       t.resource_type === "group"
         ? groupHref(email, t.resource_id)
@@ -734,7 +790,25 @@ async function handleSyncCollection(raw: string, userId: string, email: string):
     body += statusResponseBlock(href);
   }
 
-  const newToken = buildSyncToken(userId, snap.updatedAt, snap.seq);
+  // RFC 6578 §3.6: a truncated response says so, and its token must describe
+  // exactly what was reported. Minting the full snapshot here would tell the
+  // client it had seen changes it was never sent, losing them for good.
+  if (truncated) {
+    body += statusResponseBlock(
+      addressbookHref(email),
+      "HTTP/1.1 507 Insufficient Storage",
+      `<D:error><D:number-of-matches-within-limits/></D:error>`,
+    );
+  }
+  const lastResource = resources[takeResources - 1];
+  const lastTomb = tombRows[takeTombs - 1];
+  const newToken = truncated
+    ? buildSyncToken(
+        userId,
+        lastResource?.at ?? since.updatedSince,
+        lastTomb?.sync_seq ?? since.seqSince,
+      )
+    : buildSyncToken(userId, snap.updatedAt, snap.seq);
   body += `<D:sync-token>${xmlEscape(newToken)}</D:sync-token>`;
   body += MULTISTATUS_CLOSE;
   return davResponse(body);

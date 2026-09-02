@@ -48,11 +48,6 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "escapeHtml leaves ' unescaped (unsafe inside single-quoted attributes) and is not idempotent — escaping twice double-escapes the entities.",
     fixIn: "src/lib/escape-html.ts",
   },
-  "carddav-nresults-token-covers-full-snapshot": {
-    what: "A sync-collection REPORT with nresults truncates the change list but still mints a token covering the whole snapshot, so a limit-honouring client permanently misses the truncated contacts. RFC 6578 wants a 507 marker.",
-    fixIn:
-      "src/lib/carddav/handlers.server.ts — emit 507 and a token covering only what was returned.",
-  },
   "folder-chat-skips-conflict-check": {
     what: "applyFolderChanges inserts folder_filters directly without calling checkRuleConflicts, so a rule created from chat can silently shadow an existing one — the rules editor warns.",
     fixIn: "src/lib/folder-chat.functions.ts — run checkRuleConflicts before inserting.",

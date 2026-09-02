@@ -387,6 +387,11 @@ export function contactHref(id: string): string {
 export function groupHref(id: string): string {
   return `/api/public/carddav/${encodeURIComponent(EMAIL)}/contacts/group-${id}.vcf`;
 }
+/** The addressbook collection itself — the href a sync-collection REPORT
+ * hangs its truncation marker off. */
+export function bookHref(): string {
+  return `/api/public/carddav/${encodeURIComponent(EMAIL)}/contacts/`;
+}
 
 export function vcardBody(lines: string[], uid = C1): string {
   return ["BEGIN:VCARD", "VERSION:3.0", `UID:${uid}`, ...lines, "END:VCARD", ""].join("\r\n");

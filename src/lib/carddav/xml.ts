@@ -31,11 +31,16 @@ export function responseBlock(href: string, propsXml: string, status = "HTTP/1.1
  * RFC 6352 §8.7 wants for a multiget href that resolves to nothing, and what
  * RFC 6578 wants for a resource that has been deleted since the last sync.
  * The href is escaped because it can come straight off the request body. */
-export function statusResponseBlock(href: string, status = "HTTP/1.1 404 Not Found"): string {
+export function statusResponseBlock(
+  href: string,
+  status = "HTTP/1.1 404 Not Found",
+  extraXml = "",
+): string {
   return (
     `<D:response>` +
     `<D:href>${xmlEscape(href)}</D:href>` +
     `<D:status>${status}</D:status>` +
+    extraXml +
     `</D:response>`
   );
 }

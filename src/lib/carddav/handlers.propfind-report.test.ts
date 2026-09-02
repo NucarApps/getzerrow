@@ -12,12 +12,19 @@
 //   - the probe guard: an unrecognized REPORT body must never fall through
 //     to a full decrypted address-book dump;
 //   - sync-collection token semantics (RFC 6578): strictly-greater
-//     filtering, idempotence when nothing changed, and 403 on foreign /
-//     garbage / expired tokens so clients fall back to a full resync instead
-//     of silently missing deletes;
-//   - PROPFIND resilience: missing Depth header, unknown/deep paths, and
-//     request bodies (malformed XML or prop subsets) — iOS retries hard on
-//     5xx, so every one of these must come back as a 2xx multistatus;
+//     filtering, idempotence when nothing changed, 403 on foreign / garbage /
+//     expired tokens so clients fall back to a full resync instead of
+//     silently missing deletes, and a truncated run that reports 507 with a
+//     token covering only what it actually sent;
+//   - multiget href resolution: an href naming nothing comes back as a 404
+//     block, and another user's contact is answered identically so the
+//     report cannot be used to probe for ids;
+//   - PROPFIND resilience and prop subsets: missing Depth header,
+//     unknown/deep paths, malformed bodies — iOS retries hard on 5xx, so
+//     every one must come back as a 2xx multistatus — plus the requested
+//     prop subset, with a 404 propstat for props this server does not carry;
+//   - the addressbook-query filter subset, and the fallback to the whole
+//     collection for filter constructs it cannot evaluate;
 //   - the flattened group-name styles iOS needs, resolved from a single
 //     tree query rather than one per group.
 //
@@ -58,6 +65,7 @@ const {
   EMAIL,
   C1,
   C2,
+  C_NEW,
   FOREIGN,
   NEVER_EXISTED,
   DELETED,
@@ -68,6 +76,7 @@ const {
   TG,
   contactHref,
   groupHref,
+  bookHref,
   multigetBody,
   syncCollectionBody,
   syncToken,
@@ -764,27 +773,90 @@ describe("REPORT sync-collection", () => {
     expect(text).toContain(xmlEscape(syncToken(USER, new Date(TG).getTime(), 3)));
   });
 
-  // CHARACTERIZATION(carddav-nresults-token-covers-full-snapshot)
-  it("nresults truncates the change list but the token still covers the full snapshot", async () => {
-    // With <D:limit><D:nresults>1</D:nresults></D:limit>, only the oldest
-    // changed contact is returned — but the sync-token is minted from the
-    // CURRENT snapshot (newest updated_at overall). A client that honors the
-    // token verbatim would never fetch C2. RFC 6578 §3.6 requires a
-    // truncated response to carry a token consistent with what was actually
-    // returned plus a 507 insufficient-storage marker. iOS does not send
-    // nresults in practice, which is why this has not bitten; if a client
-    // ever does, this is silent data loss on that device. Pinned here so a
-    // future fix flips these assertions deliberately.
+  it("nresults truncates the change list, marks it 507, and mints a matching token", async () => {
+    // RFC 6578 §3.6: a truncated response carries a 507 response block for
+    // the collection and a sync-token consistent with what was actually
+    // returned. Minting the full-snapshot token here would skip C2 and the
+    // group on that device forever.
     const res = await report(syncCollectionBody({ limit: 1 }));
     expect(res.status).toBe(207);
     const text = await res.text();
     expect(text).toContain(contactHref(C1)); // oldest change, within limit
-    expect(text).not.toContain(contactHref(C2)); // truncated away
-    // No insufficient-storage marker. Matched as a status line rather than
-    // a bare "507", which used to fail whenever the sync token's epoch
-    // millis happened to contain those digits.
+    expect(text).not.toContain(contactHref(C2));
+    expect(text).not.toContain(`group-${G1}.vcf`);
+    expect(text).toContain(
+      `<D:response><D:href>${bookHref()}</D:href>` +
+        "<D:status>HTTP/1.1 507 Insufficient Storage</D:status>" +
+        "<D:error><D:number-of-matches-within-limits/></D:error></D:response>",
+    );
+    // Token covers exactly the one change that was reported.
+    expect(text).toContain(xmlEscape(syncToken(USER, new Date(T1).getTime(), 0)));
+  });
+
+  it("spends the nresults budget across all three change streams, not per table", async () => {
+    // The limit used to be pushed into each query separately, so nresults=1
+    // could return one contact AND one group AND one tombstone.
+    fake.seed("carddav_tombstones", [
+      { user_id: USER, resource_type: "contact", resource_id: DELETED, sync_seq: 3 },
+    ]);
+    const text = await (await report(syncCollectionBody({ limit: 1 }))).text();
+    expect(text.match(/<D:href>/g)).toHaveLength(2); // one change + the 507 block
+    expect(text).toContain(contactHref(C1));
+    expect(text).not.toContain(`${DELETED}.vcf`);
+  });
+
+  it("a client honouring the truncated token gets the rest, losing nothing", async () => {
+    fake.seed("carddav_tombstones", [
+      { user_id: USER, resource_type: "contact", resource_id: DELETED, sync_seq: 3 },
+    ]);
+    const seen: string[] = [];
+    let token = "";
+    for (let round = 0; round < 6; round++) {
+      const text = await (await report(syncCollectionBody({ token, limit: 1 }))).text();
+      for (const m of text.matchAll(/<D:href>([^<]*\.vcf)<\/D:href>/g)) seen.push(m[1]!);
+      const next = tokenFrom(text);
+      if (next === token) break;
+      token = next;
+    }
+    expect(seen).toStrictEqual([
+      contactHref(C1),
+      contactHref(C2),
+      groupHref(G1),
+      contactHref(DELETED),
+    ]);
+    // And the token it settles on is the one a full sync would have minted.
+    expect(token).toBe(syncToken(USER, new Date(TG).getTime(), 3));
+  });
+
+  it("never cuts between two changes sharing an updated_at, which the token could not express", async () => {
+    // The token carries a millisecond and the next request asks for rows
+    // strictly greater than it, so a cut between two rows stamped the same
+    // millisecond would lose the second one for good.
+    fake.seed("contacts", [
+      { id: C1, user_id: USER, updated_at: T1 },
+      { id: C2, user_id: USER, updated_at: T2 },
+      { id: C_NEW, user_id: USER, updated_at: T2 },
+    ]);
+    fake.seed("contact_groups", []);
+    decryptedRows.set(C_NEW, H.contactFixture(C_NEW, T2));
+
+    const first = await (await report(syncCollectionBody({ limit: 1 }))).text();
+    expect(first).toContain(contactHref(C1));
+    const second = await (
+      await report(syncCollectionBody({ token: tokenFrom(first), limit: 1 }))
+    ).text();
+    // The whole T2 block comes back together even though it overruns the
+    // budget of one.
+    expect(second).toContain(contactHref(C2));
+    expect(second).toContain(contactHref(C_NEW));
+    expect(tokenFrom(second)).toBe(syncToken(USER, new Date(T2).getTime(), 0));
+  });
+
+  it("an untruncated response carries no 507 block", async () => {
+    const text = await (await report(syncCollectionBody({ limit: 50 }))).text();
+    expect(text).toContain(contactHref(C1));
+    expect(text).toContain(contactHref(C2));
     expect(text).not.toMatch(/HTTP\/1\.1 507/);
-    // Token claims the FULL snapshot (TG > C2's T2), skipping C2 forever.
     expect(text).toContain(xmlEscape(syncToken(USER, new Date(TG).getTime(), 0)));
   });
 
