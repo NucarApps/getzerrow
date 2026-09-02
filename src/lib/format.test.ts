@@ -295,6 +295,24 @@ describe("formatShortDate / formatShortDateTime", () => {
   });
 });
 
+describe("formatDateTime / formatEventTime", () => {
+  it("renders a full locale date and time", () => {
+    expect(formatDateTime("2026-01-23T16:05:00Z")).toBe("1/23/2026, 4:05:00 PM");
+  });
+
+  it("renders a compact event time, with the weekday only when asked", () => {
+    expect(formatEventTime("2026-01-23T16:05:00Z")).toBe("Jan 23, 4:05 PM");
+    expect(formatEventTime("2026-01-23T16:05:00Z", { weekday: true })).toBe("Fri, Jan 23, 4:05 PM");
+  });
+
+  it("uses the fallback for nullish input", () => {
+    expect(formatDateTime(null)).toBe("—");
+    expect(formatDateTime(undefined, "Never")).toBe("Never");
+    expect(formatEventTime(null)).toBe("—");
+    expect(formatEventTime("", { fallback: "No start time" })).toBe("No start time");
+  });
+});
+
 // CHARACTERIZATION(format-unparseable-date-echoed-raw): the five date
 // formatters disagree on unparseable input — three fall back, two echo the
 // raw string into the UI — flip when fixed
