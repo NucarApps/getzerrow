@@ -61,10 +61,6 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "PROPFIND ignores the requested prop subset and always returns a fixed set, with no 404 propstat for props it does not have.",
     fixIn: "src/lib/carddav/handlers.server.ts",
   },
-  "meeting-stream-secret-unset-throws": {
-    what: "verifyRecordingStreamToken signs to compare, and the signer throws when MEETING_STREAM_SECRET is unset. Its route caller is outside a try/catch, so a deployment missing the secret answers 500 instead of 401 and leaks the misconfiguration.",
-    fixIn: "src/lib/meeting-stream.server.ts — return false when the secret is missing.",
-  },
   "folder-chat-skips-conflict-check": {
     what: "applyFolderChanges inserts folder_filters directly without calling checkRuleConflicts, so a rule created from chat can silently shadow an existing one — the rules editor warns.",
     fixIn: "src/lib/folder-chat.functions.ts — run checkRuleConflicts before inserting.",
@@ -77,11 +73,6 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: 'parseVCard ignores ENCODING=QUOTED-PRINTABLE, which vCard 2.1 exporters (Android\'s contact share, several Windows address books) use for every non-ASCII value. "Jürgen Müller" is stored, displayed and pushed to Google as "J=C3=BCrgen M=C3=BCller".',
     fixIn:
       'src/lib/carddav/vcard.ts — decode quoted-printable values, including the soft "=" line continuations, before unescaping.',
-  },
-  "carddav-basic-auth-utf8-mangled": {
-    what: 'verifyCardDavAuth decodes Basic credentials with atob, which yields a Latin-1 byte string. A UTF-8 email or password comes through as mojibake ("é" becomes "Ã©"), so an account with a non-ASCII address can never pair a phone and the failure is indistinguishable from a wrong password.',
-    fixIn:
-      'src/lib/carddav/auth.server.ts — decode the base64 bytes with TextDecoder("utf-8") instead of atob alone.',
   },
   "carddav-addressbook-query-filter-ignored": {
     what: "addressbook-query ignores prop-filter/text-match entirely and returns every contact, so a filtering client does its own work over a full download.",

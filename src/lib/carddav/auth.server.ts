@@ -36,7 +36,12 @@ export async function verifyCardDavAuth(request: Request): Promise<AuthResult> {
   }
   let decoded: string;
   try {
-    decoded = atob(header.slice(6).trim());
+    // Decode as UTF-8, not as the Latin-1 byte string atob() returns on its
+    // own: a non-ASCII email or app password came through mangled, so such
+    // an account could never pair a device and the failure was
+    // indistinguishable from a wrong password.
+    const bytes = Uint8Array.from(atob(header.slice(6).trim()), (c) => c.charCodeAt(0));
+    decoded = new TextDecoder("utf-8").decode(bytes);
   } catch {
     return { ok: false, response: carddavAuthChallengeResponse() };
   }

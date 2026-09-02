@@ -128,27 +128,20 @@ describe("verifyCardDavAuth", () => {
     expect(fake.calls.rpcs[0]!.args.p_token_hash).toBe(hashToken(" spaced "));
   });
 
-  // CHARACTERIZATION(carddav-basic-auth-utf8-mangled)
-  it("mangles a non-ASCII email into mojibake before the lookup", async () => {
-    // `atob` yields a BYTE string: the UTF-8 bytes of "é" (C3 A9) come back
-    // as the two Latin-1 characters "Ã©". The address that reaches
-    // verify_carddav_token therefore never matches the stored one, so an
-    // account with a non-ASCII address can never pair a phone — and the
-    // failure looks exactly like a wrong password.
+  it("decodes a non-ASCII email as UTF-8, so the address matches the stored one", async () => {
+    // Regression: `atob` yields a BYTE string, so the UTF-8 bytes of "é"
+    // (C3 A9) arrived as the two Latin-1 characters "Ã©" and the lookup
+    // could never match — an account with a non-ASCII address could not
+    // pair a phone, and the failure looked like a wrong password.
     fake.onRpc("verify_carddav_token", () => ({ data: null }));
-    const result = await verifyCardDavAuth(reqWithAuth(basicUtf8("josé@example.com:tok-secret")));
-    expect(result.ok).toBe(false);
-    expect(fake.calls.rpcs[0]!.args.p_user_email).toBe("josã©@example.com");
+    await verifyCardDavAuth(reqWithAuth(basicUtf8("josé@example.com:tok-secret")));
+    expect(fake.calls.rpcs[0]!.args.p_user_email).toBe("josé@example.com");
   });
 
-  // CHARACTERIZATION(carddav-basic-auth-utf8-mangled)
-  it("mangles a non-ASCII password the same way, so the hash never matches", async () => {
+  it("hashes the password the user actually typed, not its mojibake", async () => {
     fake.onRpc("verify_carddav_token", () => ({ data: null }));
     await verifyCardDavAuth(reqWithAuth(basicUtf8("user@example.com:pässwörd")));
-    // The hash is taken over the mojibake, not over the password the user
-    // actually typed.
-    expect(fake.calls.rpcs[0]!.args.p_token_hash).toBe(hashToken("pÃ¤sswÃ¶rd"));
-    expect(fake.calls.rpcs[0]!.args.p_token_hash).not.toBe(hashToken("pässwörd"));
+    expect(fake.calls.rpcs[0]!.args.p_token_hash).toBe(hashToken("pässwörd"));
   });
 
   it("rejects when the rpc finds no matching token (null data)", async () => {

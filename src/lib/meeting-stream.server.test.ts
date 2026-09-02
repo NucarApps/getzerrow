@@ -95,20 +95,13 @@ describe("verifyRecordingStreamToken", () => {
     ]).toStrictEqual([false, false, false, false, false]);
   });
 
-  // CHARACTERIZATION(meeting-stream-secret-unset-throws): with
-  // MEETING_STREAM_SECRET unset, verify does not return false — `secret()`
-  // throws out of `sign`. The only caller,
-  // src/routes/api/public/meeting-recording.ts, calls this outside any
-  // try/catch, so a deployment missing the secret answers 500 (leaking the
-  // misconfiguration) instead of the intended 401. Flip to
-  // `toBe(false)` when verify is made to fail closed.
-  it("throws instead of failing closed when the signing secret is unset", () => {
+  it("fails closed when the signing secret is unset, rather than throwing", () => {
+    // The route calls this outside any try/catch, so throwing here answered
+    // 500 and announced the misconfiguration; refusing is the right answer.
     const { m, e, t } = parsePath(buildRecordingStreamPath(MEETING));
     vi.stubEnv("MEETING_STREAM_SECRET", undefined);
 
-    expect(() => verifyRecordingStreamToken(m, e, t)).toThrow(
-      "MEETING_STREAM_SECRET is not configured",
-    );
+    expect(verifyRecordingStreamToken(m, e, t)).toBe(false);
   });
 
   // The expiry check runs before signing, so an already-expired token is

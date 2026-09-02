@@ -31,6 +31,11 @@ export function buildRecordingStreamPath(
 export function verifyRecordingStreamToken(meetingId: string, exp: number, token: string): boolean {
   if (!meetingId || !Number.isFinite(exp) || !token) return false;
   if (exp < Math.floor(Date.now() / 1000)) return false;
+  // A missing secret is a failed verification, not an exception: signing to
+  // compare used to throw out of here, and the route calls this outside any
+  // try/catch, so a deployment without the secret answered 500 — announcing
+  // the misconfiguration — where it should simply refuse with 401.
+  if (!process.env.MEETING_STREAM_SECRET) return false;
   const expected = sign(meetingId, exp);
   const a = Buffer.from(expected);
   const b = Buffer.from(token);
