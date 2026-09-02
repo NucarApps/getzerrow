@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, useMemo, useRef, memo, lazy, Suspense, Fragment } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { emailDomain } from "@/lib/company-domains";
+import { dayGroupLabel, shortRowTime } from "@/lib/format";
 import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -191,34 +192,6 @@ const PAGE_SIZE = 50;
 
 type ServerFnCall<A> = (args: { data: A }) => Promise<unknown>;
 
-/** Compact row timestamp: HH:MM today, weekday within a week, then M/D. */
-function shortRowTime(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const now = new Date();
-  if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-  }
-  const days = (now.getTime() - d.getTime()) / 86_400_000;
-  if (days < 7) return d.toLocaleDateString([], { weekday: "short" });
-  return d.toLocaleDateString([], { month: "short", day: "numeric" });
-}
-
-/** Day-group header label for the list (Today / Yesterday / …). */
-function dayGroupLabel(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diffDays = Math.floor((startOfDay(new Date()) - startOfDay(d)) / 86_400_000);
-  if (diffDays <= 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return "This week";
-  if (diffDays < 31) return "This month";
-  return "Earlier";
-}
-
 type EmailListRowProps = {
   e: Email;
   folderList: Folder[];
@@ -343,7 +316,7 @@ const EmailListRow = memo(function EmailListRow({
                 ? settledFolderName
                   ? `Filed to ${settledFolderName}`
                   : "Filed"
-                : shortRowTime(e.received_at)}
+                : shortRowTime(e.received_at, new Date())}
             </span>
           </div>
           <div className="flex items-center gap-1.5">
@@ -1800,9 +1773,10 @@ function InboxPage() {
           )}
 
           {filtered.map((e, i) => {
-            const groupLabel = e.__placeholder ? null : dayGroupLabel(e.received_at);
+            const groupLabel = e.__placeholder ? null : dayGroupLabel(e.received_at, new Date());
             const prev = i > 0 ? filtered[i - 1] : undefined;
-            const prevLabel = prev && !prev.__placeholder ? dayGroupLabel(prev.received_at) : null;
+            const prevLabel =
+              prev && !prev.__placeholder ? dayGroupLabel(prev.received_at, new Date()) : null;
             return (
               <Fragment key={e.id}>
                 {groupLabel && groupLabel !== prevLabel && (

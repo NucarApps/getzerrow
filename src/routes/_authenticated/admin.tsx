@@ -1,6 +1,13 @@
 import { createFileRoute, redirect, isRedirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { truncate } from "@/lib/format";
+import {
+  formatDuration,
+  formatMs,
+  formatShortDate,
+  formatShortDateTime,
+  hoursSince,
+  truncate,
+} from "@/lib/format";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo } from "react";
 import {
@@ -65,32 +72,6 @@ export const Route = createFileRoute("/_authenticated/admin")({
   },
   component: AdminPage,
 });
-
-function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
-
-function fmtDateTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function hoursSince(iso: string | null | undefined): number | null {
-  if (!iso) return null;
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return null;
-  return (Date.now() - t) / 36e5;
-}
 
 function AdminPage() {
   const meFn = useServerFn(getAdminMe);
@@ -360,7 +341,7 @@ function RetryHealthSection({ q }: { q: { data?: FolderRetryMetrics; isLoading: 
             {(data?.recentAlerts ?? []).slice(0, 5).map((a, i) => (
               <li key={`${a.folder_id ?? "null"}-${a.fired_at}-${i}`}>
                 <span className="text-foreground">{a.name}</span> — {a.retry_count} retries ·{" "}
-                {fmtDateTime(a.fired_at)}
+                {formatShortDateTime(a.fired_at)}
               </li>
             ))}
           </ul>
@@ -512,9 +493,11 @@ function UserRow({ u }: { u: AdminUser }) {
           </span>
         )}
       </TableCell>
-      <TableCell className="px-3 py-2 text-muted-foreground">{fmtDate(u.created_at)}</TableCell>
       <TableCell className="px-3 py-2 text-muted-foreground">
-        {fmtDateTime(u.last_sign_in_at)}
+        {formatShortDate(u.created_at)}
+      </TableCell>
+      <TableCell className="px-3 py-2 text-muted-foreground">
+        {formatShortDateTime(u.last_sign_in_at)}
       </TableCell>
       <TableCell className="px-3 py-2">
         {accounts.length === 0 ? (
@@ -539,7 +522,7 @@ function UserRow({ u }: { u: AdminUser }) {
           <div className="flex flex-col gap-1">
             {accounts.map((g, i) => {
               const last = g.last_push_at ?? g.last_poll_at;
-              const hrs = hoursSince(last);
+              const hrs = hoursSince(last, new Date());
               const stale = hrs !== null && hrs > 24;
               return (
                 <span
@@ -547,7 +530,7 @@ function UserRow({ u }: { u: AdminUser }) {
                   className={`inline-flex items-center gap-1 text-xs ${stale ? "text-destructive" : "text-muted-foreground"}`}
                 >
                   {stale && <AlertTriangle className="h-3 w-3" />}
-                  {fmtDateTime(last)}
+                  {formatShortDateTime(last)}
                 </span>
               );
             })}
@@ -577,19 +560,6 @@ function UserRow({ u }: { u: AdminUser }) {
       </TableCell>
     </TableRow>
   );
-}
-
-function fmtDuration(seconds: number | null): string {
-  if (seconds === null) return "—";
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
-  return `${Math.round(seconds / 360) / 10}h`;
-}
-
-function fmtMs(ms: number | null): string {
-  if (ms === null) return "—";
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 function SyncMetricsSection({
@@ -654,7 +624,11 @@ function SyncMetricsSection({
       </div>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricTile label="Oldest pending" value={fmtDuration(oldestSec)} loading={q.isLoading} />
+        <MetricTile
+          label="Oldest pending"
+          value={formatDuration(oldestSec)}
+          loading={q.isLoading}
+        />
         <MetricTile
           label="Retrying jobs"
           value={`${retries.with_attempts} · max ${retries.max_attempt}`}
@@ -663,9 +637,9 @@ function SyncMetricsSection({
         />
         <MetricTile
           label="Latency p50 / p95"
-          value={`${fmtMs(latency.p50)} · ${fmtMs(latency.p95)}`}
+          value={`${formatMs(latency.p50)} · ${formatMs(latency.p95)}`}
           loading={q.isLoading}
-          hint={`p99 ${fmtMs(latency.p99)} · n=${latency.count}`}
+          hint={`p99 ${formatMs(latency.p99)} · n=${latency.count}`}
         />
         <MetricTile
           label="Total in-flight"
@@ -707,7 +681,7 @@ function SyncMetricsSection({
               {dlqRows.map((r) => (
                 <TableRow key={r.id} className="align-top hover:bg-accent/30">
                   <TableCell className="whitespace-nowrap px-2 py-1 text-muted-foreground">
-                    {fmtDateTime(r.updated_at)}
+                    {formatShortDateTime(r.updated_at)}
                   </TableCell>
                   <TableCell className="px-2 py-1 font-mono text-xs text-foreground">
                     {truncate(r.gmail_message_id, 32)}

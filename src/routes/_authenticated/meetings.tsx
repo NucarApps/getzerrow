@@ -22,7 +22,7 @@ import {
   listRecentUnrecordedEvents,
   resendMeetingBot,
 } from "@/lib/meetings.functions";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatElapsed } from "@/lib/format";
 import { encodeWav } from "@/lib/wav-encoder";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -494,16 +494,6 @@ function RecordDialog({ onRecorded }: { onRecorded: () => void }) {
       </DialogContent>
     </Dialog>
   );
-}
-
-function formatElapsed(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-    .toString()
-    .padStart(2, "0");
-  const s = Math.floor(seconds % 60)
-    .toString()
-    .padStart(2, "0");
-  return `${m}:${s}`;
 }
 
 function InPersonRecordDialog({

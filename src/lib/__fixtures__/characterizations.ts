@@ -141,6 +141,10 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     fixIn:
       "src/lib/sync/filter-engine.ts — match `from` on the address only, or add a searchable name column.",
   },
+  "format-unparseable-date-echoed-raw": {
+    what: "formatDateTime and formatEventTime return the raw input string when it will not parse, while formatRelativeTime, formatShortDate and formatShortDateTime return the caller's fallback. An unparseable timestamp therefore renders as garbage text in two places and as an em dash in three, and the caller's fallback argument is silently ignored on the first two.",
+    fixIn: "src/lib/format.ts — return the fallback from every formatter on NaN input.",
+  },
   "reports-topsenders-address-only": {
     what: "getInboxReport never selects a sender display name, so parseSender's name branch is dead and topSenders can only ever show an address. There is no plaintext from_name column — only from_name_enc — so the fix is a decrypt pass over the window, not a wider select.",
     fixIn: "src/lib/reports.functions.ts — resolve display names via the decrypt reader.",
