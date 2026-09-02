@@ -65,7 +65,11 @@ export function RuleSentenceEditor({
   const [groups, setGroups] = useState<Condition[][]>(
     initialGroups?.length ? initialGroups : [[emptyCondition()]],
   );
-  const [draft, setDraft] = useState("");
+  // One draft per group: a single shared string mirrored whatever the user
+  // typed into every group's input at once.
+  const [drafts, setDrafts] = useState<Record<number, string>>({});
+  const draftFor = (gi: number) => drafts[gi] ?? "";
+  const setDraft = (gi: number, value: string) => setDrafts((cur) => ({ ...cur, [gi]: value }));
   const [changeSetOpen, setChangeSetOpen] = useState(false);
 
   const complete = useMemo(
@@ -103,20 +107,23 @@ export function RuleSentenceEditor({
       cur.map((g, i) => (i === gi ? g.map((c, j) => (j === ci ? { ...c, ...next } : c)) : g)),
     );
   const removeCondition = (gi: number, ci: number) =>
-    setGroups(
-      (cur) =>
-        cur
-          .map((g, i) => (i === gi ? g.filter((_, j) => j !== ci) : g))
-          .filter((g) => g.length > 0) || [[emptyCondition()]],
-    );
+    setGroups((cur) => {
+      const next = cur
+        .map((g, i) => (i === gi ? g.filter((_, j) => j !== ci) : g))
+        .filter((g) => g.length > 0);
+      // `||` never fired here: filter always returns an array, so removing
+      // the last condition left an editor with nothing in it and no way to
+      // add anything back.
+      return next.length > 0 ? next : [[emptyCondition()]];
+    });
   const addCondition = (gi: number, condition = emptyCondition()) =>
     setGroups((cur) => cur.map((g, i) => (i === gi ? [...g, condition] : g)));
 
   const commitDraft = (gi: number) => {
-    const text = draft.trim();
+    const text = draftFor(gi).trim();
     if (!text) return;
     addCondition(gi, parseConditionInput(text));
-    setDraft("");
+    setDraft(gi, "");
   };
 
   return (
@@ -203,8 +210,8 @@ export function RuleSentenceEditor({
 
               <div className="flex flex-wrap items-center gap-2">
                 <Input
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
+                  value={draftFor(gi)}
+                  onChange={(e) => setDraft(gi, e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();

@@ -91,6 +91,33 @@ describe("RuleSentenceEditor", () => {
     expect(previewRuleChange).not.toHaveBeenCalled();
   });
 
+  it("removing the only condition leaves an empty starter row, not an unusable editor", async () => {
+    const user = userEvent.setup();
+    renderEditor({ initialGroups: [[{ field: "from", op: "contains", value: "acme.com" }]] });
+
+    await user.click(screen.getByRole("button", { name: "Remove condition" }));
+
+    // The row comes back empty and the editor is still usable.
+    expect(valueInput()).toHaveValue("");
+    expect(screen.getByText("Add a condition to get started.")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Remove condition" })).toHaveLength(1);
+  });
+
+  it("keeps each match group's draft separate", async () => {
+    const user = userEvent.setup();
+    renderEditor();
+    await user.click(screen.getByRole("button", { name: /Add another way to match/i }));
+
+    const [first, second] = screen.getAllByPlaceholderText(
+      "Type an address, a domain or a phrase and press Enter",
+    );
+    await user.type(first!, "acme.com");
+
+    // Typing in one group used to mirror into every other group's input.
+    expect(first).toHaveValue("acme.com");
+    expect(second).toHaveValue("");
+  });
+
   it("parses a typed domain into an exact-domain condition and hands it to onSave", async () => {
     const user = userEvent.setup();
     const { onSave } = renderEditor();
