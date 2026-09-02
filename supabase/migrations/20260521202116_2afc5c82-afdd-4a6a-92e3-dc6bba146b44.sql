@@ -1,7 +1,14 @@
--- Backfill Tony Percoco's Factory-Nissan domain rule and reclassify stuck emails.
--- This corrects historical data only; going-forward auto-routing is handled
--- by the new bulkMoveEmails create_rule path plus searchGmailAndIngest filter
--- application in code.
+-- Backfill one account's Factory-Nissan domain rule and reclassify stuck
+-- emails. This corrects historical data only; going-forward auto-routing is
+-- handled by the bulkMoveEmails create_rule path plus searchGmailAndIngest
+-- filter application in code.
+--
+-- The folder id below exists only on the production database. Replaying this
+-- file against a fresh one (CI's `supabase db reset`, or any local db) hit
+-- folder_filters_folder_id_fkey and aborted the whole migration run, so no
+-- environment could be built from scratch. The guard added below makes the
+-- whole block a no-op when that folder is absent; where it has already run
+-- it changes nothing.
 
 DO $$
 DECLARE
@@ -9,6 +16,11 @@ DECLARE
   v_folder_id uuid := '3282bd2b-d75e-404d-b597-d18ce5afaf1d';
   v_domain text := 'nissan-usa.com';
 BEGIN
+  -- Nothing to correct on a database that does not hold this account.
+  IF NOT EXISTS (SELECT 1 FROM public.folders WHERE id = v_folder_id) THEN
+    RETURN;
+  END IF;
+
   -- Idempotent: only insert the filter row if it does not already exist.
   IF NOT EXISTS (
     SELECT 1 FROM public.folder_filters

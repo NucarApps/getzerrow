@@ -197,7 +197,9 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date(NOW));
   vi.stubGlobal("fetch", fetchMock);
-  getAccessToken.mockResolvedValue("ya29.token");
+  // Not a "ya29." shaped string: secret scanners flag that prefix as a real
+  // Google OAuth token even in a fixture, and the value is never parsed.
+  getAccessToken.mockResolvedValue("test-access-token");
   fetchMock.mockResolvedValue(page({ items: [] }));
 });
 
