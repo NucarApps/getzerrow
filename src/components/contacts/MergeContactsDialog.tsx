@@ -18,6 +18,12 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getContactsMergePayload, mergeContactsManual } from "@/lib/contacts/dedup.functions";
+import {
+  SCALAR_FIELDS,
+  buildMergeRequest,
+  seedMergeSelection,
+  unionGroupIds as computeUnionGroupIds,
+} from "@/lib/ui/merge-contacts";
 
 type Props = {
   open: boolean;
@@ -25,22 +31,6 @@ type Props = {
   contactIds: string[];
   onMerged?: (survivorId: string) => void;
 };
-
-const SCALAR_FIELDS: Array<{ key: string; label: string }> = [
-  { key: "name", label: "Name" },
-  { key: "email", label: "Primary email" },
-  { key: "title", label: "Title" },
-  { key: "company", label: "Company (text)" },
-  { key: "company_id", label: "Company (linked)" },
-  { key: "avatar_url", label: "Photo" },
-  { key: "website", label: "Website" },
-  { key: "linkedin", label: "LinkedIn" },
-  { key: "twitter", label: "Twitter" },
-  { key: "city", label: "City" },
-  { key: "region", label: "Region" },
-  { key: "postal_code", label: "Postal code" },
-  { key: "country", label: "Country" },
-];
 
 export function MergeContactsDialog({ open, onOpenChange, contactIds, onMerged }: Props) {
   const qc = useQueryClient();
@@ -66,88 +56,33 @@ export function MergeContactsDialog({ open, onOpenChange, contactIds, onMerged }
   // Seed defaults when payload loads.
   useEffect(() => {
     if (!q.data) return;
-    const first = q.data.contacts[0];
-    if (!first) return;
-    const pid = primaryId ?? first.id;
-    setPrimaryId(pid);
-    // Best-value default per scalar: prefer the primary's non-empty value,
-    // else first non-empty from any contact.
-    const nextChoice: Record<string, string> = {};
-    for (const f of SCALAR_FIELDS) {
-      const primaryVal = (q.data.contacts.find((c) => c.id === pid) as Record<string, unknown>)?.[
-        f.key
-      ];
-      if (primaryVal != null && String(primaryVal).length > 0) {
-        nextChoice[f.key] = pid;
-        continue;
-      }
-      const other = q.data.contacts.find(
-        (c) =>
-          (c as Record<string, unknown>)[f.key] != null &&
-          String((c as Record<string, unknown>)[f.key]).length > 0,
-      );
-      if (other) nextChoice[f.key] = other.id;
-    }
-    setFieldChoice(nextChoice);
-    // Notes: default to whichever contact actually has notes, prefer primary.
-    const withNotes =
-      q.data.contacts.find((c) => c.id === pid && c.notes) ?? q.data.contacts.find((c) => c.notes);
-    setNotesSource(withNotes?.id ?? pid);
-    // Keep all phones/emails by default, primary from primary contact.
-    setKeepPhones(new Set(q.data.phones.map((p) => p.id)));
-    setKeepEmails(new Set(q.data.emails.map((e) => e.id)));
-    const pp =
-      q.data.phones.find((p) => p.contact_id === pid && p.is_primary) ??
-      q.data.phones.find((p) => p.contact_id === pid) ??
-      q.data.phones[0];
-    setPrimaryPhone(pp?.id ?? null);
-    const pe =
-      q.data.emails.find((e) => e.contact_id === pid && e.is_primary) ??
-      q.data.emails.find((e) => e.contact_id === pid) ??
-      q.data.emails[0];
-    setPrimaryEmail(pe?.id ?? null);
-    setExcludedGroups(new Set());
+    const seeded = seedMergeSelection(q.data, primaryId);
+    if (!seeded) return;
+    setPrimaryId(seeded.primaryId);
+    setFieldChoice(seeded.fieldChoice);
+    setNotesSource(seeded.notesSource);
+    setKeepPhones(seeded.keepPhones);
+    setKeepEmails(seeded.keepEmails);
+    setPrimaryPhone(seeded.primaryPhone);
+    setPrimaryEmail(seeded.primaryEmail);
+    setExcludedGroups(seeded.excludedGroups);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q.data?.contacts.map((c) => c.id).join(",")]);
 
   const mut = useMutation({
     mutationFn: async () => {
       if (!primaryId || !q.data) throw new Error("No primary selected");
-      const loserIds = q.data.contacts.filter((c) => c.id !== primaryId).map((c) => c.id);
-      const fields: Record<string, string | null> = {};
-      for (const [fieldKey, sourceId] of Object.entries(fieldChoice)) {
-        const src = q.data.contacts.find((c) => c.id === sourceId) as
-          Record<string, unknown> | undefined;
-        fields[fieldKey] = (src?.[fieldKey] as string | null | undefined) ?? null;
-      }
-      const emailsPayload = q.data.emails
-        .filter((e) => keepEmails.has(e.id))
-        .map((e) => ({
-          label: e.label,
-          address: e.address,
-          is_primary: e.id === primaryEmail,
-        }));
-      const phonesPayload = q.data.phones
-        .filter((p) => keepPhones.has(p.id))
-        .map((p) => ({
-          label: p.label,
-          number: p.number,
-          is_primary: p.id === primaryPhone,
-        }));
-      const manualLockFields = Object.keys(fields).filter(
-        (k) => fieldChoice[k] && fields[k] != null && String(fields[k]).length > 0,
-      );
       return doMerge({
-        data: {
+        data: buildMergeRequest(q.data, {
           primaryId,
-          loserIds,
-          fields,
-          notesSource: notesSource,
-          emails: emailsPayload,
-          phones: phonesPayload,
-          excludedGroupIds: Array.from(excludedGroups),
-          manualLockFields,
-        },
+          fieldChoice,
+          notesSource,
+          keepEmails,
+          keepPhones,
+          primaryEmail,
+          primaryPhone,
+          excludedGroups,
+        }),
       });
     },
     onSuccess: (res) => {
@@ -174,10 +109,10 @@ export function MergeContactsDialog({ open, onOpenChange, contactIds, onMerged }
     return m;
   }, [q.data]);
 
-  const unionGroupIds = useMemo(() => {
-    if (!q.data) return [] as string[];
-    return Array.from(new Set(q.data.memberships.map((m) => m.group_id)));
-  }, [q.data]);
+  const unionGroupIds = useMemo(
+    () => (q.data ? computeUnionGroupIds(q.data.memberships) : []),
+    [q.data],
+  );
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
