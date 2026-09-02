@@ -74,6 +74,19 @@ import {
 } from "@/lib/companies/company-people.functions";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+import {
+  companyFormFromRow,
+  companyUpdatePayload,
+  discoverDomainsSummary,
+  EMPTY_COMPANY_FORM,
+  logoChoiceFor,
+  mergeCandidates,
+  photoPriorityDisplay,
+  primaryDomainOf,
+  tagsAfterAdd,
+  tagsAfterRemove,
+} from "@/lib/ui/company-form";
+
 export const Route = createFileRoute("/_authenticated/contacts/companies/$companyId")({
   head: () => ({
     meta: [{ title: "Company — Atzro" }, { name: "robots", content: "noindex" }],
@@ -107,19 +120,7 @@ function CompanyDetailPage() {
     queryFn: () => listLogoChoices(),
   });
 
-  const [form, setForm] = useState({
-    name: "",
-    website: "",
-    phone: "",
-    address_line1: "",
-    address_line2: "",
-    city: "",
-    region: "",
-    postal_code: "",
-    country: "",
-    industry: "",
-    description: "",
-  });
+  const [form, setForm] = useState(EMPTY_COMPANY_FORM);
   const [tagInput, setTagInput] = useState("");
   const [newDomain, setNewDomain] = useState("");
   const [mergeTargetId, setMergeTargetId] = useState<string>("");
@@ -132,22 +133,7 @@ function CompanyDetailPage() {
   } | null>(null);
 
   useEffect(() => {
-    if (q.data?.company) {
-      const c = q.data.company;
-      setForm({
-        name: c.name ?? "",
-        website: c.website ?? "",
-        phone: c.phone ?? "",
-        address_line1: c.address_line1 ?? "",
-        address_line2: c.address_line2 ?? "",
-        city: c.city ?? "",
-        region: c.region ?? "",
-        postal_code: c.postal_code ?? "",
-        country: c.country ?? "",
-        industry: c.industry ?? "",
-        description: c.description ?? "",
-      });
-    }
+    if (q.data?.company) setForm(companyFormFromRow(q.data.company));
   }, [q.data?.company]);
 
   const invalidate = () => {
@@ -156,23 +142,7 @@ function CompanyDetailPage() {
   };
 
   const saveMut = useMutation({
-    mutationFn: () =>
-      updateFn({
-        data: {
-          id: companyId,
-          name: form.name || undefined,
-          website: form.website || null,
-          phone: form.phone || null,
-          address_line1: form.address_line1 || null,
-          address_line2: form.address_line2 || null,
-          city: form.city || null,
-          region: form.region || null,
-          postal_code: form.postal_code || null,
-          country: form.country || null,
-          industry: form.industry || null,
-          description: form.description || null,
-        },
-      }),
+    mutationFn: () => updateFn({ data: companyUpdatePayload(companyId, form) }),
     onSuccess: () => {
       toast.success("Saved");
       invalidate();
@@ -225,12 +195,7 @@ function CompanyDetailPage() {
   const discoverMut = useMutation({
     mutationFn: () => discoverFn({ data: { id: companyId } }),
     onSuccess: (r) => {
-      const parts: string[] = [];
-      if (r.added) parts.push(`${r.added} new`);
-      if (r.updated) parts.push(`${r.updated} refreshed`);
-      toast.success(
-        parts.length ? `Discovered domains: ${parts.join(", ")}` : "No new domains found",
-      );
+      toast.success(discoverDomainsSummary(r));
       // Refresh both this company detail and the companies list so the logo
       // in every list view updates immediately.
       invalidate();
@@ -283,13 +248,15 @@ function CompanyDetailPage() {
   if (q.error) return <div className="p-6 text-sm text-destructive">Failed to load company.</div>;
   if (!q.data) return null;
 
-  const primaryDomain = q.data.domains[0]?.domain ?? null;
+  const primaryDomain = primaryDomainOf(q.data.domains);
   const tags = q.data.tags.map((t) => t.tag);
-  const logoChoice = primaryDomain
-    ? logoChoicesQ.data?.find((c) => c.domain === primaryDomain)
-    : undefined;
-  const logoProvider = logoChoice?.provider ?? null;
-  const logoSourceDomain = logoChoice?.source_domain ?? null;
+  const { provider: logoProvider, sourceDomain: logoSourceDomain } = logoChoiceFor(
+    primaryDomain,
+    logoChoicesQ.data,
+  );
+  const photoPriority = photoPriorityDisplay(
+    (q.data.company as { photo_priority?: PhotoPriorityValue | null }).photo_priority,
+  );
 
   return (
     <div className="h-full overflow-y-auto">
@@ -557,19 +524,9 @@ function CompanyDetailPage() {
               </p>
               <CompanyPhotoPrioritySelect
                 companyId={companyId}
-                override={
-                  ((q.data.company as { photo_priority?: PhotoPriorityValue | null })
-                    .photo_priority ?? null) as PhotoPriorityValue | null
-                }
-                effective={
-                  ((q.data.company as { photo_priority?: PhotoPriorityValue | null })
-                    .photo_priority ?? "company_first") as PhotoPriorityValue
-                }
-                source={
-                  (q.data.company as { photo_priority?: PhotoPriorityValue | null }).photo_priority
-                    ? "company"
-                    : "default"
-                }
+                override={photoPriority.override}
+                effective={photoPriority.effective}
+                source={photoPriority.source}
                 onChanged={invalidate}
               />
             </section>
@@ -587,7 +544,7 @@ function CompanyDetailPage() {
                     {t}
                     <button
                       type="button"
-                      onClick={() => tagsMut.mutate(tags.filter((x) => x !== t))}
+                      onClick={() => tagsMut.mutate(tagsAfterRemove(tags, t))}
                       aria-label={`Remove ${t}`}
                     >
                       <X className="h-3 w-3" />
@@ -601,10 +558,11 @@ function CompanyDetailPage() {
                   value={tagInput}
                   onChange={(e) => setTagInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && tagInput.trim()) {
-                      tagsMut.mutate([...tags, tagInput.trim().toLowerCase()]);
-                      setTagInput("");
-                    }
+                    if (e.key !== "Enter") return;
+                    const next = tagsAfterAdd(tags, tagInput);
+                    if (!next) return;
+                    tagsMut.mutate(next);
+                    setTagInput("");
                   }}
                 />
               </div>
@@ -652,13 +610,11 @@ function CompanyDetailPage() {
                     <SelectValue placeholder="Merge into another company…" />
                   </SelectTrigger>
                   <SelectContent>
-                    {(otherCompanies.data?.companies ?? [])
-                      .filter((c) => c.id !== companyId)
-                      .map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.name}
-                        </SelectItem>
-                      ))}
+                    {mergeCandidates(otherCompanies.data?.companies ?? [], companyId).map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <Button
