@@ -36,7 +36,7 @@
 // gmail-helpers.server (getOwnedAccount / restoreEmailToInbox) is REAL so
 // the inbox-restore write shape is characterized, not assumed.
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { makeSupabaseFake } from "@/lib/__fixtures__/supabase-fake";
 import { TEST_USER, impersonate } from "@/lib/__fixtures__/server-fn-stub";
 import { expectDeniedCrossUser } from "@/lib/__fixtures__/idor";
@@ -250,7 +250,11 @@ import {
   applyFolderBehaviorRetroactive,
   countMatchingForRule,
   createFolderAndAssign,
+  getSyncLatencyStats,
+  listFolderEmailIds,
+  listMessageJobs,
   reclassifyEmails,
+  setFolderAutoRelearn,
   retryJob,
   runJobsNow,
   scanGmailForFolder,
@@ -1373,5 +1377,160 @@ describe("scanGmailForFolder (audit path 6/7 — scan Gmail for a folder's rules
       "Folder not found",
     );
     expect(listMessages).not.toHaveBeenCalled();
+  });
+});
+
+describe("listMessageJobs (queue view)", () => {
+  it("returns the caller's jobs and a status breakdown of the whole account", async () => {
+    fake.seed("message_jobs", [
+      { id: "j-1", user_id: TEST_USER, gmail_account_id: ACC, status: "pending" },
+      { id: "j-2", user_id: TEST_USER, gmail_account_id: ACC, status: "running" },
+      { id: "j-3", user_id: TEST_USER, gmail_account_id: ACC, status: "dlq" },
+      { id: "j-4", user_id: TEST_USER, gmail_account_id: ACC, status: "done" },
+      { id: "j-x", user_id: "someone-else", gmail_account_id: ACC, status: "dlq" },
+    ]);
+
+    const res = await listMessageJobs({ data: { account_id: ACC } });
+    expect(res.jobs.map((j) => j.id)).toEqual(["j-1", "j-2", "j-3", "j-4"]);
+    // "total" counts every status, including the ones with no bucket.
+    expect(res.stats).toEqual({ pending: 1, running: 1, dlq: 1, total: 4 });
+  });
+
+  it("filters to one status on request, and defaults the page size to 100", async () => {
+    fake.seed("message_jobs", [
+      { id: "j-1", user_id: TEST_USER, status: "dlq" },
+      { id: "j-2", user_id: TEST_USER, status: "pending" },
+    ]);
+
+    const res = await listMessageJobs({ data: { status: "dlq" } });
+    expect(res.jobs.map((j) => j.id)).toEqual(["j-1"]);
+    // The breakdown is deliberately unfiltered — it is the queue's shape,
+    // not the page's.
+    expect(res.stats).toEqual({ pending: 1, running: 0, dlq: 1, total: 2 });
+    expect(fake.calls.selects[0]!.limit).toBe(100);
+  });
+
+  it("surfaces a failed list rather than reporting an empty queue", async () => {
+    fake.onSelect("message_jobs", () => ({ message: "connection reset" }));
+    await expect(listMessageJobs({ data: {} })).rejects.toThrow("connection reset");
+  });
+});
+
+describe("listFolderEmailIds (bulk-selection source)", () => {
+  it("returns the caller's email ids in that folder", async () => {
+    fake.seed("folders", [{ id: FOLDER_A, user_id: TEST_USER }]);
+    fake.seed("emails", [
+      emailRow(EMAIL_1, { folder_id: FOLDER_A }),
+      emailRow(EMAIL_2, { folder_id: FOLDER_B }),
+      emailRow(EMAIL_3, { folder_id: FOLDER_A, user_id: "someone-else" }),
+    ]);
+
+    const res = await listFolderEmailIds({ data: { folder_id: FOLDER_A } });
+    expect(res).toEqual({ ids: [EMAIL_1] });
+  });
+
+  it("returns nothing for a folder the caller does not own, without reading its emails", async () => {
+    fake.seed("folders", [{ id: FOLDER_A, user_id: "victim" }]);
+    fake.seed("emails", [emailRow(EMAIL_1, { folder_id: FOLDER_A, user_id: "victim" })]);
+
+    const res = await listFolderEmailIds({ data: { folder_id: FOLDER_A } });
+    expect(res).toEqual({ ids: [] });
+    expect(fake.calls.selects.map((s) => s.table)).toEqual(["folders"]);
+  });
+});
+
+describe("setFolderAutoRelearn", () => {
+  it("writes only the fields the caller named, scoped to a folder they own", async () => {
+    fake.seed("folders", [{ id: FOLDER_A, user_id: TEST_USER }]);
+
+    await setFolderAutoRelearn({ data: { folder_id: FOLDER_A, auto_relearn: true } });
+    expect(fake.calls.updates[0]!.payload).toEqual({ auto_relearn: true });
+
+    await setFolderAutoRelearn({
+      data: { folder_id: FOLDER_A, auto_relearn: true, threshold: 200 },
+    });
+    expect(fake.calls.updates[1]!.payload).toEqual({ auto_relearn: true, relearn_threshold: 200 });
+    // Ownership is enforced by the WHERE clause, not by a prior read.
+    expect(fake.calls.updates[1]!.filters).toEqual([
+      { op: "eq", col: "id", value: FOLDER_A },
+      { op: "eq", col: "user_id", value: TEST_USER },
+    ]);
+  });
+
+  it("cannot touch another user's folder: the user_id scope makes the write a no-op", async () => {
+    fake.seed("folders", [{ id: FOLDER_A, user_id: "victim", auto_relearn: false }]);
+
+    const res = await impersonate(
+      setFolderAutoRelearn,
+      "intruder",
+    )({ data: { folder_id: FOLDER_A, auto_relearn: true } });
+    // It reports ok — the statement ran — but it carries the caller's own
+    // user_id, so it matches no row and the victim's folder is unchanged.
+    expect(res).toEqual({ ok: true });
+    expect(fake.calls.updates[0]!.filters).toEqual([
+      { op: "eq", col: "id", value: FOLDER_A },
+      { op: "eq", col: "user_id", value: "intruder" },
+    ]);
+  });
+
+  it("surfaces a failed update", async () => {
+    fake.seed("folders", [{ id: FOLDER_A, user_id: TEST_USER }]);
+    fake.onUpdate("folders", () => ({ message: "deadlock detected" }));
+    await expect(
+      setFolderAutoRelearn({ data: { folder_id: FOLDER_A, auto_relearn: false } }),
+    ).rejects.toThrow("deadlock detected");
+  });
+});
+
+describe("getSyncLatencyStats", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-02T12:00:00.000Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("asks the RPC for the caller's own window, defaulting to the last 24 hours", async () => {
+    const stats = {
+      push_to_ack: { count: 3, p50: 100, p95: 200, p99: 300 },
+      push_to_visible: { count: 3, p50: 400, p95: 500, p99: 600 },
+      since: "2026-09-01T12:00:00.000Z",
+    };
+    fake.onRpc("get_sync_latency_stats", () => ({ data: stats }));
+
+    expect(await getSyncLatencyStats({ data: {} })).toEqual(stats);
+    expect(fake.calls.rpcs[0]).toEqual({
+      fn: "get_sync_latency_stats",
+      args: { p_user_id: TEST_USER, p_lookback_hours: 24, p_account_id: null },
+    });
+  });
+
+  it("reports an empty window rather than failing when the RPC errors", async () => {
+    fake.onRpc("get_sync_latency_stats", () => ({ error: { message: "function missing" } }));
+
+    const res = await getSyncLatencyStats({ data: { lookback_hours: 6, account_id: ACC } });
+    expect(res).toEqual({
+      push_to_ack: { count: 0, p50: null, p95: null, p99: null },
+      push_to_visible: { count: 0, p50: null, p95: null, p99: null },
+      // The window start is derived from the requested lookback, so the UI
+      // still labels the (empty) chart correctly.
+      since: "2026-09-02T06:00:00.000Z",
+      error: "function missing",
+    });
+    expect(fake.calls.rpcs[0]!.args).toEqual({
+      p_user_id: TEST_USER,
+      p_lookback_hours: 6,
+      p_account_id: ACC,
+    });
+  });
+
+  it("reports an empty window when the RPC returns no row", async () => {
+    const res = await getSyncLatencyStats({ data: {} });
+    expect(res).toEqual({
+      push_to_ack: { count: 0, p50: null, p95: null, p99: null },
+      push_to_visible: { count: 0, p50: null, p95: null, p99: null },
+      since: "2026-09-01T12:00:00.000Z",
+    });
   });
 });

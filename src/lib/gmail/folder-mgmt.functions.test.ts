@@ -121,11 +121,25 @@ vi.mock("../sync/encrypted-reader", () => ({
   getEmailsDecrypted: (ids: string[]) => getEmailsDecrypted(ids),
 }));
 
+// relearnFolderNow reaches for this lazily, to keep folder learning out of
+// the server-function module graph.
+const regenerateFolderProfile = vi.fn(async (_folderId: string): Promise<string | null> => "p");
+vi.mock("../sync/folder-learn", () => ({
+  regenerateFolderProfile: (folderId: string) => regenerateFolderProfile(folderId),
+}));
+
 import {
   applyRecategorization,
   createFolder,
+  createFolderSummary,
+  deleteFolderSummary,
   getFolderHealth,
+  getFolderSummaryJob,
   listFolderHistory,
+  listFolderSummaries,
+  relearnFolderNow,
+  runFolderSummaryNow,
+  suggestRecategorization,
   updateFolderSummary,
 } from "./folder-mgmt.functions";
 
@@ -150,11 +164,18 @@ beforeEach(() => {
     suggestRuleUpdates,
     computeNextRun,
     enqueueFolderSummaryJob,
+    regenerateFolderProfile,
     updateEmailEncrypted,
     insertFolderExampleEncrypted,
     getEmailsDecrypted,
   ])
     fn.mockClear();
+  getEmailsDecrypted.mockResolvedValue({ rows: [], error: null });
+  regenerateFolderProfile.mockResolvedValue("p");
+  suggestRuleUpdates.mockResolvedValue({
+    source: { proposed_rule: "s", proposed_profile: "sp", why: "sw" },
+    target: { proposed_rule: "t", proposed_profile: "tp", why: "tw" },
+  });
   modifyMessage.mockResolvedValue({});
   updateEmailEncrypted.mockResolvedValue({ error: null });
   insertFolderExampleEncrypted.mockResolvedValue({ id: "ex-1", error: null });
@@ -794,5 +815,266 @@ describe("createFolder (the single writer for a new folder's defaults)", () => {
         impersonate(createFolder, "intruder")({ data: { account_id: ACC, name: "Vendors" } }),
       rejects: "Not authorized for this account",
     });
+  });
+});
+
+describe("suggestRecategorization (the preview behind applyRecategorization)", () => {
+  function seedForSuggestion() {
+    getEmailsDecrypted.mockResolvedValue({
+      rows: [
+        {
+          id: EMAIL_1,
+          user_id: TEST_USER,
+          folder_id: FOLDER_A,
+          from_addr: "billing@acme.test",
+          from_name: "Acme Billing",
+          subject: "Invoice 1042",
+          snippet: "Your invoice",
+          body_text: "Body",
+        },
+      ],
+      error: null,
+    });
+    fake.seed("folders", [
+      {
+        id: FOLDER_A,
+        user_id: TEST_USER,
+        name: "Receipts",
+        ai_rule: "Receipts only",
+        learned_profile: "Receipt-ish",
+      },
+      {
+        id: FOLDER_B,
+        user_id: TEST_USER,
+        name: "Invoices",
+        ai_rule: "Invoices only",
+        learned_profile: null,
+      },
+    ]);
+  }
+
+  it("shows the AI's proposal alongside each folder's current rule and profile", async () => {
+    seedForSuggestion();
+
+    const res = await suggestRecategorization({
+      data: { email_id: EMAIL_1, to_folder_id: FOLDER_B },
+    });
+    expect(res).toEqual({
+      source: {
+        id: FOLDER_A,
+        name: "Receipts",
+        current_rule: "Receipts only",
+        current_profile: "Receipt-ish",
+        proposed_rule: "s",
+        proposed_profile: "sp",
+        why: "sw",
+      },
+      target: {
+        id: FOLDER_B,
+        name: "Invoices",
+        current_rule: "Invoices only",
+        current_profile: null,
+        proposed_rule: "t",
+        proposed_profile: "tp",
+        why: "tw",
+      },
+      error: null,
+    });
+    expect(suggestRuleUpdates).toHaveBeenCalledWith({
+      email: {
+        from_addr: "billing@acme.test",
+        from_name: "Acme Billing",
+        subject: "Invoice 1042",
+        snippet: "Your invoice",
+        body_text: "Body",
+      },
+      source: { name: "Receipts", ai_rule: "Receipts only", learned_profile: "Receipt-ish" },
+      target: { name: "Invoices", ai_rule: "Invoices only", learned_profile: null },
+    });
+  });
+
+  it("keeps the move available when the AI call fails, proposing each folder's current wording", async () => {
+    seedForSuggestion();
+    suggestRuleUpdates.mockRejectedValue(new Error("gateway 502"));
+
+    const res = await suggestRecategorization({
+      data: { email_id: EMAIL_1, to_folder_id: FOLDER_B },
+    });
+    // The drawer still opens: the proposal simply echoes what is already
+    // there, so applying it changes no rule.
+    expect(res.error).toBe("gateway 502");
+    expect(res.source.proposed_rule).toBe("Receipts only");
+    expect(res.target.proposed_profile).toBe("");
+    expect(res.target.why).toBe("AI suggestion unavailable — you can still apply the move.");
+  });
+
+  it("refuses a folder pair the caller does not fully own", async () => {
+    seedForSuggestion();
+    fake.seed("folders", [
+      { id: FOLDER_A, user_id: TEST_USER, name: "Receipts", ai_rule: null, learned_profile: null },
+      { id: FOLDER_B, user_id: "victim", name: "Invoices", ai_rule: null, learned_profile: null },
+    ]);
+    await expect(
+      suggestRecategorization({ data: { email_id: EMAIL_1, to_folder_id: FOLDER_B } }),
+    ).rejects.toThrow("Not authorized");
+    expect(suggestRuleUpdates).not.toHaveBeenCalled();
+  });
+
+  it("refuses an email the caller does not own", async () => {
+    seedForSuggestion();
+    getEmailsDecrypted.mockResolvedValue({
+      rows: [{ id: EMAIL_1, user_id: "victim", folder_id: FOLDER_A }],
+      error: null,
+    });
+    await expect(
+      suggestRecategorization({ data: { email_id: EMAIL_1, to_folder_id: FOLDER_B } }),
+    ).rejects.toThrow("Email not found");
+  });
+
+  it("refuses a no-op suggestion", async () => {
+    seedForSuggestion();
+    await expect(
+      suggestRecategorization({ data: { email_id: EMAIL_1, to_folder_id: FOLDER_A } }),
+    ).rejects.toThrow("Source and target folders must differ");
+  });
+});
+
+describe("relearnFolderNow", () => {
+  it("rebuilds the folder's profile and reports whether one came back", async () => {
+    fake.seed("folders", [{ id: FOLDER_A, user_id: TEST_USER }]);
+
+    expect(await relearnFolderNow({ data: { folder_id: FOLDER_A } })).toEqual({
+      ok: true,
+      hasProfile: true,
+    });
+    expect(regenerateFolderProfile).toHaveBeenCalledWith(FOLDER_A);
+
+    // A folder with nothing to learn from yields no profile, and says so.
+    regenerateFolderProfile.mockResolvedValue(null);
+    expect(await relearnFolderNow({ data: { folder_id: FOLDER_A } })).toEqual({
+      ok: true,
+      hasProfile: false,
+    });
+  });
+
+  it("denies a caller who does not own the folder before relearning", async () => {
+    fake.seed("folders", [{ id: FOLDER_A, user_id: "victim" }]);
+    await expect(relearnFolderNow({ data: { folder_id: FOLDER_A } })).rejects.toThrow(
+      "Not authorized",
+    );
+    expect(regenerateFolderProfile).not.toHaveBeenCalled();
+  });
+});
+
+describe("folder summary schedules (list / create / delete / run)", () => {
+  it("lists a folder's schedules oldest first, scoped to that folder", async () => {
+    fake.seed("folders", [{ id: FOLDER_A, user_id: TEST_USER, gmail_account_id: ACC }]);
+    fake.seed("folder_summary_schedules", [
+      { id: SCHEDULE, folder_id: FOLDER_A, name: "Evening", created_at: "2026-08-02T00:00:00Z" },
+      { id: "s-0", folder_id: FOLDER_A, name: "Morning", created_at: "2026-08-01T00:00:00Z" },
+      { id: "s-x", folder_id: FOLDER_B, name: "Other folder" },
+    ]);
+
+    const res = await listFolderSummaries({ data: { folder_id: FOLDER_A } });
+    expect(res.schedules.map((s) => s.id)).toEqual(["s-0", SCHEDULE]);
+  });
+
+  it("creates a schedule on the folder's account with its first run already computed", async () => {
+    fake.seed("folders", [{ id: FOLDER_A, user_id: TEST_USER, gmail_account_id: ACC }]);
+    fake.onInsert("folder_summary_schedules", () => ({ data: { id: SCHEDULE } }));
+
+    const res = await createFolderSummary({
+      data: {
+        folder_id: FOLDER_A,
+        name: "Morning briefing",
+        instructions: "Group by vendor.",
+        hour: 7,
+        minute: 30,
+        timezone: "America/New_York",
+      },
+    });
+    expect(res).toEqual({ id: SCHEDULE });
+
+    expect(computeNextRun).toHaveBeenCalledWith(7, 30, "America/New_York");
+    expect(writesTo(fake, "inserts", "folder_summary_schedules")[0]!.payload).toEqual({
+      user_id: TEST_USER,
+      folder_id: FOLDER_A,
+      // Denormalized from the folder, not taken from the caller.
+      gmail_account_id: ACC,
+      name: "Morning briefing",
+      instructions: "Group by vendor.",
+      hour: 7,
+      minute: 30,
+      timezone: "America/New_York",
+      next_run_at: NEXT_RUN.toISOString(),
+    });
+  });
+
+  it("refuses to create a schedule on a folder the caller does not own", async () => {
+    fake.seed("folders", [{ id: FOLDER_A, user_id: "victim", gmail_account_id: ACC }]);
+    await expectDeniedCrossUser({
+      fake,
+      call: () =>
+        createFolderSummary({
+          data: {
+            folder_id: FOLDER_A,
+            name: "Mine now",
+            instructions: "",
+            hour: 7,
+            minute: 0,
+            timezone: "UTC",
+          },
+        }),
+      rejects: "Not authorized",
+    });
+  });
+
+  it("deletes only the caller's own schedule", async () => {
+    fake.seed("folder_summary_schedules", [
+      { id: SCHEDULE, user_id: TEST_USER, folder_id: FOLDER_A },
+    ]);
+    expect(await deleteFolderSummary({ data: { id: SCHEDULE } })).toEqual({ ok: true });
+    expect(writesTo(fake, "deletes", "folder_summary_schedules")[0]!.filters).toEqual([
+      { op: "eq", col: "id", value: SCHEDULE },
+    ]);
+
+    fake.seed("folder_summary_schedules", [{ id: SCHEDULE, user_id: "victim" }]);
+    await expectDeniedCrossUser({
+      fake,
+      call: () => deleteFolderSummary({ data: { id: SCHEDULE } }),
+      rejects: "Not authorized",
+    });
+  });
+
+  it("runs a digest as a background job rather than blocking the request on the AI gateway", async () => {
+    fake.seed("folder_summary_schedules", [
+      { id: SCHEDULE, user_id: TEST_USER, folder_id: FOLDER_A },
+    ]);
+
+    const res = await runFolderSummaryNow({ data: { id: SCHEDULE } });
+    expect(res).toEqual({ ok: true, jobId: "job-1" });
+    expect(enqueueFolderSummaryJob).toHaveBeenCalledWith({
+      scheduleId: SCHEDULE,
+      userId: TEST_USER,
+    });
+  });
+
+  it("refuses to run someone else's schedule", async () => {
+    fake.seed("folder_summary_schedules", [{ id: SCHEDULE, user_id: "victim" }]);
+    await expect(runFolderSummaryNow({ data: { id: SCHEDULE } })).rejects.toThrow("Not authorized");
+    expect(enqueueFolderSummaryJob).not.toHaveBeenCalled();
+  });
+
+  it("reads a digest job back only for the user it belongs to", async () => {
+    fake.seed("folder_summary_jobs", [
+      { id: EMAIL_2, user_id: TEST_USER, status: "done", emails_count: 4 },
+    ]);
+    const res = await getFolderSummaryJob({ data: { id: EMAIL_2 } });
+    expect(res.job).toMatchObject({ id: EMAIL_2, status: "done", emails_count: 4 });
+
+    // The user_id scope is part of the query, so another tenant's job reads
+    // as absent rather than as forbidden.
+    fake.seed("folder_summary_jobs", [{ id: EMAIL_2, user_id: "victim", status: "done" }]);
+    await expect(getFolderSummaryJob({ data: { id: EMAIL_2 } })).rejects.toThrow("Job not found");
   });
 });
