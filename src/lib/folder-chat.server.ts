@@ -7,7 +7,17 @@
 // lives in lovable-gateway.server; this file supplies only the folder-chat
 // prompt, tool schema, and action schema.
 import { z } from "zod";
+import {
+  sanitizeUntrustedText,
+  wrapUntrustedEmail,
+  UNTRUSTED_BOUNDARY_INSTRUCTION,
+} from "./ai-untrusted";
 import { gatewayTextCompletion, proposeWithRetry } from "./lovable-gateway.server";
+
+/** Sample emails are attacker-controlled text going into an instruction
+ * block; sanitize them exactly as the classifier prompt does. */
+const clean = (v: string | null | undefined, max: number) =>
+  v ? sanitizeUntrustedText(v, max).text : "";
 
 // Partial patch of scalar/boolean folder settings. Every field optional — the
 // model only sets what it wants to change. Exported so folder-chat.functions
@@ -142,7 +152,7 @@ function buildPrompt(args: {
     ? args.sample
         .map(
           (e) =>
-            `    - from ${e.from_name ?? ""} <${e.from_addr ?? ""}> | subject: ${e.subject ?? ""}${e.is_reply ? " [reply]" : ""} | snippet: ${(e.snippet ?? "").slice(0, 120)}${e.classification_reason ? ` | why: ${e.classification_reason.slice(0, 100)}` : ""}`,
+            `    - from ${clean(e.from_name, 120)} <${clean(e.from_addr, 160)}> | subject: ${clean(e.subject, 200)}${e.is_reply ? " [reply]" : ""} | snippet: ${clean(e.snippet, 120)}${e.classification_reason ? ` | why: ${clean(e.classification_reason, 100)}` : ""}`,
         )
         .join("\n")
     : "    (no recent emails in this folder)";
@@ -168,6 +178,8 @@ function buildPrompt(args: {
 
   return `You are an assistant that edits the settings of ONE email folder in the user's inbox app. The user describes what they want, and you propose concrete changes to THIS folder only. You DO NOT execute changes — the user approves them in the UI.
 
+${UNTRUSTED_BOUNDARY_INSTRUCTION}
+
 You have persistent memory of this folder's chat. Always take the memory summary, the log of already-applied changes, and the current folder settings into account so you never re-propose something that is already in place, and so you stay consistent with earlier decisions.
 
 Folder "${f.name}" (id ${f.id}) — current settings:
@@ -176,7 +188,7 @@ ${settingsBlock}
 ${filterBlock}
 
 Recent emails currently in this folder (to help you diagnose misfiling):
-${sampleBlock}
+${wrapUntrustedEmail(sampleBlock)}
 
 Memory summary of earlier conversation (older turns, condensed):
 ${memoryBlock}

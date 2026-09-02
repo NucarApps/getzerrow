@@ -9,6 +9,11 @@
 import { z } from "zod";
 import type { DomainCluster } from "./ai-assistant-context";
 import { proposeWithRetry } from "./lovable-gateway.server";
+import {
+  sanitizeUntrustedText,
+  wrapUntrustedEmail,
+  UNTRUSTED_BOUNDARY_INSTRUCTION,
+} from "./ai-untrusted";
 
 const actionSchema = z.discriminatedUnion("type", [
   z.object({
@@ -86,13 +91,20 @@ export type AssistantContextFolder = {
 
 export type AssistantChatMessage = { role: "user" | "assistant"; content: string };
 
+/** Every field below is attacker-controlled email text going into an
+ * instruction block, so it gets the same treatment as the classifier's:
+ * role lines, closing tags, backtick runs and invisible characters are
+ * stripped before interpolation (see ai-untrusted.ts). */
+const clean = (v: string | null | undefined, max: number) =>
+  v ? sanitizeUntrustedText(v, max).text : "";
+
 function describeContextEmail(e: AssistantContextEmail): string {
   const flags: string[] = [];
   if (e.is_reply) flags.push("reply");
   if (e.list_id) flags.push("mailing-list");
   const flagStr = flags.length ? ` [${flags.join(", ")}]` : "";
-  const reason = e.classification_reason ? ` | why: ${e.classification_reason.slice(0, 120)}` : "";
-  return `  - email ${e.id}: from ${e.from_name ?? ""} <${e.from_addr ?? ""}> (domain: ${e.domain ?? "?"}) | subject: ${e.subject ?? ""} | folder: ${e.folder_id ?? "(none)"}${flagStr} | snippet: ${(e.snippet ?? "").slice(0, 140)}${reason}`;
+  const reason = e.classification_reason ? ` | why: ${clean(e.classification_reason, 120)}` : "";
+  return `  - email ${e.id}: from ${clean(e.from_name, 120)} <${clean(e.from_addr, 160)}> (domain: ${clean(e.domain, 120) || "?"}) | subject: ${clean(e.subject, 200)} | folder: ${e.folder_id ?? "(none)"}${flagStr} | snippet: ${clean(e.snippet, 140)}${reason}`;
 }
 
 function buildPrompt(args: {
@@ -122,7 +134,7 @@ ${filters}`;
 
   const folderSampleBlock =
     args.folderSample && args.folderSample.emails.length
-      ? `\nRecent emails currently in "${args.folderSample.folderName}" (folder ${args.folderSample.folderId}) — inspect these to diagnose misfiling:\n${args.folderSample.emails.map(describeContextEmail).join("\n")}\n`
+      ? `\nRecent emails currently in "${args.folderSample.folderName}" (folder ${args.folderSample.folderId}) — inspect these to diagnose misfiling:\n${wrapUntrustedEmail(args.folderSample.emails.map(describeContextEmail).join("\n"))}\n`
       : "";
 
   const domainBlock =
@@ -141,11 +153,13 @@ ${filters}`;
 
   return `You are an email organizer assistant for the user's inbox app. The user describes how they want emails sorted, and you propose concrete changes to folders and filter rules. You DO NOT execute changes — the user approves them in the UI.
 
+${UNTRUSTED_BOUNDARY_INSTRUCTION}
+
 Available folders (use these EXACT IDs — never invent IDs):
 ${folderBlock}
 
 Currently selected emails (use these EXACT email IDs):
-${emailBlock}
+${wrapUntrustedEmail(emailBlock)}
 ${folderSampleBlock}${domainBlock}
 Prior conversation:
 ${historyBlock}
