@@ -7,8 +7,18 @@
 ALTER TABLE public.email_search_index
   ADD COLUMN IF NOT EXISTS participant_tsv tsvector;
 
-CREATE INDEX IF NOT EXISTS email_search_index_user_participant_idx
-  ON public.email_search_index USING gin (user_id, participant_tsv);
+-- Same btree_gin fallback as the previous migration: composite where the
+-- extension exists, tsvector-only where it does not.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'btree_gin') THEN
+    CREATE INDEX IF NOT EXISTS email_search_index_user_participant_idx
+      ON public.email_search_index USING gin (user_id, participant_tsv);
+  ELSE
+    CREATE INDEX IF NOT EXISTS email_search_index_user_participant_idx
+      ON public.email_search_index USING gin (participant_tsv);
+  END IF;
+END $$;
 
 -- 2. Helper: build the participant tsvector from sender/recipient strings ----
 -- Stores BOTH the raw token (whole email lexeme) and a normalized split

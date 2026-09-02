@@ -1,7 +1,27 @@
-CREATE EXTENSION IF NOT EXISTS btree_gin WITH SCHEMA extensions;
+-- btree_gin lets a GIN index mix the uuid column with the tsvector. It is
+-- pre-installed on production but is not creatable by the role the Supabase
+-- CLI applies migrations with, so a `db reset` died here and no environment
+-- could be built from scratch. Try it, and fall back to a tsvector-only GIN
+-- index where the extension is unavailable — search still uses the index,
+-- just with the user_id filter applied as a recheck.
+DO $$
+BEGIN
+  CREATE EXTENSION IF NOT EXISTS btree_gin WITH SCHEMA extensions;
+EXCEPTION
+  WHEN insufficient_privilege OR undefined_file THEN
+    RAISE NOTICE 'btree_gin unavailable (%); composite GIN indexes will fall back', SQLERRM;
+END $$;
 
-CREATE INDEX IF NOT EXISTS email_search_index_user_tsv_idx
-  ON public.email_search_index USING GIN (user_id, tsv);
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'btree_gin') THEN
+    CREATE INDEX IF NOT EXISTS email_search_index_user_tsv_idx
+      ON public.email_search_index USING GIN (user_id, tsv);
+  ELSE
+    CREATE INDEX IF NOT EXISTS email_search_index_user_tsv_idx
+      ON public.email_search_index USING GIN (tsv);
+  END IF;
+END $$;
 
 ALTER TABLE public.email_search_index
   ADD COLUMN IF NOT EXISTS has_sender boolean NOT NULL DEFAULT false;
