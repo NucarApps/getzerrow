@@ -80,8 +80,14 @@ d("discover_company_domains cross-tenant authorization", () => {
     await client.query("SAVEPOINT sp");
     try {
       await client.query("SET LOCAL ROLE authenticated");
+      // Set BOTH claim forms: auth.uid() reads the flattened
+      // `request.jwt.claim.sub` on older Supabase images and the
+      // `request.jwt.claims` JSON object on newer ones. Setting only one
+      // leaves auth.uid() NULL on the other, which reads as a trusted
+      // service-role caller and silently skips the very guard under test.
       await client.query(
-        `SELECT set_config('request.jwt.claims', json_build_object('sub', $1::text)::text, true)`,
+        `SELECT set_config('request.jwt.claims', json_build_object('sub', $1::text)::text, true),
+                set_config('request.jwt.claim.sub', $1::text, true)`,
         [jwtSub],
       );
       const res = await client.query(

@@ -5,7 +5,7 @@
 -- duplicated, so nothing new needs encryption. The hourly sender joins
 -- back to emails through the existing decrypt path.
 
-CREATE TABLE public.digest_items (
+CREATE TABLE IF NOT EXISTS public.digest_items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   email_id uuid REFERENCES public.emails(id) ON DELETE CASCADE,
@@ -14,12 +14,13 @@ CREATE TABLE public.digest_items (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX digest_items_pending_idx
+CREATE INDEX IF NOT EXISTS digest_items_pending_idx
   ON public.digest_items (user_id, bucket)
   WHERE sent_at IS NULL;
 
 ALTER TABLE public.digest_items ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS digest_items_owner ON public.digest_items;
 CREATE POLICY digest_items_owner ON public.digest_items
   FOR ALL TO authenticated
   USING (user_id = auth.uid())
@@ -41,6 +42,7 @@ CREATE TABLE IF NOT EXISTS public.user_settings (
 
 ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS user_settings_owner ON public.user_settings;
 CREATE POLICY user_settings_owner ON public.user_settings
   FOR ALL TO authenticated
   USING (user_id = auth.uid())
