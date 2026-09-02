@@ -1,6 +1,6 @@
 // Test-only builders for the "email content" and "folder rule" shapes that
 // the sync/classify pipeline passes around, generalized from the near-
-// identical `folder()` / `filter()` / `email()` helpers that sync-classify,
+// identical `folder()` / `filter()` / `email()` helpers that sync/classify,
 // sync-catchup, filter-engine, and ingest-classify tests each hand-rolled.
 //
 // makeEmailRow returns the superset of email-content fields those tests

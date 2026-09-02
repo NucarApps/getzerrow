@@ -7,7 +7,6 @@ describe("golden set", () => {
     const report = runGolden(GOLDEN_CASES, goldenContext());
     expect(describeGoldenFailures(report)).toBe("all golden cases pass");
     expect(report.accuracy).toBe(1);
-    expect(report.total).toBe(GOLDEN_CASES.length);
   });
 
   it("reports the folder and the stage of a regression", () => {

@@ -149,6 +149,102 @@ describe("runRulesEngine", () => {
     expect(result.folder_id).toBeNull();
   });
 
+  // Amendment 1 places the calendar cold-email guard in stage 1. The legacy
+  // ladder expresses it as a post-filter check on the WINNING folder
+  // (decide-folder.ts rung 6); here it is a folder-scoped guardrail, which
+  // means the folder is disqualified before any stage can file into it.
+  describe("calendar cold-email guard", () => {
+    const coldFolders = [folder({ id: "cold", name: "Cold Email", is_cold_email: true })];
+    const coldFilters = [filter("cold", "domain", "contains", "netflix.com")];
+    const guarded = (over: Partial<AccountContext> = {}) =>
+      context({
+        folders: coldFolders,
+        filters: coldFilters,
+        calendarGuardEnabled: true,
+        calendarContacts: new Set(["billing@netflix.com"]),
+        ...over,
+      });
+    const run = (ctx: AccountContext, p = parsed()) =>
+      runRulesEngine(p, ctx, { trigger: "arrival", aiEnabled: false });
+
+    it("keeps a known calendar contact out of a cold-email folder", () => {
+      const result = run(guarded());
+      expect(result.folder_id).toBeNull();
+      expect(result.trace.vetoed_folder_ids).toEqual(["cold"]);
+    });
+
+    it("matches the sender case-insensitively", () => {
+      const result = run(guarded(), parsed({ from_addr: "Billing@Netflix.com" }));
+      expect(result.folder_id).toBeNull();
+    });
+
+    it("does nothing when the account's guard is switched off", () => {
+      expect(run(guarded({ calendarGuardEnabled: false })).folder_id).toBe("cold");
+    });
+
+    it("does nothing for a sender who is not a calendar contact", () => {
+      expect(run(guarded({ calendarContacts: new Set(["someone@else.test"]) })).folder_id).toBe(
+        "cold",
+      );
+    });
+
+    it("only vetoes the cold-email folder, not every folder the sender matches", () => {
+      const folders = [...coldFolders, folder({ id: "receipts", name: "Receipts" })];
+      const filters = [...coldFilters, filter("receipts", "domain", "contains", "netflix.com")];
+      const result = run(guarded({ folders, filters }));
+      expect(result.folder_id).toBe("receipts");
+      expect(result.trace.vetoed_folder_ids).toEqual(["cold"]);
+    });
+
+    it("keeps the cold folder out of the AI candidate set too", () => {
+      const folders = [
+        folder({ id: "cold", name: "Cold Email", is_cold_email: true, ai_rule: "cold outreach" }),
+      ];
+      const result = runRulesEngine(parsed(), guarded({ folders, filters: [] }), {
+        trigger: "arrival",
+        aiEnabled: true,
+      });
+      expect(result.needs_ai).toBe(false);
+      expect(result.ai_candidate_folder_ids).toEqual([]);
+    });
+  });
+
+  // threadEmails enter the engine through the bridge; run_on_threads is a
+  // per-folder opt-in that must survive toEngineFolder, or every folder
+  // silently matches on its neighbours' mail.
+  describe("thread scope survives the bridge", () => {
+    const contractFilter = (id: string) => filter(id, "subject", "contains", "contract");
+    const incoming = parsed({ subject: "Re: following up", from_addr: "them@partner.test" });
+    const priorMessage = {
+      from_addr: "them@partner.test",
+      from_name: "Them",
+      to_addrs: "me@example.com",
+      subject: "The contract draft",
+      body_text: "",
+      has_attachment: false,
+    };
+
+    it("an opted-in folder matches on an earlier message of the thread", () => {
+      const folders = [folder({ id: "deals", name: "Deals", run_on_threads: true })];
+      const result = runRulesEngine(
+        incoming,
+        context({ folders, filters: [contractFilter("deals")] }),
+        { trigger: "arrival", aiEnabled: false, threadEmails: [priorMessage] },
+      );
+      expect(result.folder_id).toBe("deals");
+    });
+
+    it("a folder that did not opt in stays message-scoped", () => {
+      const folders = [folder({ id: "deals", name: "Deals" })];
+      const result = runRulesEngine(
+        incoming,
+        context({ folders, filters: [contractFilter("deals")] }),
+        { trigger: "arrival", aiEnabled: false, threadEmails: [priorMessage] },
+      );
+      expect(result.folder_id).toBeNull();
+    });
+  });
+
   it("defers to AI only when a folder is described and the stage is enabled", () => {
     const folders = [folder({ id: "misc", name: "Misc", ai_rule: "anything odd" })];
     const ctx = context({ folders });

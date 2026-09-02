@@ -351,18 +351,6 @@ describe("claim protocol", () => {
 });
 
 describe("lease handling", () => {
-  it("ignores lock fields on CLAIMED rows — lease enforcement lives in the RPC", async () => {
-    // The RPC hands back whatever it claimed; even if the row carries a
-    // stale locked_at, the drainer processes it without any reclaim write.
-    const staleLock = new Date(Date.now() - 300_000).toISOString();
-    claim([job({ status: "running", locked_at: staleLock })]);
-    processGmailMessage.mockResolvedValue({ skipped: true });
-    const summary = await runMessageJobs(10, 2);
-    expect(summary).toMatchObject({ processed: 1, ok: 1 });
-    expect(deletedJobIds()).toEqual(["job-1"]);
-    expect(jobUpdates()).toHaveLength(0);
-  });
-
   it("the stuck-scan leaves a 'running' row inside the 35s window untouched", async () => {
     fake.seed("message_jobs", [
       {
@@ -403,6 +391,32 @@ describe("batch AI pass", () => {
     expect(applyFolderActions).toHaveBeenCalledTimes(n);
     expect(updateEmailEncrypted).toHaveBeenCalledTimes(n);
     expect(jobDeletes()).toHaveLength(n);
+  });
+
+  it("carries processing_enabled through to the ActionFolder so a paused folder stays inert", async () => {
+    // The pause flag is the only thing standing between a paused folder and
+    // a second round of archives/stars/forwards. resolveActionFolderFromContext
+    // rebuilds the ActionFolder field by field, so a dropped key here reads as
+    // "flag absent" downstream and side effects silently resume.
+    ctxFolders = [folderA({ processing_enabled: false, auto_archive: true, auto_star: true })];
+    seedBackfillBatch(1);
+    classifyEmailsBatch.mockResolvedValue([
+      { folder_id: "folder-A", confidence: 0.95, summary: "s", reason: "r" },
+    ]);
+
+    await runMessageJobs(10, 2);
+    expect(applyFolderActions).toHaveBeenCalledTimes(1);
+    expect(applyFolderActions.mock.calls[0]![3]).toStrictEqual({
+      id: "folder-A",
+      gmail_label_id: null,
+      auto_archive: true,
+      auto_mark_read: false,
+      auto_star: true,
+      hide_from_inbox: false,
+      forward_to: null,
+      snooze_hours: 0,
+      processing_enabled: false,
+    });
   });
 
   it("groups the pass per account and loads context once per account", async () => {

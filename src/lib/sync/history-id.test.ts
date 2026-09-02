@@ -4,7 +4,7 @@
 // strictly higher than the current one?" or the cross-replica race is
 // still open.
 import { describe, it, expect } from "vitest";
-import { gmailHistoryIdGreater } from "./sync.server";
+import { gmailHistoryIdGreater } from "./history-id";
 
 describe("gmailHistoryIdGreater", () => {
   it("returns true when the current id is null (first push for an account)", () => {

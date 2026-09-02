@@ -141,6 +141,43 @@ export const SCENARIOS: FolderScenario[] = [
     expect: { folder_id: "f-work", needs_ai: false },
   },
   {
+    name: "AND with a nested OR — only one branch satisfied",
+    email: { from_addr: "boss@acme.com", subject: "Invoice 42" },
+    folders: [
+      makeFolder({
+        id: "f-work",
+        name: "Work",
+        ai_rule: null,
+        filter_tree: {
+          type: "group",
+          op: "and",
+          children: [
+            { type: "cond", field: "from", op: "contains", value: "boss@acme.com" },
+            {
+              type: "group",
+              op: "or",
+              children: [
+                { type: "cond", field: "subject", op: "contains", value: "invoice" },
+                { type: "cond", field: "subject", op: "contains", value: "receipt" },
+              ],
+            },
+          ],
+        },
+      }),
+    ],
+    filters: [],
+    expect: { folder_id: "f-work", needs_ai: false },
+    engineDelta: {
+      folder_id: null,
+      why:
+        "adapt.treeToGroups flattens AND(a, OR(b,c)) into ONE AND(a,b,c) " +
+        "group instead of cross-producting into [[a,b],[a,c]] — the " +
+        "cross-product is exponential in nesting depth. The engine " +
+        "therefore matches strictly less than the legacy tree walker: it " +
+        "can under-match a nested tree, never over-match one",
+    },
+  },
+  {
     name: "two folders match — priority resolves the tie",
     email: { from_addr: "sales@vendor.com" },
     folders: [work(), news()],
@@ -282,14 +319,11 @@ export const SCENARIOS: FolderScenario[] = [
     filters: [makeRule("f-cold", "domain", "contains", "calendar.test")],
     calendarGuardEnabled: true,
     calendarContacts: ["met@calendar.test"],
+    // The engine agrees on the destination but gets there differently: the
+    // guard is a stage-1 folder guardrail there (Amendment 1) rather than a
+    // post-filter check on the winning folder, so the cold folder is out of
+    // play before any stage — including AI — can reach it.
     expect: { folder_id: null, needs_ai: false },
-    engineDelta: {
-      folder_id: "f-cold",
-      why:
-        "the v2 engine has NO calendar-guard stage (Amendment 1 places it " +
-        "in stage 1, but bridge/evaluate never read is_cold_email or " +
-        "calendarContacts) — with RULES_ENGINE_V2=on the guard is lost",
-    },
     ingestDelta: {
       folder_id: "f-cold",
       why: "ingest classifier has no calendar-guard rung — files anyway",

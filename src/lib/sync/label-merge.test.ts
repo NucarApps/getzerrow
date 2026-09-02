@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeLabelPatch, removeLabelsFromCurrent } from "./sync/label-merge";
+import { computeLabelPatch, removeLabelsFromCurrent } from "./label-merge";
 
 describe("computeLabelPatch", () => {
   it("strips INBOX from raw_labels when Gmail archives the message", () => {

@@ -28,6 +28,11 @@ export type EngineFolder = {
   /** Confidence floor for the AI stage. */
   min_ai_confidence?: number;
   skip_ai?: boolean;
+  /** When true, this folder's rules evaluate across the thread (incoming
+   * message + recent prior messages) instead of the single message.
+   * Absent/false = message-scoped, which is what every folder does unless
+   * the user opted in. */
+  run_on_threads?: boolean;
 };
 
 export type Condition = { field: string; op: string; value: string };
@@ -69,6 +74,11 @@ export type Guardrail = {
   condition?: Condition;
   folder_id?: string | null;
   label?: string;
+  /** Lowercased sender addresses this guardrail fires for — a set too big
+   * to express as one Condition. `cold_email_contact` carries the account's
+   * calendar contacts here: people you have actually met must never be
+   * filed as cold outreach. */
+  senders?: string[];
 };
 
 /** What an earlier message in the same thread resolved to. Continuity only

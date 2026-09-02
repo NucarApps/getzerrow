@@ -75,6 +75,9 @@ export function evaluateGuardrails(
     if (g.kind === "protected_sender") {
       const val = (g.label || g.condition?.value || "").toLowerCase().replace(/^@/, "");
       hit = val.includes("@") ? val === fromAddr : val === fromDomain;
+    } else if (g.kind === "cold_email_contact") {
+      // Someone you have met (a calendar contact) is not cold outreach.
+      hit = !!fromAddr && (g.senders ?? []).includes(fromAddr);
     } else if (g.condition) {
       hit = conditionMatches(m, g.condition);
     }

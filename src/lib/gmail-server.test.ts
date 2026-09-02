@@ -15,12 +15,18 @@ vi.mock("./google-oauth.server", () => ({
 
 import {
   GmailApiError,
+  createDraft,
   listLabels,
+  listHistory,
+  listMessages,
+  getMessageMetadata,
+  insertMessage,
   stopWatch,
   getMessageLabels,
   batchModifyMessages,
   sendMessage,
   ensureWatch,
+  topUpWatch,
 } from "./gmail.server";
 
 const fetchMock = vi.fn<typeof fetch>();
@@ -130,6 +136,46 @@ describe("Retry-After parsing (429 only)", () => {
     expect(err.status).toBe(503);
     expect(err.retryable).toBe(true);
     expect(err.retryAfterSeconds).toBeNull();
+  });
+
+  // The header is attacker-adjacent in the sense that it is remote input the
+  // scheduler obeys: an unbounded value parks a message for as long as the
+  // header says. Both forms are capped at 6h.
+  it("caps a delta-seconds value at 6 hours", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response("rate limited", { status: 429, headers: { "Retry-After": "86400" } }),
+    );
+    expect((await captureError(listLabels("acc-1"))).retryAfterSeconds).toBe(6 * 3600);
+
+    // One second under the cap passes through untouched.
+    fetchMock.mockResolvedValueOnce(
+      new Response("rate limited", { status: 429, headers: { "Retry-After": "21599" } }),
+    );
+    expect((await captureError(listLabels("acc-1"))).retryAfterSeconds).toBe(21599);
+  });
+
+  it("caps an HTTP-date far in the future at 6 hours", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-19T12:00:00.000Z"));
+    const header = new Date(Date.now() + 48 * 3600_000).toUTCString();
+    fetchMock.mockResolvedValueOnce(
+      new Response("rate limited", { status: 429, headers: { "Retry-After": header } }),
+    );
+    expect((await captureError(listLabels("acc-1"))).retryAfterSeconds).toBe(6 * 3600);
+  });
+
+  it("treats an HTTP-date in the past as no guidance rather than a negative delay", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-19T12:00:00.000Z"));
+    for (const offsetMs of [-60_000, 0]) {
+      const header = new Date(Date.now() + offsetMs).toUTCString();
+      fetchMock.mockResolvedValueOnce(
+        new Response("rate limited", { status: 429, headers: { "Retry-After": header } }),
+      );
+      // A negative delay would schedule the retry in the past — an instant
+      // re-fire straight back into the rate limit.
+      expect((await captureError(listLabels("acc-1"))).retryAfterSeconds).toBeNull();
+    }
   });
 });
 
@@ -369,5 +415,191 @@ describe("ensureWatch", () => {
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       topicName: "projects/p/topics/t",
     });
+  });
+});
+
+// topUpWatch runs on EVERY successful Pub/Sub push, so "cheap when nothing
+// is due" is the contract. Its null-expiration behaviour is the OPPOSITE of
+// ensureWatch's — ensureWatch treats "no recorded expiration" as "watch is
+// missing, establish one", topUpWatch treats it as "not my job". Only the
+// renewal cron may create a watch from nothing; the hot push path may only
+// extend one that already exists.
+describe("topUpWatch", () => {
+  const TOPIC = "projects/p/topics/t";
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-02T00:00:00.000Z"));
+  });
+
+  const inDays = (d: number) =>
+    new Date(Date.parse("2026-09-02T00:00:00.000Z") + d * 24 * 60 * 60 * 1000).toISOString();
+
+  it("does nothing for an account with no recorded expiration — unlike ensureWatch", async () => {
+    vi.stubEnv("GMAIL_PUBSUB_TOPIC", TOPIC);
+    await expect(topUpWatch("acc-1", null)).resolves.toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // Same input, opposite answer: ensureWatch establishes the watch.
+    fetchMock.mockResolvedValueOnce(jsonResponse({ historyId: "h1", expiration: "e1" }));
+    await expect(ensureWatch("acc-1", null)).resolves.toEqual({
+      historyId: "h1",
+      expiration: "e1",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("makes no API call while more than 3 days remain", async () => {
+    vi.stubEnv("GMAIL_PUBSUB_TOPIC", TOPIC);
+    await expect(topUpWatch("acc-1", inDays(4))).resolves.toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("re-watches once the expiry is inside the 3-day window", async () => {
+    vi.stubEnv("GMAIL_PUBSUB_TOPIC", TOPIC);
+    fetchMock.mockResolvedValueOnce(jsonResponse({ historyId: "h9", expiration: "e9" }));
+    await expect(topUpWatch("acc-1", inDays(2))).resolves.toEqual({
+      historyId: "h9",
+      expiration: "e9",
+    });
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toContain("/users/me/watch");
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ topicName: TOPIC });
+  });
+
+  it("re-watches an already-expired watch", async () => {
+    vi.stubEnv("GMAIL_PUBSUB_TOPIC", TOPIC);
+    fetchMock.mockResolvedValueOnce(jsonResponse({ historyId: "h", expiration: "e" }));
+    await topUpWatch("acc-1", inDays(-1));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks the expiry BEFORE the topic, so an unconfigured deployment is still silent", async () => {
+    vi.stubEnv("GMAIL_PUBSUB_TOPIC", undefined);
+    await expect(topUpWatch("acc-1", inDays(1))).resolves.toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+// Every one of these builds a URL or a JSON body by hand. A wrong query
+// parameter is a silently wrong result (the wrong message format, a lost
+// page token, a history walk that misses label events), not an error.
+describe("request construction", () => {
+  const urlOf = (i = 0) => String(fetchMock.mock.calls[i]![0]);
+  const bodyOf = (i = 0) =>
+    JSON.parse((fetchMock.mock.calls[i]![1] as RequestInit).body as string) as Record<
+      string,
+      unknown
+    >;
+
+  beforeEach(() => {
+    fetchMock.mockImplementation(async () => jsonResponse({}));
+  });
+
+  it("listMessages includes only the options the caller supplied", async () => {
+    await listMessages("acc-1", {});
+    expect(urlOf()).toBe("https://gmail.googleapis.com/gmail/v1/users/me/messages?");
+
+    fetchMock.mockClear();
+    await listMessages("acc-1", {
+      maxResults: 100,
+      q: "after:123 -in:chats",
+      pageToken: "PT",
+      labelIds: ["INBOX", "Label_1"],
+    });
+    const url = new URL(urlOf());
+    expect(url.pathname).toBe("/gmail/v1/users/me/messages");
+    // labelIds repeats rather than joining — Gmail treats a joined value as
+    // one label id and matches nothing.
+    expect([...url.searchParams.entries()]).toEqual([
+      ["maxResults", "100"],
+      ["q", "after:123 -in:chats"],
+      ["pageToken", "PT"],
+      ["labelIds", "INBOX"],
+      ["labelIds", "Label_1"],
+    ]);
+  });
+
+  it("listHistory asks for all four history types and carries the page token", async () => {
+    await listHistory("acc-1", "1000");
+    const url = new URL(urlOf());
+    expect(url.pathname).toBe("/gmail/v1/users/me/history");
+    expect([...url.searchParams.entries()]).toEqual([
+      ["startHistoryId", "1000"],
+      ["historyTypes", "messageAdded"],
+      ["historyTypes", "messageDeleted"],
+      ["historyTypes", "labelAdded"],
+      ["historyTypes", "labelRemoved"],
+    ]);
+
+    fetchMock.mockClear();
+    await listHistory("acc-1", "1000", "PT2");
+    expect(new URL(urlOf()).searchParams.get("pageToken")).toBe("PT2");
+  });
+
+  it("getMessageMetadata asks for headers only, not a full body", async () => {
+    await getMessageMetadata("acc-1", "m-1");
+    const url = new URL(urlOf());
+    expect(url.pathname).toBe("/gmail/v1/users/me/messages/m-1");
+    expect([...url.searchParams.entries()]).toEqual([
+      ["format", "metadata"],
+      ["metadataHeaders", "From"],
+      ["metadataHeaders", "Subject"],
+    ]);
+  });
+
+  it("createDraft posts a nested message and omits threadId when not replying", async () => {
+    await createDraft("acc-1", "to@x.com", "Hi", "body");
+    expect(urlOf()).toContain("/users/me/drafts");
+    const body = bodyOf();
+    expect(Object.keys(body)).toEqual(["message"]);
+    const message = body.message as Record<string, unknown>;
+    // threadId is OMITTED, not sent as undefined — Gmail rejects a null one.
+    expect(Object.keys(message)).toEqual(["raw"]);
+    const decoded = Buffer.from(message.raw as string, "base64url").toString("utf-8");
+    expect(decoded).toBe(
+      'To: to@x.com\r\nSubject: Hi\r\nContent-Type: text/plain; charset="UTF-8"\r\n\r\nbody',
+    );
+  });
+
+  it("createDraft threads a reply and collapses CR/LF in its headers", async () => {
+    await createDraft(
+      "acc-1",
+      "to@x.com\r\nBcc: victim@x.com",
+      "Re: Hi",
+      "body",
+      "thread-9",
+      "<m@x.com>",
+    );
+    const message = bodyOf().message as Record<string, unknown>;
+    expect(message.threadId).toBe("thread-9");
+    const lines = Buffer.from(message.raw as string, "base64url")
+      .toString("utf-8")
+      .split("\r\n\r\n")[0]!
+      .split("\r\n");
+    expect(lines).toEqual([
+      "To: to@x.com Bcc: victim@x.com",
+      "Subject: Re: Hi",
+      "In-Reply-To: <m@x.com>",
+      "References: <m@x.com>",
+      'Content-Type: text/plain; charset="UTF-8"',
+    ]);
+  });
+
+  it("insertMessage dates from the message header and defaults to an unread inbox message", async () => {
+    await insertMessage("acc-1", "From: a@b.c\r\n\r\nhello");
+    // Without internalDateSource=dateHeader Gmail stamps the message with
+    // "now", so an imported message sorts to the top of the mailbox.
+    expect(urlOf()).toContain("/users/me/messages?internalDateSource=dateHeader");
+    const body = bodyOf();
+    expect(body.labelIds).toEqual(["INBOX", "UNREAD"]);
+    expect(Buffer.from(body.raw as string, "base64url").toString("utf-8")).toBe(
+      "From: a@b.c\r\n\r\nhello",
+    );
+  });
+
+  it("insertMessage honours an explicit label set", async () => {
+    await insertMessage("acc-1", "raw", []);
+    expect(bodyOf().labelIds).toEqual([]);
   });
 });

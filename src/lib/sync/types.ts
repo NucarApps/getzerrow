@@ -71,6 +71,12 @@ export type Filter = {
   field: string;
   op: string;
   value: string;
+  /** When the rule was authored. The engine's ladder resolves a same-level,
+   * same-condition-count tie by "older rule wins" (Amendment 2), so this is
+   * a filing input, not just metadata. Optional because hand-built contexts
+   * and older caches predate it; absent falls back to the epoch, which
+   * makes the tiebreak arbitrary. */
+  created_at?: string | null;
 };
 
 /** A connected gmail_accounts row in the shape the sync code needs. */

@@ -255,6 +255,155 @@ describe("parseMessage", () => {
   });
 });
 
+// The msg() builder above always wraps bodies in `parts`, so the single-part
+// shape — which is what Gmail returns for the majority of real mail, a plain
+// text/plain message with the content directly on payload.body — went
+// entirely untested.
+describe("parseMessage — single-part payloads (the common Gmail shape)", () => {
+  const singlePart = (mimeType: string, body: string) => ({
+    id: "m1",
+    threadId: "t1",
+    internalDate: String(Date.UTC(2026, 0, 15)),
+    snippet: "s",
+    labelIds: ["INBOX"],
+    payload: {
+      mimeType,
+      headers: [{ name: "From", value: "a@x.com" }],
+      body: { data: b64url(body) },
+    },
+  });
+
+  it("reads a text/plain body straight off payload.body, with no parts array", () => {
+    const p = parseMessage(singlePart("text/plain", "just a plain note"));
+    expect(p.body_text).toBe("just a plain note");
+    expect(p.body_html).toBe("");
+    expect(p.has_attachment).toBe(false);
+    expect(p.has_calendar_invite).toBe(false);
+  });
+
+  it("reads a single-part text/html body the same way", () => {
+    const p = parseMessage(singlePart("text/html", "<p>only html</p>"));
+    expect(p.body_html).toBe("<p>only html</p>");
+    expect(p.body_text).toBe("");
+  });
+
+  it("returns empty for a single-part payload whose mime type matches neither", () => {
+    const p = parseMessage(singlePart("application/pdf", "%PDF-1.4"));
+    expect(p.body_text).toBe("");
+    expect(p.body_html).toBe("");
+  });
+
+  it("a single-part text/calendar payload is still recognised as an invite", () => {
+    const p = parseMessage(singlePart("text/calendar; method=REQUEST", "BEGIN:VCALENDAR"));
+    expect(p.has_calendar_invite).toBe(true);
+  });
+});
+
+describe("parseMessage — attachment detection", () => {
+  // CHARACTERIZATION(has-attachment-counts-inline-images): has_attachment is
+  // a bare filename walk, so an inline image counts.
+  it("counts an inline logo under multipart/related as an attachment", () => {
+    // Every marketing email carries one. `has_attachment` is a filename walk,
+    // so a Content-Disposition: inline image with a filename sets it — the
+    // paperclip in the list is showing the sender's logo, not a document.
+    const withLogo = {
+      id: "m1",
+      threadId: "t1",
+      internalDate: String(Date.UTC(2026, 0, 15)),
+      snippet: "s",
+      labelIds: ["INBOX"],
+      payload: {
+        mimeType: "multipart/related",
+        headers: [{ name: "From", value: "news@vendor.test" }],
+        parts: [
+          {
+            mimeType: "multipart/alternative",
+            parts: [
+              { mimeType: "text/plain", body: { data: b64url("plain") } },
+              { mimeType: "text/html", body: { data: b64url('<img src="cid:logo">') } },
+            ],
+          },
+          {
+            mimeType: "image/png",
+            filename: "logo.png",
+            headers: [{ name: "Content-Disposition", value: 'inline; filename="logo.png"' }],
+            body: { attachmentId: "att-logo" },
+          },
+        ],
+      },
+    };
+    expect(parseMessage(withLogo).has_attachment).toBe(true);
+  });
+
+  it("an attachment nested two levels deep is still found", () => {
+    const nested = {
+      id: "m1",
+      threadId: "t1",
+      internalDate: String(Date.UTC(2026, 0, 15)),
+      snippet: "s",
+      labelIds: ["INBOX"],
+      payload: {
+        mimeType: "multipart/mixed",
+        headers: [{ name: "From", value: "a@x.com" }],
+        parts: [
+          {
+            mimeType: "multipart/related",
+            parts: [{ mimeType: "application/pdf", filename: "deep.pdf", body: {} }],
+          },
+        ],
+      },
+    };
+    expect(parseMessage(nested).has_attachment).toBe(true);
+  });
+
+  it("a single-part message can never report an attachment, whatever its filename", () => {
+    // has_attachment walks payload.parts, so the top-level payload's own
+    // filename is never consulted.
+    const p = parseMessage({
+      id: "m1",
+      threadId: "t1",
+      internalDate: "0",
+      snippet: "",
+      payload: {
+        mimeType: "application/pdf",
+        filename: "invoice.pdf",
+        headers: [{ name: "From", value: "a@x.com" }],
+        body: { attachmentId: "att-1" },
+      },
+    });
+    expect(p.has_attachment).toBe(false);
+  });
+});
+
+describe("parseMessage — RFC 2047 encoded display names", () => {
+  // Gmail returns headers verbatim; nothing in the pipeline MIME-decodes
+  // them. A non-ASCII display name therefore reaches the UI as its encoded
+  // form. Pinned, not asserted as correct: from_name is shown to the user
+  // and fed to the classifier's `from` field, so decoding it would change
+  // both — deliberately, if at all.
+  // CHARACTERIZATION(rfc2047-headers-not-decoded): encoded-word headers reach
+  // the UI and the classifier in their raw =?UTF-8?B?…?= form.
+  it("stores an encoded-word display name verbatim, without decoding it", () => {
+    const p = parseMessage(
+      msg({ headers: { From: "=?UTF-8?B?SsO2cmcgTcO8bGxlcg==?= <jorg@example.de>" } }),
+    );
+    expect(p.from_addr).toBe("jorg@example.de");
+    expect(p.from_name).toBe("=?UTF-8?B?SsO2cmcgTcO8bGxlcg==?=");
+  });
+
+  it("stores an encoded-word subject verbatim too", () => {
+    const p = parseMessage(
+      msg({ headers: { From: "a@x.com", Subject: "=?ISO-8859-1?Q?Caf=E9_receipt?=" } }),
+    );
+    expect(p.subject).toBe("=?ISO-8859-1?Q?Caf=E9_receipt?=");
+  });
+
+  it("a quoted encoded-word display name loses only its surrounding quotes", () => {
+    const p = parseMessage(msg({ headers: { From: '"=?UTF-8?B?SsO2cmc=?=" <jorg@example.de>' } }));
+    expect(p.from_name).toBe("=?UTF-8?B?SsO2cmc=?=");
+  });
+});
+
 describe("GmailApiError", () => {
   it("carries status + retryable + Retry-After + quota flags", () => {
     const e = new GmailApiError("rate limited", 429, true, {

@@ -1,17 +1,17 @@
 // Direct unit tests for the pure filter engine. These complement the
-// higher-level sync-classify.test.ts cases by exercising matchByFilters
+// higher-level decide-folder.test.ts cases by exercising matchByFilters
 // in isolation — useful for pinning the priority-ordering, exclude-rule,
 // and ReDoS-safety contracts.
 import { describe, it, expect } from "vitest";
 import {
   applyFilter,
   matchByFilters,
+  matchByFiltersExplained,
   labelOf,
   collectMatchingLeaves,
   validateRuleNode,
   MAX_FILTER_TREE_DEPTH,
   MAX_FILTER_TREE_LEAVES,
-  EXCLUDE_OPS,
   parseDomainList,
   filterVetoes,
   emailVetoedForFolder,
@@ -20,14 +20,20 @@ import {
 import type { Folder, RuleNode } from "./types";
 import { makeEmailRow, makeFolder, makeRule } from "../__fixtures__/email-row";
 
+// makeEmailRow returns the shared "email content" fields; the overrides are
+// layered on top a second time so EmailForFilter-only fields it does not
+// know about (reply_to_addr, origin_addr, sender_group_ids) survive.
 function email(over: Partial<EmailForFilter> = {}): EmailForFilter {
-  return makeEmailRow({
-    from_addr: "alice@example.com",
-    from_name: "Alice",
-    subject: "Hello",
-    body_text: "body",
+  return {
+    ...makeEmailRow({
+      from_addr: "alice@example.com",
+      from_name: "Alice",
+      subject: "Hello",
+      body_text: "body",
+      ...over,
+    }),
     ...over,
-  });
+  };
 }
 
 function folder(over: Partial<Folder> = {}): Folder {
@@ -76,6 +82,96 @@ describe("applyFilter — field selectors", () => {
 
   it("unknown field returns false (defensive)", () => {
     expect(applyFilter(email(), filter("f", "nonexistent", "contains", "x"))).toBe(false);
+  });
+
+  // One row per selector the switch supports, each with the email shape
+  // that should hit it and one that should not. Fields the classifier
+  // populates from headers the ingest paths do not carry (cc, list_id,
+  // reply_to) had no coverage at all, so a selector could have been
+  // reading the wrong property and every rule using it silently dead.
+  const selectors: Array<{
+    field: string;
+    value: string;
+    hit: Partial<EmailForFilter>;
+    miss: Partial<EmailForFilter>;
+  }> = [
+    {
+      field: "to",
+      value: "team@acme.com",
+      hit: { to_addrs: "me@x.com, Team@Acme.com" },
+      miss: { to_addrs: "me@x.com" },
+    },
+    { field: "to", value: "anything", hit: { to_addrs: "anything" }, miss: { to_addrs: "" } },
+    {
+      field: "cc",
+      value: "legal@acme.com",
+      hit: { cc: "Legal@Acme.com" },
+      miss: { cc: undefined },
+    },
+    {
+      field: "list_id",
+      value: "announce.acme.com",
+      hit: { list_id: "<announce.acme.com>" },
+      miss: { list_id: undefined },
+    },
+    {
+      field: "reply_to",
+      value: "support@acme.com",
+      hit: { reply_to_addr: "Support@Acme.com" },
+      miss: { reply_to_addr: null },
+    },
+    {
+      field: "origin_from",
+      value: "real@sender.com",
+      hit: { origin_addr: "Real@Sender.com", from_addr: "relay@list.test" },
+      miss: { origin_addr: "other@sender.com", from_addr: "real@sender.com" },
+    },
+    {
+      field: "origin_domain",
+      value: "sender.com",
+      hit: { origin_addr: "real@sender.com", from_addr: "relay@list.test" },
+      miss: { origin_addr: "real@other.com", from_addr: "relay@sender.com" },
+    },
+    {
+      field: "sender_in_group",
+      value: "g-vip",
+      hit: { sender_group_ids: ["g-other", "g-vip"] },
+      miss: { sender_group_ids: ["g-other"] },
+    },
+    { field: "sender_in_group", value: "g-vip", hit: { sender_group_ids: ["g-vip"] }, miss: {} },
+  ];
+
+  it.each(selectors)("'$field' reads its own field (%#)", ({ field, value, hit, miss }) => {
+    const op = field === "sender_in_group" ? "sender_in_group" : "contains";
+    expect(applyFilter(email(hit), filter("f", field, op, value)), "hit").toBe(true);
+    expect(applyFilter(email(miss), filter("f", field, op, value)), "miss").toBe(false);
+  });
+
+  // The origin_* fields exist so ONE rule covers both direct and relayed
+  // mail: with no origin recorded they must read the From header.
+  it("origin_from / origin_domain fall back to from_addr when there is no origin", () => {
+    const direct = email({ from_addr: "real@sender.com", origin_addr: null });
+    expect(applyFilter(direct, filter("f", "origin_from", "equals", "real@sender.com"))).toBe(true);
+    expect(applyFilter(direct, filter("f", "origin_domain", "equals", "sender.com"))).toBe(true);
+
+    const noneAtAll = email({ from_addr: "", origin_addr: null });
+    expect(applyFilter(noneAtAll, filter("f", "origin_domain", "equals", ""))).toBe(true);
+  });
+
+  it("the origin, not the relay, decides once one is recorded", () => {
+    const relayed = email({ from_addr: "relay@list.test", origin_addr: "real@sender.com" });
+    expect(applyFilter(relayed, filter("f", "origin_domain", "equals", "sender.com"))).toBe(true);
+    expect(applyFilter(relayed, filter("f", "origin_domain", "equals", "list.test"))).toBe(false);
+    // The plain `domain` field still sees the relay — that is the point of
+    // having both.
+    expect(applyFilter(relayed, filter("f", "domain", "equals", "list.test"))).toBe(true);
+  });
+
+  it("sender_in_group is false for a sender with no resolved groups", () => {
+    expect(
+      applyFilter(email({ sender_group_ids: [] }), filter("f", "x", "sender_in_group", "g-vip")),
+    ).toBe(false);
+    expect(applyFilter(email(), filter("f", "x", "sender_in_group", "g-vip"))).toBe(false);
   });
 });
 
@@ -132,17 +228,47 @@ describe("applyFilter — regex safety (ReDoS)", () => {
       applyFilter(email({ subject: "ABC-123" }), filter("f", "subject", "regex", "^[a-z]+-\\d+$")),
     ).toBe(true);
   });
-});
 
-describe("EXCLUDE_OPS set", () => {
-  it("contains not_contains, not_equals and domain_in", () => {
-    expect(EXCLUDE_OPS.has("not_contains")).toBe(true);
-    expect(EXCLUDE_OPS.has("not_equals")).toBe(true);
-    expect(EXCLUDE_OPS.has("domain_in")).toBe(true);
-    // Sanity — other ops shouldn't be excluded.
-    expect(EXCLUDE_OPS.has("contains")).toBe(false);
-    expect(EXCLUDE_OPS.has("equals")).toBe(false);
-    expect(EXCLUDE_OPS.has("regex")).toBe(false);
+  // One case per shape in UNSAFE_REGEX_SHAPES. Each pattern is written so
+  // that it WOULD match if it were allowed to run, which is what makes the
+  // rejection observable rather than a coincidence of the input.
+  it.each([
+    ["nested quantifier (a+)+", "(a+)+", "aaaa"],
+    ["nested quantifier (a*)*", "(a*)*", "aaaa"],
+    ["nested quantifier inside a longer pattern", "x(ab+c)*y", "xy"],
+    ["chained character classes", "[a-z]+[a-z]+", "hello"],
+    ["three chained character classes", "[a-z]+[0-9]*[a-z]+", "a1b"],
+    ["repeated .*", ".*.*", "anything"],
+    ["three .* runs", ".*.*.*", "anything"],
+  ])("rejects %s", (_name, pattern, subject) => {
+    expect(applyFilter(email({ subject }), filter("f", "subject", "regex", pattern))).toBe(false);
+    // Sanity: the pattern really does match when run directly, so the
+    // `false` above is the guard and not the pattern.
+    expect(new RegExp(pattern, "i").test(subject)).toBe(true);
+  });
+
+  it("a pattern at exactly the 200-char limit is still allowed", () => {
+    const atLimit = "a".repeat(200);
+    expect(
+      applyFilter(email({ subject: "a".repeat(200) }), filter("f", "subject", "regex", atLimit)),
+    ).toBe(true);
+  });
+
+  it("truncates the input at 10k chars, so a match past the cap does not count", () => {
+    const withinCap = "x".repeat(9_990) + "needle" + "y".repeat(10_000);
+    expect(
+      applyFilter(email({ subject: withinCap }), filter("f", "subject", "regex", "needle")),
+    ).toBe(true);
+
+    const pastCap = "x".repeat(20_000) + "needle";
+    expect(
+      applyFilter(email({ subject: pastCap }), filter("f", "subject", "regex", "needle")),
+    ).toBe(false);
+    // Only `regex` is bounded — the plain string ops still see it all, so
+    // the cap is a ReDoS guard and not a general truncation.
+    expect(
+      applyFilter(email({ subject: pastCap }), filter("f", "subject", "contains", "needle")),
+    ).toBe(true);
   });
 });
 
@@ -542,5 +668,193 @@ describe("filter-tree bounds (validateRuleNode)", () => {
     const f = folder({ id: "f-ok", name: "Ok", filter_tree: wide(MAX_FILTER_TREE_LEAVES) });
     const m = matchByFilters(email({ subject: "Hello there" }), [f], []);
     expect(m).toMatchObject({ kind: "match", folder_id: "f-ok", tree_used: true });
+  });
+});
+
+// matchByFiltersExplained is what the decision drawer renders: it must be
+// able to say why every folder LOST, not just which one won. Each verdict
+// below is one of those explanations, and none of them was asserted.
+describe("matchByFiltersExplained — the per-folder verdict list", () => {
+  const verdictFor = (result: ReturnType<typeof matchByFiltersExplained>, folderId: string) =>
+    result.candidates.find((c) => c.folder_id === folderId);
+
+  it("'no_rules': a folder with no include rules is reported, not silently skipped", () => {
+    const r = matchByFiltersExplained(
+      email(),
+      [],
+      [folder({ id: "f-empty", name: "Empty", priority: 3 })],
+      // Only an EXCLUDE row, which can veto but can never file.
+      [filter("f-empty", "from", "not_contains", "nobody")],
+    );
+    expect(r.match).toBeNull();
+    expect(verdictFor(r, "f-empty")).toStrictEqual({
+      folder_id: "f-empty",
+      folder_name: "Empty",
+      priority: 3,
+      verdict: "no_rules",
+      matched: [],
+    });
+  });
+
+  it("'no_match': rules exist but none fired", () => {
+    const r = matchByFiltersExplained(
+      email({ subject: "Hello" }),
+      [],
+      [folder({ id: "f1", name: "Nope" })],
+      [filter("f1", "subject", "contains", "invoice")],
+    );
+    expect(verdictFor(r, "f1")).toMatchObject({ verdict: "no_match", matched: [] });
+  });
+
+  it("'invalid_tree': an out-of-bounds tree is reported as inert, not as no_match", () => {
+    const tree: RuleNode = {
+      type: "group",
+      op: "or",
+      children: Array.from({ length: MAX_FILTER_TREE_LEAVES + 1 }, () => ({
+        type: "cond" as const,
+        field: "subject",
+        op: "contains",
+        value: "hello",
+      })),
+    };
+    const r = matchByFiltersExplained(
+      email({ subject: "hello" }),
+      [],
+      [folder({ id: "f-bad", name: "Bad", filter_tree: tree })],
+      [],
+    );
+    expect(verdictFor(r, "f-bad")).toMatchObject({ verdict: "invalid_tree" });
+  });
+
+  it("'paused': a paused folder is reported before any rule is consulted", () => {
+    const r = matchByFiltersExplained(
+      email({ subject: "invoice" }),
+      [],
+      [folder({ id: "f-off", name: "Off", processing_enabled: false })],
+      [filter("f-off", "subject", "contains", "invoice")],
+    );
+    expect(r.match).toBeNull();
+    expect(verdictFor(r, "f-off")).toMatchObject({ verdict: "paused" });
+  });
+
+  it("'matched' carries the leaves that fired", () => {
+    const r = matchByFiltersExplained(
+      email({ subject: "Invoice 42", from_addr: "billing@acme.com" }),
+      [],
+      [folder({ id: "f1", name: "Invoices" })],
+      [
+        filter("f1", "subject", "contains", "invoice"),
+        filter("f1", "domain", "contains", "acme.com"),
+        filter("f1", "subject", "contains", "never"),
+      ],
+    );
+    expect(verdictFor(r, "f1")).toMatchObject({
+      verdict: "matched",
+      via_thread: false,
+      matched: [
+        { field: "subject", op: "contains", value: "invoice" },
+        { field: "domain", op: "contains", value: "acme.com" },
+      ],
+    });
+  });
+
+  it("'vetoed' names the exclude rule that disqualified the folder", () => {
+    const r = matchByFiltersExplained(
+      email({ subject: "Promo code", from_addr: "internal@acme.com" }),
+      [],
+      [folder({ id: "f1", name: "Marketing" })],
+      [
+        filter("f1", "subject", "contains", "promo"),
+        filter("f1", "from", "not_contains", "internal"),
+      ],
+    );
+    expect(verdictFor(r, "f1")).toMatchObject({
+      verdict: "vetoed",
+      veto: { field: "from", op: "not_contains", value: "internal" },
+    });
+  });
+
+  it("'via_thread': the folder matched only on a PRIOR message of the thread", () => {
+    const threaded = folder({ id: "f-thread", name: "Deals", run_on_threads: true });
+    const prior = [email({ subject: "The contract draft" })];
+    const r = matchByFiltersExplained(
+      email({ subject: "Re: following up" }),
+      prior,
+      [threaded],
+      [filter("f-thread", "subject", "contains", "contract")],
+    );
+    expect(r.match).toMatchObject({
+      kind: "match",
+      folder_id: "f-thread",
+      matched_via_thread: true,
+    });
+    expect(verdictFor(r, "f-thread")).toMatchObject({ verdict: "matched", via_thread: true });
+  });
+
+  it("via_thread is false when the incoming message matched on its own", () => {
+    const threaded = folder({ id: "f-thread", name: "Deals", run_on_threads: true });
+    const r = matchByFiltersExplained(
+      email({ subject: "The contract, signed" }),
+      [email({ subject: "The contract draft" })],
+      [threaded],
+      [filter("f-thread", "subject", "contains", "contract")],
+    );
+    expect(r.match).toMatchObject({ matched_via_thread: false });
+    expect(verdictFor(r, "f-thread")).toMatchObject({ via_thread: false });
+  });
+
+  it("a folder without run_on_threads never matches on a prior message", () => {
+    const r = matchByFiltersExplained(
+      email({ subject: "Re: following up" }),
+      [email({ subject: "The contract draft" })],
+      [folder({ id: "f-msg", name: "Message scoped" })],
+      [filter("f-msg", "subject", "contains", "contract")],
+    );
+    expect(r.match).toBeNull();
+    expect(verdictFor(r, "f-msg")).toMatchObject({ verdict: "no_match" });
+  });
+});
+
+describe("matchByFilters — two folders vetoed at once", () => {
+  const promo = () => email({ subject: "Promo code inside", from_addr: "internal@acme.com" });
+  const rulesFor = (id: string) => [
+    filter(id, "subject", "contains", "promo"),
+    filter(id, "from", "not_contains", "internal"),
+  ];
+
+  it("reports the HIGHEST-priority vetoed folder, so the drawer explains the best candidate", () => {
+    const r = matchByFilters(
+      promo(),
+      [
+        folder({ id: "low", name: "Low", priority: 1 }),
+        folder({ id: "high", name: "High", priority: 9 }),
+      ],
+      [...rulesFor("low"), ...rulesFor("high")],
+    );
+    expect(r).toMatchObject({ kind: "excluded", folder_id: "high", folder_name: "High" });
+  });
+
+  it("breaks a priority tie by folder name ascending, exactly as the match path does", () => {
+    const r = matchByFilters(
+      promo(),
+      [
+        folder({ id: "zeta", name: "Zeta", priority: 5 }),
+        folder({ id: "alpha", name: "Alpha", priority: 5 }),
+      ],
+      [...rulesFor("zeta"), ...rulesFor("alpha")],
+    );
+    expect(r).toMatchObject({ kind: "excluded", folder_id: "alpha" });
+  });
+
+  it("one folder matching outranks any number of vetoed folders", () => {
+    const r = matchByFilters(
+      promo(),
+      [
+        folder({ id: "vetoed", name: "Vetoed", priority: 9 }),
+        folder({ id: "open", name: "Open", priority: 1 }),
+      ],
+      [...rulesFor("vetoed"), filter("open", "subject", "contains", "promo")],
+    );
+    expect(r).toMatchObject({ kind: "match", folder_id: "open" });
   });
 });

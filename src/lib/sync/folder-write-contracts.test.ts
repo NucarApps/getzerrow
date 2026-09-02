@@ -34,6 +34,8 @@
 // __fixtures__/supabase-fake backs supabaseAdmin, and a second fake plays
 // the RLS-scoped context.supabase client for path 12.
 
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, sep } from "node:path";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
 import { makeEmailRow, makeFolder, makeRule } from "@/lib/__fixtures__/email-row";
@@ -373,6 +375,47 @@ describe("path 9 — manual move writes exactly the requested folder", () => {
       rejects: "Email not found",
     });
     expect(updateEmailEncrypted).not.toHaveBeenCalled();
+  });
+
+  // decide-folder.ts carries a full manual-move short-circuit (trigger
+  // "manual" + manualFolderId): it refuses a paused destination and stamps
+  // its own trace. NOTHING calls it. The real manual move is performMove
+  // above, which does none of that — so a paused folder IS a valid manual
+  // destination today, and the "refuses a paused destination" behaviour
+  // specified in decide-folder.test.ts is aspirational.
+  //
+  // This scan is the tripwire between the two. The day someone routes a
+  // manual move through decideFolder, this fails and the ladder contract
+  // stops being aspirational: promote it into a real path-9 assertion here
+  // (a paused destination must be refused) and delete this test.
+  it("no production caller routes a manual move through decideFolder", () => {
+    const root = process.cwd();
+    const walk = (dir: string, out: string[] = []): string[] => {
+      for (const name of readdirSync(dir)) {
+        const full = join(dir, name);
+        if (statSync(full).isDirectory()) {
+          if (name !== "node_modules" && name !== "__fixtures__") walk(full, out);
+          continue;
+        }
+        if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)) out.push(full);
+      }
+      return out;
+    };
+    const callers = walk(join(root, "src"))
+      .filter((file) => {
+        if (file.endsWith(`${sep}decide-folder.ts`)) return false;
+        const src = readFileSync(file, "utf8");
+        return /trigger:\s*"manual"/.test(src) || /\bmanualFolderId\s*:/.test(src);
+      })
+      .map((f) => f.slice(root.length + 1));
+
+    expect(
+      callers,
+      "these files hand decideFolder a manual move. Its manual rung refuses a " +
+        "paused destination, which performMove (the real path 9) does not — so " +
+        "the two now disagree. Assert the refusal here as a path-9 contract and " +
+        "retire this scan",
+    ).toEqual([]);
   });
 });
 

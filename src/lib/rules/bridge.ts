@@ -19,7 +19,7 @@
 import { applyFilter, type EmailForFilter } from "../sync/filter-engine";
 import type { AccountContext } from "../sync/account-context";
 import type { Folder } from "../sync/types";
-import { toEngineFolder, toGuardrails, toPins, toRules } from "./adapt";
+import { toCalendarGuardrails, toEngineFolder, toGuardrails, toPins, toRules } from "./adapt";
 import { evaluate } from "./evaluate";
 import { evaluateRule } from "./resolve";
 import type {
@@ -92,7 +92,10 @@ export function buildEvaluateContext(
     folders: context.folders.map(toEngineFolder),
     rules,
     pins: pinsForMessage(m, context, rules),
-    guardrails: toGuardrails(context.filters),
+    guardrails: [
+      ...toGuardrails(context.filters),
+      ...toCalendarGuardrails(context.folders, context),
+    ],
     threadDecision: opts.threadDecision ?? null,
     threadMessages: (opts.threadEmails ?? []) as EngineMessage[],
   };

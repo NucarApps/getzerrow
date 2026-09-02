@@ -99,6 +99,48 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "assertAdmin matches the JWT `email` claim against ADMIN_EMAILS without ever consulting `email_verified`, so an unverified identity that merely asserts an allowlisted address is granted the cross-tenant admin dashboard.",
     fixIn: "src/lib/admin.functions.ts — require claims.email_verified === true.",
   },
+  "replay-ignores-gmail-label-placement": {
+    what: "buildChangeSet evaluates every historical message with skipGmailLabelMatch:true, so the Gmail label mirror (stage 3) never runs. Mail the user filed by applying a label in Gmail — which the live pipeline files by label on every pass — reads as unexplained, is proposed for a move to the Inbox, and is not even flagged requires_review, so Apply All (planner-apply applyMoves) would carry it out.",
+    fixIn:
+      "src/lib/rules/replay.ts — run the label mirror during replay, or mark label-filed mail locked.",
+  },
+  "rfc2047-headers-not-decoded": {
+    what: "parseMessage stores From display names and Subjects exactly as Gmail returns them, so an RFC 2047 encoded-word header reaches the inbox list and the classifier's `from`/`subject` fields as raw =?UTF-8?B?…?= text. Any sender or subject with a non-ASCII character is unreadable in the UI and unmatchable by a rule written against the real name.",
+    fixIn: "src/lib/gmail.server.ts — decode encoded words in parseMessage's header reader.",
+  },
+  "has-attachment-counts-inline-images": {
+    what: "parseMessage's has_attachment is a bare filename walk over payload.parts, so an inline logo under multipart/related — which nearly every marketing email carries — sets it. The paperclip in the message list is showing the sender's logo, not a document, and a `has_attachment` folder rule fires on newsletters.",
+    fixIn:
+      "src/lib/gmail.server.ts — skip parts whose Content-Disposition is inline, or that are referenced by a cid: in the HTML.",
+  },
+  "backoff-nan-below-table-floor": {
+    what: "computeBackoffSeconds' terminal branch indexes BACKOFF_SECONDS with nextAttempt - 1 and clamps only the top of the range, so nextAttempt 0 reads table[-1] === undefined and jitter returns NaN. run-jobs writes `Date.now() + seconds * 1000` into next_run_at, so a NaN there becomes an invalid timestamp on the queue row.",
+    fixIn: "src/lib/sync/backoff.ts — clamp the index to 0 as well as to the table length.",
+  },
+  "engine-tree-rule-has-no-age": {
+    what: "folders.filter_tree is a JSON column with no authoring timestamp, so adapt.toRules stamps a tree rule with the epoch. The v2 ladder's last-resort tiebreak is 'the older rule wins', so a tree rule silently out-ages every real folder_filters rule at the same level.",
+    fixIn:
+      "src/lib/rules/adapt.ts — carry a real created_at once Phase D moves trees into the rules table.",
+  },
+  "ingest-drops-non-header-filter-fields": {
+    what: "classifyIngestedMessage builds its EmailForFilter without cc, list_id or in_reply_to, so a folder rule on cc / list_id / is_reply fires on the arrival path but silently never fires on either Gmail ingest path (searchGmailAndIngest, scanGmailForFolder).",
+    fixIn: "src/lib/gmail/ingest-classify.ts — carry the fields through IngestCandidate.",
+  },
+  "rule-preview-domain-ignores-op": {
+    what: "applySimpleRulePredicate's domain/origin_domain branch drops the operator and always builds `%@value%`. `equals` therefore counts any address whose text contains `@value` (including a relayed header whose real sender is a different domain), and `contains` misses a subdomain sender that the engine's emailDomain() match finds. The preview count and the mail that actually gets filed disagree.",
+    fixIn:
+      "src/lib/gmail/rule-query.ts — honour the op for domain fields the way the subject branch does.",
+  },
+  "rule-preview-from-equals-is-substring": {
+    what: "The preview's `from` branch has no `equals` arm, so an 'is exactly' rule previews as a substring match. The engine is wrong the other way: applyFilter's `from` field is `from_addr + ' ' + from_name`, so `equals` compares against a string with a trailing space and can never match a bare address.",
+    fixIn:
+      "src/lib/gmail/rule-query.ts and src/lib/sync/filter-engine.ts — give `from` an equals arm on the address alone.",
+  },
+  "rule-preview-from-ignores-display-name": {
+    what: "applyFilter's `from` field concatenates the display name, so `from contains acme` fires on 'Acme Support <noreply@vendor.test>'. The preview only ILIKEs from_addr and cannot reproduce it — from_name is stored encrypted, so there is no column to search.",
+    fixIn:
+      "src/lib/sync/filter-engine.ts — match `from` on the address only, or add a searchable name column.",
+  },
   "reports-topsenders-address-only": {
     what: "getInboxReport never selects a sender display name, so parseSender's name branch is dead and topSenders can only ever show an address. There is no plaintext from_name column — only from_name_enc — so the fix is a decrypt pass over the window, not a wider select.",
     fixIn: "src/lib/reports.functions.ts — resolve display names via the decrypt reader.",
