@@ -40,10 +40,6 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     fixIn:
       "src/lib/gmail/domain.functions.ts — write the rule after the moves succeed, or roll it back.",
   },
-  "escape-html-quote-and-idempotence": {
-    what: "escapeHtml leaves ' unescaped (unsafe inside single-quoted attributes) and is not idempotent — escaping twice double-escapes the entities.",
-    fixIn: "src/lib/escape-html.ts",
-  },
   "folder-chat-skips-conflict-check": {
     what: "applyFolderChanges inserts folder_filters directly without calling checkRuleConflicts, so a rule created from chat can silently shadow an existing one — the rules editor warns.",
     fixIn: "src/lib/folder-chat.functions.ts — run checkRuleConflicts before inserting.",
