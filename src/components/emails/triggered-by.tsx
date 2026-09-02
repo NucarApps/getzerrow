@@ -1,6 +1,5 @@
 import { useMemo } from "react";
-import { emailDomain } from "@/lib/company-domains";
-import { collectMatchingLeaves } from "@/lib/sync/filter-engine";
+import { collectMatchingLeaves, matchesLeaf, EXCLUDE_OPS } from "@/lib/sync/filter-engine";
 import type { RuleNode } from "@/lib/sync/types";
 
 function opLabel(op: string) {
@@ -15,61 +14,6 @@ function opLabel(op: string) {
   };
   return m[op] ?? op;
 }
-
-// Mirror of applyFilter in src/lib/sync.server.ts — keep in sync.
-function applyFilterClient(
-  email: {
-    from_addr: string | null;
-    from_name: string | null;
-    to_addrs: string | null;
-    subject: string | null;
-    body_text?: string | null;
-    has_attachment: boolean;
-  },
-  f: { field: string; op: string; value: string },
-): boolean {
-  const v = (f.value || "").toLowerCase();
-  const fieldVal = (() => {
-    switch (f.field) {
-      case "from":
-        return `${email.from_addr ?? ""} ${email.from_name ?? ""}`.toLowerCase();
-      case "to":
-        return (email.to_addrs ?? "").toLowerCase();
-      case "subject":
-        return (email.subject ?? "").toLowerCase();
-      case "body":
-        return (email.body_text ?? "").toLowerCase();
-      case "domain":
-        // Mirrors filter-engine's `domain` field exactly, or this explanation
-        // disagrees with what actually matched.
-        return emailDomain(email.from_addr) ?? "";
-      case "has_attachment":
-        return email.has_attachment ? "true" : "false";
-      default:
-        return "";
-    }
-  })();
-  switch (f.op) {
-    case "contains":
-      return fieldVal.includes(v);
-    case "equals":
-      return fieldVal === v;
-    case "not_contains":
-      return !fieldVal.includes(v);
-    case "not_equals":
-      return fieldVal !== v;
-    case "regex":
-      try {
-        return new RegExp(f.value, "i").test(fieldVal);
-      } catch {
-        return false;
-      }
-    default:
-      return false;
-  }
-}
-
-const EXCLUDE_OPS_CLIENT = new Set(["not_contains", "not_equals"]);
 
 type TriggeredByEmail = {
   from_addr: string | null;
@@ -132,8 +76,8 @@ export function TriggeredBy({
       }
     }
     // Legacy email: recompute the matching includes client-side.
-    const includes = filters.filter((f) => !EXCLUDE_OPS_CLIENT.has(f.op));
-    return { matched: includes.filter((f) => applyFilterClient(email, f)), rulesChanged: false };
+    const includes = filters.filter((f) => !EXCLUDE_OPS.has(f.op));
+    return { matched: includes.filter((f) => matchesLeaf(email, f)), rulesChanged: false };
   }, [by, email, filters, folder]);
 
   if (by === "filter" || by === "domain_rule") {

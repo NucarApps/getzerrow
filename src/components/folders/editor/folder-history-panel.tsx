@@ -1,3 +1,4 @@
+import { matchesLeaf } from "@/lib/sync/filter-engine";
 import { useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -416,32 +417,22 @@ function ReasonBlock({
   );
 }
 
+/** Which of a folder's rules explains this message. Delegates to the
+ * engine's own leaf matcher so the explanation cannot disagree with what
+ * actually filed the mail; `snippet` stands in for the body, which the
+ * history panel does not load. */
 function matchFilter(email: HistoryEmail, filters: Filter[]): Filter | null {
   for (const f of filters) {
-    const value = (f.value || "").toLowerCase();
-    if (!value) continue;
-    const target = (() => {
-      switch (f.field) {
-        case "from":
-          return (email.from_addr || "") + " " + (email.from_name || "");
-        case "subject":
-          return email.subject || "";
-        case "snippet":
-        case "body":
-          return email.snippet || "";
-        default:
-          return "";
-      }
-    })().toLowerCase();
-    const op = f.op || "contains";
-    const hit =
-      op === "equals"
-        ? target === value
-        : op === "starts_with"
-          ? target.startsWith(value)
-          : op === "ends_with"
-            ? target.endsWith(value)
-            : target.includes(value);
+    if (!f.value) continue;
+    const hit = matchesLeaf(
+      {
+        from_addr: email.from_addr ?? "",
+        from_name: email.from_name ?? "",
+        subject: email.subject ?? "",
+        body_text: email.snippet ?? "",
+      },
+      { field: f.field === "snippet" ? "body" : f.field, op: f.op || "contains", value: f.value },
+    );
     if (hit) return f;
   }
   return null;

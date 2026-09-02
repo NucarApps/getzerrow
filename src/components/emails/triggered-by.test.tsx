@@ -99,6 +99,41 @@ describe("TriggeredBy", () => {
     expect(screen.queryByText('"spam"')).not.toBeInTheDocument();
   });
 
+  it.each([
+    ["starts_with", "subject", "Your receipt"],
+    ["ends_with", "subject", "receipt"],
+  ])("recomputes a legacy match for a %s rule the engine supports", (op, field, value) => {
+    // The client used to carry its own copy of the matcher, which knew
+    // neither starts_with/ends_with nor domain_in — so mail filed by those
+    // rules showed the "couldn't pinpoint" fallback instead of its rule.
+    render(
+      <TriggeredBy
+        classifiedBy="filter"
+        reason={null}
+        folder={folder}
+        filters={[{ id: "flt-1", field, op, value }]}
+        email={email({ matched_filter_ids: null })}
+      />,
+    );
+    expect(screen.getByText("Rule that matched")).toBeInTheDocument();
+    expect(screen.getByText(`"${value}"`)).toBeInTheDocument();
+    // Not the "showing all rules" fallback: the rule was pinpointed.
+    expect(screen.queryByText(/Couldn't pinpoint the exact rule/)).not.toBeInTheDocument();
+  });
+
+  it("skips domain_in when recomputing: it is an allowlist veto, never an include", () => {
+    render(
+      <TriggeredBy
+        classifiedBy="filter"
+        reason={null}
+        folder={folder}
+        filters={[{ id: "flt-1", field: "domain", op: "domain_in", value: "netflix.com" }]}
+        email={email({ matched_filter_ids: null })}
+      />,
+    );
+    expect(screen.getByText(/Couldn't pinpoint the exact rule/)).toBeInTheDocument();
+  });
+
   it("renders the folder AI prompt and reasoning for ai, and a fallback when unclassified", () => {
     const { rerender } = render(
       <TriggeredBy

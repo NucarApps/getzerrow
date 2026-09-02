@@ -157,6 +157,31 @@ export function parseDomainList(value: string): Set<string> {
 // not_equals veto when their positive condition holds.
 export const EXCLUDE_OPS = new Set(["not_contains", "not_equals", "domain_in"]);
 
+/**
+ * Evaluate one rule leaf against a partially-known email — the shape the UI
+ * has when it explains why a message was filed.
+ *
+ * The UI used to carry its own copies of this switch (two of them), which
+ * drifted: neither implemented starts_with / ends_with / domain_in, so mail
+ * filed by those rules showed "couldn't pinpoint" instead of its rule. Any
+ * field the caller does not know reads as empty, exactly as it does here.
+ */
+export function matchesLeaf(
+  email: { [K in keyof EmailForFilter]?: EmailForFilter[K] | null },
+  leaf: { field: string; op: string; value: string },
+): boolean {
+  const full: EmailForFilter = {
+    ...(email as Partial<EmailForFilter>),
+    from_addr: email.from_addr ?? "",
+    from_name: email.from_name ?? "",
+    to_addrs: email.to_addrs ?? "",
+    subject: email.subject ?? "",
+    body_text: email.body_text ?? "",
+    has_attachment: email.has_attachment ?? false,
+  };
+  return applyFilter(full, { id: "", folder_id: "", ...leaf });
+}
+
 /** Whether an exclude-op filter vetoes this email for its folder. The veto
  * fires when: the field CONTAINS a not_contains value, EQUALS a not_equals
  * value, or the domain is OUTSIDE a domain_in allowlist. */
