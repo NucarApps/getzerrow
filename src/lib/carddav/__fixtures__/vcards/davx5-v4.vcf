@@ -1,0 +1,16 @@
+BEGIN:VCARD
+VERSION:4.0
+PRODID:-//dmfs.org//mimedir.vcard//EN
+UID:3c7d0e1f-4a5b-4c6d-8e9f-2a3b4c5d6e7f
+FN:Jordan Baker
+N:Baker;Jordan;;;
+ORG:Northwind Traders
+TITLE:Logistics Lead
+EMAIL;TYPE=work;PREF=1:Jordan.Baker@Northwind.example
+TEL;VALUE=uri;TYPE=cell;PREF=1:tel:+15550101234
+TEL;VALUE=uri;TYPE=work:tel:+15550109999
+ADR;TYPE=work:;;12 Harbour Rd;Portland;OR;97205;USA
+URL:https://northwind.example
+NOTE:Ships out of the Portland depot.
+REV:20260703T093000Z
+END:VCARD

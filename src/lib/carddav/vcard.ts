@@ -478,6 +478,17 @@ function parseLine(raw: string): ParsedLine | null {
   return { name, params, value };
 }
 
+/** vCard 4.0 (DAVx5, Thunderbird, Google's exporter) writes phone numbers as
+ * RFC 3966 URIs: `TEL;VALUE=uri:tel:+15551234567;ext=99`. Everything
+ * downstream — the contact drawer, the Google People push, `phoneKey` — wants
+ * the dialable string, so peel the scheme and any URI parameters off. A plain
+ * 3.0 number passes through untouched. */
+function stripTelUri(raw: string): string {
+  const trimmed = raw.trim();
+  if (!/^tel:/i.test(trimmed)) return trimmed;
+  return (trimmed.slice(4).split(";")[0] ?? "").trim();
+}
+
 function phoneLabelFromTypes(types: string[]): string {
   const set = new Set(types.map((t) => t.toUpperCase()));
   if (set.has("CELL") || set.has("MOBILE") || set.has("IPHONE")) return "Mobile";
@@ -581,7 +592,7 @@ export function parseVCard(text: string): ParsedVCard | null {
       }
 
       case "TEL": {
-        const num = v.trim();
+        const num = stripTelUri(v);
         if (!num) break;
         out.presentFields.add("TEL");
         const types = p.params.TYPE ?? [];

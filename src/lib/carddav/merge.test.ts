@@ -100,4 +100,98 @@ describe("buildCardDavContactPatch", () => {
     expect(merge.patch).not.toHaveProperty("email");
     expect(merge.emailDecision).toBe("blank_preserved_existing");
   });
+
+  it("writes an explicit null for a blank EMAIL on a brand-new contact", () => {
+    // There is nothing to preserve on a create, so the blank must be carried
+    // through as NULL rather than left absent — the insert would otherwise
+    // rely on a column default that does not exist.
+    const parsed = parsedCard(
+      "BEGIN:VCARD\r\n" +
+        "VERSION:3.0\r\n" +
+        "UID:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\r\n" +
+        "FN:Brand New\r\n" +
+        "EMAIL;TYPE=INTERNET:\r\n" +
+        "END:VCARD\r\n",
+    );
+    parsed.presentFields.add("EMAIL");
+
+    const merge = buildCardDavContactPatch({ userId, existing: null, parsed, nowIso });
+
+    expect(merge.patch.email).toBeNull();
+    expect(merge.emailDecision).toBe("blank_new_contact");
+    expect(merge.preservedEmailOverBlank).toBe(false);
+  });
+
+  it("nulls the email on a create that carried no EMAIL line at all", () => {
+    const parsed = parsedCard(
+      "BEGIN:VCARD\r\n" +
+        "VERSION:3.0\r\n" +
+        "UID:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\r\n" +
+        "FN:Brand New\r\n" +
+        "END:VCARD\r\n",
+    );
+
+    const merge = buildCardDavContactPatch({ userId, existing: null, parsed, nowIso });
+
+    expect(merge.patch.email).toBeNull();
+    expect(merge.emailDecision).toBe("missing_new_contact");
+  });
+
+  it("keeps the existing source and only carries the properties the card sent", () => {
+    // A CardDAV edit of a Google-sourced contact must not relabel it as
+    // carddav-sourced, and a partial card must not blank the fields it
+    // omitted — that is the whole reason the patch is keyed on presentFields.
+    const parsed = parsedCard(
+      "BEGIN:VCARD\r\n" +
+        "VERSION:3.0\r\n" +
+        "UID:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\r\n" +
+        "FN:Chanell Dagesse\r\n" +
+        "ORG:Acme Rockets\r\n" +
+        "TITLE:Chief Pyrotechnician\r\n" +
+        "END:VCARD\r\n",
+    );
+
+    const merge = buildCardDavContactPatch({
+      userId,
+      existing: { email: "chanelldagesse@gmail.com", source: "google" },
+      parsed,
+      nowIso,
+    });
+
+    expect(merge.patch).toStrictEqual({
+      user_id: userId,
+      source: "google",
+      updated_at: nowIso,
+      name: "Chanell Dagesse",
+      company: "Acme Rockets",
+      title: "Chief Pyrotechnician",
+    });
+  });
+
+  it("stamps source=carddav for a contact the phone created", () => {
+    const parsed = parsedCard(
+      "BEGIN:VCARD\r\n" +
+        "VERSION:3.0\r\n" +
+        "UID:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\r\n" +
+        "FN:Brand New\r\n" +
+        "ADR;TYPE=WORK:;;12 Elm St;Springfield;IL;62704;USA\r\n" +
+        "END:VCARD\r\n",
+    );
+
+    const merge = buildCardDavContactPatch({ userId, existing: null, parsed, nowIso });
+
+    expect(merge.patch).toStrictEqual({
+      user_id: userId,
+      source: "carddav",
+      updated_at: nowIso,
+      email: null,
+      name: "Brand New",
+      // ADR contributes only the plaintext components; the street lines are
+      // encrypted and handled separately by the PUT handler.
+      city: "Springfield",
+      region: "IL",
+      postal_code: "62704",
+      country: "USA",
+    });
+  });
 });

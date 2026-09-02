@@ -261,57 +261,10 @@ describe("buildKnownCompanyLogoShaSet", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Regression: photos saved via the iPhone (CardDAV PUT) survive as real
-// photos. Enforced by two contracts:
-//   1. handlers.server.ts persists surviving PUT photos with
-//      source="user_upload" (not "carddav") — the PUT-side logo-echo guards
-//      are what keep pushed company logos from being stored at all.
-//   2. crud.functions.ts self-heal is HASH-GATED, not source-exempted: a
-//      stored photo is cleared only when its bytes exactly match a known
-//      company logo (an echo by definition). Genuine portraits never match,
-//      so they are never wiped — while echoes that slipped through older
-//      PUT handling get healed even though they carry a user-chosen source
-//      label.
-// A behavioural end-to-end test would require stubbing the full CardDAV +
-// Supabase stack; asserting the two source contracts is cheaper and prevents
-// silent regressions.
-// ---------------------------------------------------------------------------
-
-describe("iPhone photo save is treated as authoritative", () => {
-  it('PUT handler saves surviving photos with source="user_upload"', async () => {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const src = await fs.readFile(
-      path.resolve(process.cwd(), "src/lib/carddav/handlers.server.ts"),
-      "utf8",
-    );
-    // Exactly one saveContactPhoto call in the PUT photo branch, and it
-    // must use "user_upload".
-    const saveCalls = [...src.matchAll(/saveContactPhoto\([^)]*\)/g)].map((m) => m[0]);
-    expect(saveCalls.length).toBeGreaterThan(0);
-    for (const call of saveCalls) {
-      expect(call).toContain('"user_upload"');
-      expect(call).not.toContain('"carddav"');
-    }
-  });
-
-  it("getContact self-heal is hash-gated, not source-exempted", async () => {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const src = await fs.readFile(
-      path.resolve(process.cwd(), "src/lib/contacts/crud.functions.ts"),
-      "utf8",
-    );
-    // The old guard skipped self-heal for "user-chosen" sources, which froze
-    // iOS logo echoes forever (they arrive stamped user_upload/carddav). The
-    // protection for real portraits is the exact-byte-match gate instead: a
-    // photo is only ever cleared when its bytes equal a known company logo.
-    expect(src).not.toMatch(/avatarSource === "user_upload"/);
-    expect(src).not.toMatch(/avatarSource === "carddav"/);
-    expect(src).toMatch(/matchedSha !== null/);
-    // Cross-company fallback: user-wide recorded logo hashes catch snapshots
-    // of a previous employer's logo.
-    expect(src).toMatch(/getKnownCompanyLogoHashes\(userId\)/);
-  });
-});
+// The regression these primitives protect — an iPhone-chosen photo surviving
+// as a real photo rather than reverting a minute later — is now covered
+// behaviourally in handlers.put-delete.test.ts ("PUT PHOTO"), which drives
+// handlePut and asserts the saveContactPhoto call carries source="user_upload"
+// plus every skip branch of the echo ladder. The source-grep contracts that
+// used to stand in for it (including the crud.functions.ts self-heal gate,
+// which belongs with that module's own tests) are gone.

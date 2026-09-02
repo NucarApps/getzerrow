@@ -1,0 +1,15 @@
+BEGIN:VCARD
+VERSION:4.0
+PRODID:-//Mozilla.org//Thunderbird 128.0//EN
+UID:4d8e1f2a-5b6c-4d7e-8f9a-3b4c5d6e7f80
+KIND:individual
+FN:Priya Raman
+N:Raman;Priya;;;
+ORG:Cedar Analytics
+EMAIL;PREF=1:priya@cedar.example
+EMAIL;TYPE=home:praman@personal.example
+TEL;TYPE=work:+1 555 010 7777
+ADR;TYPE=home;LABEL="88 Cedar Ave\nBoulder CO 80301 USA":;;88 Cedar Ave;Boulder;CO;80301;USA
+NOTE:Prefers email over calls.
+REV:20260704T120000Z
+END:VCARD

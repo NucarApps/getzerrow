@@ -1,0 +1,21 @@
+BEGIN:VCARD
+VERSION:3.0
+PRODID:-//Apple Inc.//iPhone OS 17.5.1//EN
+N:Roy;Erica;;;
+FN:Erica Roy
+ORG:Acme Rockets;
+TITLE:Chief Pyrotechnician
+item1.EMAIL;type=INTERNET;type=WORK;type=pref:Erica.Roy@Acme.example
+item1.X-ABLabel:_$!<Work>!$_
+EMAIL;type=INTERNET;type=HOME:erica@home.example
+TEL;type=CELL;type=VOICE;type=pref:+1 (555) 010-1234
+TEL;type=WORK;type=VOICE:+1 (555) 010-9876
+item2.ADR;type=WORK;type=pref:;;500 Rocket Way\nSuite 4;Springfield;IL;62704;USA
+item2.X-ABADR:us
+URL;type=pref:https://acme.example
+NOTE:Met at the launch.
+CATEGORIES:Clients
+X-ABUID:9C1B2E44-3F0A-4E2C-9F1D-5A7B0C3D8E11:ABPerson
+UID:1a5b8c9d-2e3f-4a5b-8c9d-0e1f2a3b4c5d
+REV:2026-07-01T10:00:00Z
+END:VCARD

@@ -101,19 +101,7 @@ describe("decideIncomingPhoto", () => {
   });
 });
 
-// The PUT handler must no longer consult the user-wide or company-wide logo
-// hash sets — that scope is exactly what ate user-chosen photos. Grep
-// contract, same style as the source checks in photo-echo.test.ts.
-describe("PUT handler scope contract", () => {
-  it("handlers.server.ts does not use the broad logo-sha sets in the PUT path", async () => {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const src = await fs.readFile(
-      path.resolve(process.cwd(), "src/lib/carddav/handlers.server.ts"),
-      "utf8",
-    );
-    expect(src).not.toContain("buildKnownCompanyLogoShaSet");
-    expect(src).not.toContain("getKnownCompanyLogoHashes");
-    expect(src).toContain("decideIncomingPhoto");
-  });
-});
+// The behavioural counterpart — that the PUT handler only ever skips on a
+// SHA attributable to this contact, and saves anything else as a user
+// upload — lives in handlers.put-delete.test.ts ("PUT PHOTO"), which drives
+// the real handler instead of grepping its source.
