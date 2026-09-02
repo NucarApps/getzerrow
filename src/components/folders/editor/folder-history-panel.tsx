@@ -1,4 +1,3 @@
-import { matchesLeaf } from "@/lib/sync/filter-engine";
 import { useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,17 +14,25 @@ import { Bot, Hand, Filter as FilterIcon, Tag, Inbox, ChevronDown, MoveRight } f
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import type { Folder, Filter, HistoryEmail } from "./types";
+import {
+  describeReason,
+  getReasonMeta,
+  relativeTime,
+  type ReasonExplanation,
+  type ReasonTone,
+} from "@/lib/ui/folder-history";
 
-type ReasonTone = "ai" | "manual" | "rule" | "label" | "muted";
-const noneReason = { label: "Imported", tone: "muted" as ReasonTone, Icon: Inbox };
-const reasonMeta: Record<string, { label: string; tone: ReasonTone; Icon: typeof Bot }> = {
-  ai: { label: "AI", tone: "ai", Icon: Bot },
-  manual_move: { label: "Manual", tone: "manual", Icon: Hand },
-  filter: { label: "Rule", tone: "rule", Icon: FilterIcon },
-  domain_rule: { label: "Domain rule", tone: "rule", Icon: FilterIcon },
-  gmail_label: { label: "Gmail label", tone: "label", Icon: Tag },
-  surfaced_to_inbox: { label: "Surfaced", tone: "label", Icon: Inbox },
-  none: noneReason,
+// Own-property lookups only: a plain record answers "constructor" (and the
+// rest of Object.prototype) with an inherited value, and React would try to
+// render it as the badge icon.
+const REASON_ICON: Record<string, typeof Bot> = {
+  ai: Bot,
+  manual_move: Hand,
+  filter: FilterIcon,
+  domain_rule: FilterIcon,
+  gmail_label: Tag,
+  surfaced_to_inbox: Inbox,
+  none: Inbox,
 };
 const toneClass: Record<ReasonTone, string> = {
   ai: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 border-indigo-500/20",
@@ -35,22 +42,11 @@ const toneClass: Record<ReasonTone, string> = {
   muted: "bg-muted/60 text-muted-foreground border-border",
 };
 
-function getReasonMeta(by: string | null | undefined) {
-  return reasonMeta[by ?? "none"] ?? noneReason;
-}
-
-function relativeTime(iso: string | null) {
-  if (!iso) return "";
-  const d = new Date(iso).getTime();
-  const diff = Date.now() - d;
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const days = Math.floor(h / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
+/** The icon key, never the icon itself — resolving the component inline at
+ * the use site keeps it out of the "component created during render" trap. */
+function reasonIconKey(by: string | null | undefined): string {
+  const key = by ?? "none";
+  return Object.hasOwn(REASON_ICON, key) ? key : "none";
 }
 
 type SuggestionResult = Awaited<
@@ -175,7 +171,7 @@ export function HistoryPanel({
         const isActive = activeEmail === e.id;
         const meta = getReasonMeta(e.classified_by);
         const conf = e.ai_confidence != null ? Math.round(e.ai_confidence * 100) : null;
-        const ReasonIcon = meta.Icon;
+        const ReasonIcon = REASON_ICON[reasonIconKey(e.classified_by)] ?? Inbox;
         return (
           <div key={e.id} className="overflow-hidden rounded-md border border-border bg-card/40">
             <button
@@ -193,7 +189,7 @@ export function HistoryPanel({
                 <div className="truncate text-sm font-medium">{e.subject || "(no subject)"}</div>
                 <div className="truncate text-xs text-muted-foreground">
                   <span>{e.from_name || e.from_addr || "Unknown"}</span>
-                  {e.received_at && <span> · {relativeTime(e.received_at)}</span>}
+                  {e.received_at && <span> · {relativeTime(e.received_at, Date.now())}</span>}
                 </div>
               </div>
               <span
@@ -356,55 +352,8 @@ function ReasonBlock({
   folderName: string;
   filters: Filter[];
 }) {
-  const by = email.classified_by ?? "none";
-  const meta = getReasonMeta(by);
-  const Icon = meta.Icon;
-
-  let title: string;
-  let body: ReactNode;
-
-  if (by === "ai") {
-    const conf = email.ai_confidence != null ? Math.round(email.ai_confidence * 100) : null;
-    title = `Classified by AI${conf != null ? ` · ${conf}% confidence` : ""}`;
-    body = email.ai_summary ? (
-      <blockquote className="border-l-2 border-indigo-500/40 pl-3 italic text-foreground/80">
-        "{email.ai_summary}"
-      </blockquote>
-    ) : (
-      <span className="text-muted-foreground italic">No reason recorded.</span>
-    );
-  } else if (by === "manual_move") {
-    title = "Moved here manually";
-    body = (
-      <span className="text-muted-foreground">
-        You (or a connected Gmail action) moved this email into{" "}
-        <span className="font-medium text-foreground">{folderName}</span>.
-      </span>
-    );
-  } else if (by === "filter" || by === "domain_rule") {
-    const matched = matchFilter(email, filters);
-    title = by === "domain_rule" ? "Matched a domain rule" : "Matched a folder rule";
-    body = matched ? (
-      <span>
-        Matched{" "}
-        <code className="rounded bg-muted px-1 py-0.5 text-xs">
-          {matched.field} {matched.op} "{matched.value}"
-        </code>
-      </span>
-    ) : (
-      <span className="text-muted-foreground">Matched one of this folder's rules.</span>
-    );
-  } else if (by === "gmail_label") {
-    title = "Imported from Gmail label";
-    body = (
-      <span className="text-muted-foreground">
-        This email already had the matching Gmail label when it was synced.
-      </span>
-    );
-  } else {
-    title = "Imported with this folder";
-    body = <span className="text-muted-foreground">No classifier ran on this email yet.</span>;
-  }
+  const Icon = REASON_ICON[reasonIconKey(email.classified_by)] ?? Inbox;
+  const { title, body } = describeReason(email, filters);
 
   return (
     <div className="rounded-md border border-border bg-background p-3 text-sm">
@@ -412,30 +361,48 @@ function ReasonBlock({
         <Icon className="h-3.5 w-3.5" />
         {title}
       </div>
-      <div className="mt-1.5">{body}</div>
+      <div className="mt-1.5">{reasonBody(body, folderName)}</div>
     </div>
   );
 }
 
-/** Which of a folder's rules explains this message. Delegates to the
- * engine's own leaf matcher so the explanation cannot disagree with what
- * actually filed the mail; `snippet` stands in for the body, which the
- * history panel does not load. */
-function matchFilter(email: HistoryEmail, filters: Filter[]): Filter | null {
-  for (const f of filters) {
-    if (!f.value) continue;
-    const hit = matchesLeaf(
-      {
-        from_addr: email.from_addr ?? "",
-        from_name: email.from_name ?? "",
-        subject: email.subject ?? "",
-        body_text: email.snippet ?? "",
-      },
-      { field: f.field === "snippet" ? "body" : f.field, op: f.op || "contains", value: f.value },
-    );
-    if (hit) return f;
+function reasonBody(body: ReasonExplanation["body"], folderName: string): ReactNode {
+  switch (body.kind) {
+    case "ai_summary":
+      return (
+        <blockquote className="border-l-2 border-indigo-500/40 pl-3 italic text-foreground/80">
+          "{body.summary}"
+        </blockquote>
+      );
+    case "ai_no_reason":
+      return <span className="text-muted-foreground italic">No reason recorded.</span>;
+    case "manual":
+      return (
+        <span className="text-muted-foreground">
+          You (or a connected Gmail action) moved this email into{" "}
+          <span className="font-medium text-foreground">{folderName}</span>.
+        </span>
+      );
+    case "rule_matched":
+      return (
+        <span>
+          Matched{" "}
+          <code className="rounded bg-muted px-1 py-0.5 text-xs">
+            {body.filter.field} {body.filter.op} "{body.filter.value}"
+          </code>
+        </span>
+      );
+    case "rule_unnamed":
+      return <span className="text-muted-foreground">Matched one of this folder's rules.</span>;
+    case "gmail_label":
+      return (
+        <span className="text-muted-foreground">
+          This email already had the matching Gmail label when it was synced.
+        </span>
+      );
+    case "imported":
+      return <span className="text-muted-foreground">No classifier ran on this email yet.</span>;
   }
-  return null;
 }
 
 function RulePatchCard({

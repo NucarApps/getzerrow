@@ -141,6 +141,14 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     fixIn:
       "src/lib/sync/filter-engine.ts — match `from` on the address only, or add a searchable name column.",
   },
+  "folder-history-reports-exclude-rule": {
+    what: "The folder history panel explains a filed email with the first folder rule whose leaf evaluates true, without partitioning includes from excludes the way the engine does. An exclude-op rule (not_contains / not_equals / domain_in) evaluates true for exactly the mail it does NOT veto, so a veto rule is routinely named as the rule that filed the email, ahead of the include rule that actually did.",
+    fixIn: "src/lib/ui/folder-history.ts — skip filter-engine's EXCLUDE_OPS in matchFilter.",
+  },
+  "folder-history-surfaced-reason-blank": {
+    what: "An email stamped classified_by=surfaced_to_inbox gets a 'Surfaced' badge, but describeReason has no branch for it and falls through to 'Imported with this folder / No classifier ran on this email yet'. The panel contradicts its own badge, and the surface check that filed the mail is never explained.",
+    fixIn: "src/lib/ui/folder-history.ts — give describeReason a surfaced_to_inbox branch.",
+  },
   "reports-topsenders-address-only": {
     what: "getInboxReport never selects a sender display name, so parseSender's name branch is dead and topSenders can only ever show an address. There is no plaintext from_name column — only from_name_enc — so the fix is a decrypt pass over the window, not a wider select.",
     fixIn: "src/lib/reports.functions.ts — resolve display names via the decrypt reader.",
