@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { fmtLatency, latencyTone, LATENCY_TONE_CLASS, computeStaleness } from "./latency-format";
+import { derivePubsubHealth, type PubsubHealth } from "@/lib/ui/pubsub-health";
 
 type Filter = "all" | "push" | "poll" | "errors" | "watch_renew";
 type AlertKind = "danger" | "warn" | "success" | "info";
@@ -248,15 +249,12 @@ type HealthState = {
 // Types derived from the listPubsubEvents server function payload so the
 // health/diagnostics UI stays in sync with the actual query shape.
 type PubsubData = Awaited<ReturnType<typeof listPubsubEvents>>;
-type PubsubStats = PubsubData["stats"];
 type PubsubDiagnostics = PubsubData["diagnostics"] & {
   lastWebhookTest?: { received_at: string } | null;
   pendingJobs?: number;
   oldestPendingAt?: string | null;
   stuckJobs?: StuckJob[];
 };
-type PubsubPush = NonNullable<PubsubData["diagnostics"]["lastPush"]>;
-type PubsubRenew = NonNullable<PubsubData["diagnostics"]["lastWatchRenew"]>;
 type StuckJob = {
   id: string;
   subject?: string | null;
@@ -266,164 +264,129 @@ type StuckJob = {
   locked_at?: string;
 };
 
-function deriveHealth(args: {
-  stats: PubsubStats | undefined;
-  diag: PubsubDiagnostics | undefined;
-  lastPush: PubsubPush | null;
-  lastRenew: PubsubRenew | null;
-  watchActive: boolean;
-  webhookUrl: string | undefined;
-  pubsubTopic: string | undefined;
-  renewBtn: React.ReactNode;
-}): HealthState | null {
-  const { stats, lastPush, lastRenew, watchActive, webhookUrl, pubsubTopic, renewBtn } = args;
+// The ladder that decides WHICH alert to show lives in
+// `@/lib/ui/pubsub-health` so every rung and boundary is testable in node.
+// This function only turns the chosen rung into copy.
+function renderHealth(
+  health: PubsubHealth | null,
+  ctx: {
+    webhookUrl: string | undefined;
+    pubsubTopic: string | undefined;
+    renewBtn: React.ReactNode;
+  },
+): HealthState | null {
+  if (!health) return null;
+  const { webhookUrl, pubsubTopic, renewBtn } = ctx;
 
-  const lastPushMs = lastPush ? new Date(lastPush.received_at).getTime() : 0;
-  const lastRenewMs = lastRenew ? new Date(lastRenew.received_at).getTime() : 0;
-  const lastPushAgeMin = lastPush ? Math.floor((Date.now() - lastPushMs) / 60000) : null;
-  const lastPushStale =
-    lastPush && lastPushAgeMin !== null && (lastPushAgeMin >= 10 || lastPushMs < lastRenewMs);
+  switch (health.code) {
+    case "push-unmatched":
+      return {
+        kind: "danger",
+        title: "Push arrived but didn't match a connected account",
+        body: (
+          <>
+            Google delivered a Pub/Sub push, but the decoded{" "}
+            <span className="font-mono">emailAddress</span>
+            {health.emailAddress ? (
+              <>
+                {" "}
+                (<span className="font-mono">{health.emailAddress}</span>)
+              </>
+            ) : (
+              " was missing"
+            )}
+            . The Gmail watch is probably attached to a different topic than the subscription
+            forwarding here.
+          </>
+        ),
+        action: renewBtn,
+      };
 
-  // Severity order — first match wins.
+    case "watch-armed-no-push":
+      return {
+        kind: "danger",
+        title: "Watch is armed, but no real Google push has arrived",
+        body: (
+          <>
+            Watch re-armed {formatRelativeTime(health.renewedAt)} against{" "}
+            <span className="font-mono">{pubsubTopic ?? "(unset)"}</span>, but Google has not POSTed
+            a real <span className="font-mono">push</span> envelope since. The GCP Pub/Sub push
+            subscription is the likely broken piece — verify it POSTs to:
+            {webhookUrl && (
+              <div className="mt-1 font-mono break-all">
+                {webhookUrl} <CopyBtn value={webhookUrl} />
+              </div>
+            )}
+          </>
+        ),
+        action: renewBtn,
+      };
 
-  // RED: push received but didn't match an account.
-  if (
-    lastPush &&
-    !lastPushStale &&
-    lastPush.event_type === "push" &&
-    (lastPush.accounts_matched ?? 0) === 0
-  ) {
-    return {
-      kind: "danger",
-      title: "Push arrived but didn't match a connected account",
-      body: (
-        <>
-          Google delivered a Pub/Sub push, but the decoded{" "}
-          <span className="font-mono">emailAddress</span>
-          {lastPush.email_address ? (
-            <>
-              {" "}
-              (<span className="font-mono">{lastPush.email_address}</span>)
-            </>
-          ) : (
-            " was missing"
-          )}
-          . The Gmail watch is probably attached to a different topic than the subscription
-          forwarding here.
-        </>
-      ),
-      action: renewBtn,
-    };
+    case "no-push-24h":
+      return {
+        kind: "danger",
+        title: "Google is not pushing for your account",
+        body: (
+          <>
+            Zero pushes in the last 24h, but polling is filling the gap ({health.poll24} runs,{" "}
+            {health.synced24} synced). New mail arrives with a ~2 min delay. The GCP subscription is
+            most likely paused or pointed at the wrong URL.
+          </>
+        ),
+        action: renewBtn,
+      };
+
+    case "poll-stalled":
+      return {
+        kind: "warn",
+        title: `Fallback poll hasn't run in ${
+          health.pollSilentMin === null ? "24h+" : `${health.pollSilentMin}m`
+        }`,
+        body: (
+          <>
+            The 2-minute poll is your safety net for missed Gmail pushes. Push is working now, but
+            if it drops there's nothing catching it. The scheduled job that calls{" "}
+            <span className="font-mono">/api/public/gmail-poll</span> may be paused.
+          </>
+        ),
+      };
+
+    case "total-silence":
+      return {
+        kind: "warn",
+        title: "No sync activity in the last 24h",
+        body: (
+          <>
+            Neither push nor poll has fired. The cron job that calls{" "}
+            <span className="font-mono">/api/public/gmail-poll</span> may be paused.
+          </>
+        ),
+      };
+
+    case "push-healthy":
+      return {
+        kind: "success",
+        title: "Push is healthy",
+        body: (
+          <>
+            {health.push24} pushes in the last 24h, last one {formatRelativeTime(health.lastPushAt)}
+            . New mail is arriving in real time.
+          </>
+        ),
+      };
+
+    case "poll-fallback":
+      return {
+        kind: "info",
+        title: "Fallback poll is keeping mail flowing",
+        body: (
+          <>
+            {health.poll24} poll runs in the last 24h, {health.synced24} messages synced. Real-time
+            push is degraded so mail shows up with a small delay.
+          </>
+        ),
+      };
   }
-
-  // RED: watch armed but no real push since.
-  if (lastRenew && Date.now() - lastRenewMs > 60_000 && lastPushMs < lastRenewMs) {
-    return {
-      kind: "danger",
-      title: "Watch is armed, but no real Google push has arrived",
-      body: (
-        <>
-          Watch re-armed {formatRelativeTime(lastRenew.received_at)} against{" "}
-          <span className="font-mono">{pubsubTopic ?? "(unset)"}</span>, but Google has not POSTed a
-          real <span className="font-mono">push</span> envelope since. The GCP Pub/Sub push
-          subscription is the likely broken piece — verify it POSTs to:
-          {webhookUrl && (
-            <div className="mt-1 font-mono break-all">
-              {webhookUrl} <CopyBtn value={webhookUrl} />
-            </div>
-          )}
-        </>
-      ),
-      action: renewBtn,
-    };
-  }
-
-  // RED: 24h of zero push but watch active.
-  if (stats && stats.push24 === 0 && stats.poll24 > 0 && watchActive) {
-    return {
-      kind: "danger",
-      title: "Google is not pushing for your account",
-      body: (
-        <>
-          Zero pushes in the last 24h, but polling is filling the gap ({stats.poll24} runs,{" "}
-          {stats.synced24} synced). New mail arrives with a ~2 min delay. The GCP subscription is
-          most likely paused or pointed at the wrong URL.
-        </>
-      ),
-      action: renewBtn,
-    };
-  }
-
-  // AMBER: poll has stalled.
-  const lastPollMs = stats?.lastPollAt ? new Date(stats.lastPollAt).getTime() : 0;
-  const pollSilentMin = stats?.lastPollAt ? Math.floor((Date.now() - lastPollMs) / 60000) : null;
-  const pollStalled = (pollSilentMin === null || pollSilentMin >= 10) && (stats?.push24 ?? 0) > 0;
-  if (pollStalled) {
-    return {
-      kind: "warn",
-      title: `Fallback poll hasn't run in ${pollSilentMin === null ? "24h+" : `${pollSilentMin}m`}`,
-      body: (
-        <>
-          The 2-minute poll is your safety net for missed Gmail pushes. Push is working now, but if
-          it drops there's nothing catching it. The scheduled job that calls{" "}
-          <span className="font-mono">/api/public/gmail-poll</span> may be paused.
-        </>
-      ),
-    };
-  }
-
-  // AMBER: total silence.
-  if (stats && stats.push24 === 0 && stats.poll24 === 0) {
-    return {
-      kind: "warn",
-      title: "No sync activity in the last 24h",
-      body: (
-        <>
-          Neither push nor poll has fired. The cron job that calls{" "}
-          <span className="font-mono">/api/public/gmail-poll</span> may be paused.
-        </>
-      ),
-    };
-  }
-
-  // GREEN: push healthy.
-  const pushSilentMin = stats?.lastPushAt
-    ? Math.floor((Date.now() - new Date(stats.lastPushAt).getTime()) / 60000)
-    : null;
-  const pushHealthy =
-    stats &&
-    stats.push24 > 0 &&
-    stats.push24 - (stats.pushUnmatched24 ?? 0) > 0 &&
-    pushSilentMin !== null &&
-    pushSilentMin < 10;
-  if (pushHealthy) {
-    return {
-      kind: "success",
-      title: "Push is healthy",
-      body: (
-        <>
-          {stats.push24} pushes in the last 24h, last one {formatRelativeTime(stats.lastPushAt)}.
-          New mail is arriving in real time.
-        </>
-      ),
-    };
-  }
-
-  // INFO: poll keeping it alive.
-  if (stats && !pushHealthy && stats.poll24 > 0) {
-    return {
-      kind: "info",
-      title: "Fallback poll is keeping mail flowing",
-      body: (
-        <>
-          {stats.poll24} poll runs in the last 24h, {stats.synced24} messages synced. Real-time push
-          is degraded so mail shows up with a small delay.
-        </>
-      ),
-    };
-  }
-
-  return null;
 }
 
 export function PubsubActivity({
@@ -532,16 +495,14 @@ export function PubsubActivity({
 
   const health = useMemo(
     () =>
-      deriveHealth({
-        stats,
-        diag,
-        lastPush,
-        lastRenew,
-        watchActive,
-        webhookUrl: diag?.webhookUrl ?? undefined,
-        pubsubTopic: diag?.pubsubTopic ?? undefined,
-        renewBtn,
-      }),
+      renderHealth(
+        derivePubsubHealth({ stats, lastPush, lastRenew, watchActive, now: Date.now() }),
+        {
+          webhookUrl: diag?.webhookUrl ?? undefined,
+          pubsubTopic: diag?.pubsubTopic ?? undefined,
+          renewBtn,
+        },
+      ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [stats, diag, lastPush, lastRenew, watchActive, renewing],
   );
