@@ -400,6 +400,14 @@ function reasonBody(body: ReasonExplanation["body"], folderName: string): ReactN
           This email already had the matching Gmail label when it was synced.
         </span>
       );
+    case "surfaced":
+      return (
+        <span className="text-muted-foreground">
+          This folder's rules filed this email into{" "}
+          <span className="font-medium text-foreground">{folderName}</span>, and the folder's
+          surface-to-inbox rule judged it worth seeing, so it was put back in your inbox as well.
+        </span>
+      );
     case "imported":
       return <span className="text-muted-foreground">No classifier ran on this email yet.</span>;
   }

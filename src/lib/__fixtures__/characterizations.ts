@@ -132,10 +132,6 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "formatDateTime and formatEventTime return the raw input string when it will not parse, while formatRelativeTime, formatShortDate and formatShortDateTime return the caller's fallback. An unparseable timestamp therefore renders as garbage text in two places and as an em dash in three, and the caller's fallback argument is silently ignored on the first two.",
     fixIn: "src/lib/format.ts — return the fallback from every formatter on NaN input.",
   },
-  "folder-history-surfaced-reason-blank": {
-    what: "An email stamped classified_by=surfaced_to_inbox gets a 'Surfaced' badge, but describeReason has no branch for it and falls through to 'Imported with this folder / No classifier ran on this email yet'. The panel contradicts its own badge, and the surface check that filed the mail is never explained.",
-    fixIn: "src/lib/ui/folder-history.ts — give describeReason a surfaced_to_inbox branch.",
-  },
   "inbox-override-duplicate-unguarded": {
     what: "Adding an always-inbox entry does not look at the entries already on the list, so a repeat is only caught by inbox_overrides' UNIQUE (user_id, match_type, value). That key predates the gmail_account_id column and still ignores it, so the same domain cannot be listed on two Gmail accounts at all — and either way the user is shown the raw Postgres unique-violation text instead of a sentence.",
     fixIn:

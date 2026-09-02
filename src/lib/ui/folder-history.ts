@@ -83,6 +83,7 @@ export type ReasonExplanation = {
     | { kind: "rule_matched"; filter: Filter }
     | { kind: "rule_unnamed" }
     | { kind: "gmail_label" }
+    | { kind: "surfaced" }
     | { kind: "imported" };
 };
 
@@ -110,6 +111,16 @@ export function describeReason(email: HistoryEmail, filters: Filter[]): ReasonEx
   }
   if (by === "gmail_label") {
     return { title: "Imported from Gmail label", body: { kind: "gmail_label" } };
+  }
+  // Surfacing never undoes the filing: the folder's rules routed the email
+  // here, then the folder's surface-to-inbox rule judged it worth seeing and
+  // put INBOX back on the message. It is in both places on purpose, so the
+  // explanation says so rather than naming a rule as the sole cause.
+  if (by === "surfaced_to_inbox") {
+    return {
+      title: "Kept in your inbox by this folder's surface rule",
+      body: { kind: "surfaced" },
+    };
   }
   return { title: "Imported with this folder", body: { kind: "imported" } };
 }

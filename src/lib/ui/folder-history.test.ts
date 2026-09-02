@@ -227,14 +227,20 @@ describe("describeReason", () => {
     });
   });
 
-  // CHARACTERIZATION(folder-history-surfaced-reason-blank): the surfaced-to-inbox explanation contradicts its own badge — flip when fixed
-  it("claims no classifier ran on an email the surface check filed", () => {
-    // The badge for this email reads "Surfaced" (getReasonMeta above), but
-    // the expanded explanation falls through to the imported-with-the-folder
-    // branch, so the panel contradicts itself about the same email.
+  it("explains a surfaced email as filed here but kept visible in the inbox", () => {
+    // Surfacing does not undo the filing: the folder's rules put the email
+    // here, the folder's surface rule then re-added INBOX so it stays visible
+    // too. The explanation has to agree with the "Surfaced" badge.
     expect(describeReason(email({ classified_by: "surfaced_to_inbox" }), [])).toStrictEqual({
-      title: "Imported with this folder",
-      body: { kind: "imported" },
+      title: "Kept in your inbox by this folder's surface rule",
+      body: { kind: "surfaced" },
+    });
+  });
+
+  it("gives the surfaced explanation whether or not a rule can still be named", () => {
+    const f = filter({ field: "subject", op: "contains", value: "invoice" });
+    expect(describeReason(email({ classified_by: "surfaced_to_inbox" }), [f]).body).toStrictEqual({
+      kind: "surfaced",
     });
   });
 
