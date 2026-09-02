@@ -11,7 +11,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { makeSupabaseFake, writeCount } from "@/lib/__fixtures__/supabase-fake";
 import { TEST_USER } from "@/lib/__fixtures__/server-fn-stub";
-import { callWithRlsClient } from "./__fixtures__/rls-server-fn";
+import { callWithRlsClient } from "@/lib/__fixtures__/rls-server-fn";
 
 const fake = makeSupabaseFake();
 

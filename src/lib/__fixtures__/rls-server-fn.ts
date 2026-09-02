@@ -1,4 +1,4 @@
-// Test-only helper for the meetings server functions, which read and write
+// Test-only helper for server functions that read and write
 // through `context.supabase` — the user-scoped (RLS) client — rather than
 // `supabaseAdmin`. The shared server-fn stub only injects `context.userId`,
 // so these fns would see `context.supabase === undefined`.
