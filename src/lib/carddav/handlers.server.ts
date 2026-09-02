@@ -12,6 +12,12 @@ import { setContactEncryptedFields } from "@/lib/sync/encrypted-writer";
 import { snapshotContact } from "@/lib/contacts/revisions.server";
 import { logInfo, logError } from "@/lib/log.server";
 import { buildCardDavContactPatch } from "./merge";
+import {
+  cardMatchesFilter,
+  parseAddressbookFilter,
+  type AddressbookFilter,
+  type CardFields,
+} from "./query-filter";
 import { saveContactPhoto, loadContactPhotoBytes } from "@/lib/contacts/photos.server";
 
 import {
@@ -529,21 +535,46 @@ export async function handlePropfind(
 // -----------------------------------------------------------------------------
 // REPORT (addressbook-multiget / addressbook-query)
 
+/** The property values an addressbook-query filter is evaluated against.
+ * They mirror what `contactToVCard` actually emits, so a filter cannot
+ * select a card on a value the client will not find in the vCard it gets. */
+function contactCardFields(
+  row: { id: string; name?: string | null; email?: string | null; phone?: string | null },
+  phones: PhoneRow[],
+  emails: EmailRow[],
+): CardFields {
+  const displayName = (row.name && row.name.trim()) || row.email || "Unknown";
+  const addresses = emails.length ? emails.map((e) => e.address) : row.email ? [row.email] : [];
+  const numbers = [...phones.map((p) => p.number), ...(row.phone ? [row.phone] : [])];
+  return {
+    FN: [displayName],
+    EMAIL: addresses.filter((a) => !!a),
+    TEL: numbers.filter((n) => !!n),
+    UID: [row.id],
+  };
+}
+
+/** Returns the `<D:response>` block for a contact, or "" when an
+ * addressbook-query filter excluded it. */
 async function buildContactResponse(
   userId: string,
   email: string,
   contactId: string,
   includeVcard: boolean,
+  filter?: AddressbookFilter | null,
 ): Promise<string> {
   const { row } = await getContactDecrypted(contactId);
   if (!row) return statusResponseBlock(contactHref(email, contactId));
-  const [phones, categories, emails, photo, includeSummary] = await Promise.all([
+  const [phones, categories, emails, includeSummary] = await Promise.all([
     fetchPhones(contactId),
     fetchCategoriesForContact(userId, contactId),
     fetchEmails(contactId),
-    includeVcard ? loadContactPhotoOrLogo(userId, row) : Promise.resolve(null),
     getIncludeSummaryInNotes(userId),
   ]);
+  // Evaluate the filter BEFORE the photo: loading one can reach out for a
+  // company logo, which a card that is about to be dropped must not pay for.
+  if (filter && !cardMatchesFilter(filter, contactCardFields(row, phones, emails))) return "";
+  const photo = includeVcard ? await loadContactPhotoOrLogo(userId, row) : null;
   const vcard = contactToVCard(row, phones, categories, emails, photo, { includeSummary });
 
   const etag = contactETag(row.id, row.updated_at);
@@ -560,6 +591,7 @@ async function buildGroupResponse(
   includeVcard: boolean,
   style: GroupNameStyle,
   treeMap?: GroupTreeMap,
+  filter?: AddressbookFilter | null,
 ): Promise<string> {
   const { data: group } = await supabaseAdmin
     .from("contact_groups")
@@ -568,10 +600,16 @@ async function buildGroupResponse(
     .eq("user_id", userId)
     .maybeSingle();
   if (!group) return statusResponseBlock(groupHref(email, groupId));
-  const members = await fetchGroupMembers(group.id);
   const displayName = await resolveGroupDisplayName(userId, group.id, group.name, style, treeMap);
+  const uid = group.carddav_uid ?? `group-${group.id}`;
+  // A group card carries an FN and a UID and nothing else a filter can name,
+  // so an EMAIL or TEL prop-filter can never select one.
+  if (filter && !cardMatchesFilter(filter, { FN: [displayName], EMAIL: [], TEL: [], UID: [uid] })) {
+    return "";
+  }
+  const members = await fetchGroupMembers(group.id);
   const vcard = buildGroupVCard({
-    uid: group.carddav_uid ?? `group-${group.id}`,
+    uid,
     name: displayName,
     memberContactIds: members,
     updatedAt: group.updated_at,
@@ -726,6 +764,8 @@ export async function handleReport(
   // Only a multiget carries client-chosen hrefs that may not resolve; a
   // query enumerates rows we already know exist.
   let verifyOwnership = false;
+  // The addressbook-query filter, when there is one this server can evaluate.
+  let filter: AddressbookFilter | null = null;
 
   if (lower.includes("addressbook-multiget")) {
     verifyOwnership = true;
@@ -746,7 +786,10 @@ export async function handleReport(
       if (/\.vcf$/i.test(href.trim())) targets.push({ kind: "unresolvable", href });
     }
   } else if (lower.includes("addressbook-query")) {
-    // A full-collection query legitimately returns everything.
+    // A query with no filter — or one built from something this server does
+    // not evaluate — legitimately returns the whole collection.
+    const parsedFilter = parseAddressbookFilter(raw);
+    if (parsedFilter.kind === "filter") filter = parsedFilter.filter;
     const [rows, groups] = await Promise.all([listContactRows(userId), listGroupRows(userId)]);
     for (const r of rows)
       targets.push({ kind: "contact", id: r.id, href: contactHref(email, r.id) });
@@ -802,8 +845,8 @@ export async function handleReport(
     }
     body +=
       t.kind === "contact"
-        ? await buildContactResponse(userId, email, t.id, includeVcard)
-        : await buildGroupResponse(userId, email, t.id, includeVcard, style, treeMap);
+        ? await buildContactResponse(userId, email, t.id, includeVcard, filter)
+        : await buildGroupResponse(userId, email, t.id, includeVcard, style, treeMap, filter);
   }
   body += MULTISTATUS_CLOSE;
   return davResponse(body);

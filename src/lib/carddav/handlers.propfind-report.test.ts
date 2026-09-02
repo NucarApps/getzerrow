@@ -415,19 +415,74 @@ describe("REPORT addressbook-multiget", () => {
 });
 
 describe("REPORT addressbook-query", () => {
-  // CHARACTERIZATION(carddav-addressbook-query-filter-ignored): the
-  // <C:filter> element is never parsed — every owned contact comes back
-  // whatever the client asked to match.
-  it("enumerates every owned contact and group with inline vCards, ignoring the filter", async () => {
-    const body =
+  /** An addressbook-query asking for etags + inline vCards, with `filterXml`
+   * dropped in as the <C:filter> element (pass "" for no filter at all). */
+  function queryBody(filterXml: string): string {
+    return (
       '<?xml version="1.0"?>' +
       '<C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">' +
       "<D:prop><D:getetag/><C:address-data/></D:prop>" +
-      // A filter that should match nothing: both contacts still return.
-      '<C:filter><C:prop-filter name="FN"><C:text-match>zzzz-no-such-name</C:text-match>' +
-      "</C:prop-filter></C:filter>" +
-      "</C:addressbook-query>";
-    const res = await report(body);
+      filterXml +
+      "</C:addressbook-query>"
+    );
+  }
+
+  /** The contact hrefs (not group hrefs) a query answered with. */
+  async function matchedContacts(filterXml: string): Promise<string[]> {
+    const text = await (await report(queryBody(filterXml))).text();
+    return [C1, C2].filter((id) => text.includes(contactHref(id)));
+  }
+
+  beforeEach(() => {
+    // Distinct names / addresses / numbers so a filter can tell them apart.
+    decryptedRows.set(
+      C1,
+      H.contactFixture(C1, T1, { name: "Erica Roy", email: "erica@acme.example" }),
+    );
+    decryptedRows.set(
+      C2,
+      H.contactFixture(C2, T2, { name: "Jordan Baker", email: "jordan@northwind.example" }),
+    );
+    fake.seed("contact_emails", [
+      {
+        contact_id: C1,
+        user_id: USER,
+        label: "work",
+        address: "erica@acme.example",
+        is_primary: true,
+        position: 0,
+      },
+      {
+        contact_id: C2,
+        user_id: USER,
+        label: "work",
+        address: "jordan@northwind.example",
+        is_primary: true,
+        position: 0,
+      },
+    ]);
+    fake.seed("contact_phones", [
+      {
+        contact_id: C1,
+        user_id: USER,
+        label: "mobile",
+        number: "+1 555 0101",
+        is_primary: true,
+        position: 0,
+      },
+      {
+        contact_id: C2,
+        user_id: USER,
+        label: "work",
+        number: "+1 555 0202",
+        is_primary: true,
+        position: 0,
+      },
+    ]);
+  });
+
+  it("enumerates every owned contact and group with inline vCards when no filter is sent", async () => {
+    const res = await report(queryBody(""));
     expect(res.status).toBe(207);
     const text = await res.text();
     expect(text).toContain(contactHref(C1));
@@ -435,10 +490,154 @@ describe("REPORT addressbook-query", () => {
     expect(text).toContain(groupHref(G1));
     expect(text).toContain(xmlEscape(contactETag(C1, T1)));
     expect(text).toContain(xmlEscape(groupETag(G1, TG)));
-    // address-data was requested → full vCards inline, group card included.
     expect(text).toContain("BEGIN:VCARD");
     expect(text).toContain("X-ADDRESSBOOKSERVER-KIND:group");
-    expect(mocks.getContactDecrypted).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns only the contacts a FN text-match selects", async () => {
+    expect(
+      await matchedContacts(
+        '<C:filter><C:prop-filter name="FN">' +
+          "<C:text-match>jordan</C:text-match>" +
+          "</C:prop-filter></C:filter>",
+      ),
+    ).toStrictEqual([C2]);
+  });
+
+  it("returns nothing at all when the filter matches nothing", async () => {
+    const text = await (
+      await report(
+        queryBody(
+          '<C:filter><C:prop-filter name="FN">' +
+            "<C:text-match>zzzz-no-such-name</C:text-match>" +
+            "</C:prop-filter></C:filter>",
+        ),
+      )
+    ).text();
+    expect(text).toBe(MULTISTATUS_OPEN + MULTISTATUS_CLOSE);
+  });
+
+  it("honours every match-type, defaulting to contains", async () => {
+    const fn = (attrs: string, value: string) =>
+      `<C:filter><C:prop-filter name="FN"><C:text-match ${attrs}>${value}</C:text-match></C:prop-filter></C:filter>`;
+    expect(await matchedContacts(fn('match-type="equals"', "Erica Roy"))).toStrictEqual([C1]);
+    expect(await matchedContacts(fn('match-type="equals"', "Erica"))).toStrictEqual([]);
+    expect(await matchedContacts(fn('match-type="starts-with"', "Erica"))).toStrictEqual([C1]);
+    expect(await matchedContacts(fn('match-type="starts-with"', "Roy"))).toStrictEqual([]);
+    expect(await matchedContacts(fn('match-type="ends-with"', "Baker"))).toStrictEqual([C2]);
+    expect(await matchedContacts(fn('match-type="contains"', "a R"))).toStrictEqual([C1]);
+    // No match-type attribute at all is "contains".
+    expect(await matchedContacts(fn("", "rica"))).toStrictEqual([C1]);
+  });
+
+  it("matches case-insensitively, per the default unicode-casemap collation", async () => {
+    expect(
+      await matchedContacts(
+        '<C:filter><C:prop-filter name="FN"><C:text-match>ERICA</C:text-match></C:prop-filter></C:filter>',
+      ),
+    ).toStrictEqual([C1]);
+  });
+
+  it("inverts a text-match carrying negate-condition=yes", async () => {
+    expect(
+      await matchedContacts(
+        '<C:filter><C:prop-filter name="FN">' +
+          '<C:text-match negate-condition="yes">Erica</C:text-match>' +
+          "</C:prop-filter></C:filter>",
+      ),
+    ).toStrictEqual([C2]);
+  });
+
+  it("filters on EMAIL, TEL and UID as well as FN", async () => {
+    expect(
+      await matchedContacts(
+        '<C:filter><C:prop-filter name="EMAIL"><C:text-match>northwind</C:text-match></C:prop-filter></C:filter>',
+      ),
+    ).toStrictEqual([C2]);
+    expect(
+      await matchedContacts(
+        '<C:filter><C:prop-filter name="TEL"><C:text-match>0101</C:text-match></C:prop-filter></C:filter>',
+      ),
+    ).toStrictEqual([C1]);
+    expect(
+      await matchedContacts(
+        `<C:filter><C:prop-filter name="UID"><C:text-match match-type="equals">${C2}</C:text-match></C:prop-filter></C:filter>`,
+      ),
+    ).toStrictEqual([C2]);
+  });
+
+  it("combines prop-filters with the filter's test attribute (anyof by default)", async () => {
+    const two = (test: string) =>
+      `<C:filter${test}>` +
+      '<C:prop-filter name="FN"><C:text-match>Erica</C:text-match></C:prop-filter>' +
+      '<C:prop-filter name="EMAIL"><C:text-match>northwind</C:text-match></C:prop-filter>' +
+      "</C:filter>";
+    expect(await matchedContacts(two(""))).toStrictEqual([C1, C2]);
+    expect(await matchedContacts(two(' test="anyof"'))).toStrictEqual([C1, C2]);
+    expect(await matchedContacts(two(' test="allof"'))).toStrictEqual([]);
+
+    const bothOnC1 =
+      '<C:filter test="allof">' +
+      '<C:prop-filter name="FN"><C:text-match>Erica</C:text-match></C:prop-filter>' +
+      '<C:prop-filter name="EMAIL"><C:text-match>acme</C:text-match></C:prop-filter>' +
+      "</C:filter>";
+    expect(await matchedContacts(bothOnC1)).toStrictEqual([C1]);
+  });
+
+  it("matches group cards on their rendered FN and skips them for contact-only props", async () => {
+    const byName = await (
+      await report(
+        queryBody(
+          '<C:filter><C:prop-filter name="FN"><C:text-match>Clients</C:text-match></C:prop-filter></C:filter>',
+        ),
+      )
+    ).text();
+    expect(byName).toContain(groupHref(G1));
+    expect(byName).not.toContain(contactHref(C1));
+
+    // A group card carries no TEL, so a TEL filter can never select it.
+    const byTel = await (
+      await report(
+        queryBody(
+          '<C:filter><C:prop-filter name="TEL"><C:text-match>0101</C:text-match></C:prop-filter></C:filter>',
+        ),
+      )
+    ).text();
+    expect(byTel).not.toContain(groupHref(G1));
+  });
+
+  it("does not fetch a photo for a contact the filter excluded", async () => {
+    // The photo load can reach out for a company logo; a filtered-out card
+    // must not pay for one.
+    seedSettings({ use_company_logo_fallback: true, photo_priority: "personal_first" });
+    await report(
+      queryBody(
+        '<C:filter><C:prop-filter name="FN"><C:text-match>Erica</C:text-match></C:prop-filter></C:filter>',
+      ),
+    );
+    expect(mocks.resolveCompanyLogoDomainForContact).toHaveBeenCalledTimes(1);
+  });
+
+  // CHARACTERIZATION(carddav-addressbook-query-filter-ignored)
+  it("falls back to the whole collection for filter constructs it cannot evaluate", async () => {
+    // Only prop-filter/text-match on FN, EMAIL, TEL and UID are evaluated.
+    // Anything else — is-not-defined, param-filter, another property name, a
+    // non-default collation — is answered with the unfiltered collection,
+    // which is a superset the client can narrow itself. Silent, but never
+    // wrong in the dangerous direction; see the register entry.
+    const unsupported = [
+      '<C:filter><C:prop-filter name="NICKNAME"><C:text-match>x</C:text-match></C:prop-filter></C:filter>',
+      '<C:filter><C:prop-filter name="EMAIL"><C:is-not-defined/></C:prop-filter></C:filter>',
+      '<C:filter><C:prop-filter name="TEL"><C:param-filter name="TYPE">' +
+        "<C:text-match>WORK</C:text-match></C:param-filter></C:prop-filter></C:filter>",
+      '<C:filter><C:prop-filter name="FN">' +
+        '<C:text-match collation="i;octet">Erica</C:text-match></C:prop-filter></C:filter>',
+      '<C:filter><C:prop-filter name="FN">' +
+        '<C:text-match match-type="regex">Erica</C:text-match></C:prop-filter></C:filter>',
+    ];
+    for (const filterXml of unsupported) {
+      expect(await matchedContacts(filterXml), filterXml).toStrictEqual([C1, C2]);
+    }
   });
 });
 

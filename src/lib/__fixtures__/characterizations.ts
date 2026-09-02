@@ -62,8 +62,9 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     fixIn: "src/lib/summaries.server.ts — skip when a pending job exists, or add a unique index.",
   },
   "carddav-addressbook-query-filter-ignored": {
-    what: "addressbook-query ignores prop-filter/text-match entirely and returns every contact, so a filtering client does its own work over a full download.",
-    fixIn: "src/lib/carddav/handlers.server.ts",
+    what: "addressbook-query now evaluates prop-filter/text-match on FN, EMAIL, TEL and UID (match-type, negate-condition, anyof/allof). Everything else — is-not-defined, param-filter, any other property name, a non-default collation, an unknown match-type, and <D:limit> on a query — is answered with the WHOLE collection rather than a wrong subset. A superset is safe but the client still downloads the book to narrow it, and it is silent: nothing tells the client its filter was not applied.",
+    fixIn:
+      "src/lib/carddav/query-filter.ts — widen the grammar, and consider a 403 supported-filter precondition (RFC 6352 §8.6.2) for what stays unimplemented.",
   },
   "admin-ignores-email-verified": {
     what: "assertAdmin matches the JWT `email` claim against ADMIN_EMAILS without ever consulting `email_verified`, so an unverified identity that merely asserts an allowlisted address is granted the cross-tenant admin dashboard.",
