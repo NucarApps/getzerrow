@@ -61,18 +61,19 @@ export default defineConfig({
       // code's floor cannot be diluted by (or hide) the UI's. Raise a floor
       // as its area grows — never lower one to make a PR pass.
       //
-      // Baselines when each floor was set (Sep 2026): lib 50.2% lines /
-      // 48.5% stmts / 47.9% fns / 42.7% br; routes/api 11.4 / 12.6 / 31.5 /
-      // 7.8 (the cron-auth sweep and route tests move it); components+hooks
-      // 5.1 / 5.3 / 5.4 / 3.5 (the jsdom *.test.tsx project moves it).
+      // Baselines when each floor was set (Sep 2026, after the server-fn
+      // sweep): lib 73.9% lines / 71.4% stmts / 72.1% fns / 61.2% br;
+      // routes/api 15.6 / 17.4 / 40.3 / 9.3 (the auth sweeps and route
+      // tests move it); components+hooks 5.1 / 5.4 / 6.0 / 3.5 (the jsdom
+      // *.test.tsx project moves it).
       // Page routes (src/routes outside api/) are measured but have no floor
       // yet: their logic is being extracted into src/lib first.
       thresholds: {
         "src/lib/**": {
-          statements: 48,
-          branches: 42,
-          functions: 47,
-          lines: 50,
+          statements: 70,
+          branches: 60,
+          functions: 71,
+          lines: 72,
         },
         "src/routes/api/**": {
           statements: 16,

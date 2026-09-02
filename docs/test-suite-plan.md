@@ -303,16 +303,16 @@ Component tests worth writing with the existing harness: `RuleSentenceEditor` re
 
 ## 9. Metrics to track
 
-| Metric                               | Now                    | After P1        | After P4 | Steady          |
-| ------------------------------------ | ---------------------- | --------------- | -------- | --------------- |
-| lib lines %                          | 48.5 → **51.0**        | 50              | 62       | 70              |
-| routes/api lines %                   | excluded → **15.6**    | measured        | 70       | 80              |
-| components lines %                   | excluded               | measured        | —        | 30 (P5)         |
-| 0 %-covered lib files                | 91                     | 85              | <20      | <10             |
-| server fns with cross-user test      | ~11 / ~80              | 15              | 80       | 100 % (PR gate) |
-| `CHARACTERIZATION` pins (open bugs)  | 0 tagged (≈14 real)    | ≈25             | ≈15      | trending to 0   |
-| source-grep / tautological tests     | 12                     | 0               | 0        | 0 (lint)        |
-| `toStrictEqual` share                | 0 %                    | ratchet         | 50 %     | 100 % new code  |
-| direct `process.env` writes in tests | 46                     | 0               | 0        | 0 (lint)        |
-| suite wall time                      | 6.5 s                  | ~4 s            | <10 s    | <15 s           |
-| CI integration job                   | red → **bootstrapped** | green, required | green    | green           |
+| Metric                               | Now                          | After P1        | After P4 | Steady          |
+| ------------------------------------ | ---------------------------- | --------------- | -------- | --------------- |
+| lib lines %                          | 48.5 → **73.9**              | 50              | 62       | 70              |
+| routes/api lines %                   | excluded → **15.6**          | measured        | 70       | 80              |
+| components lines %                   | excluded                     | measured        | —        | 30 (P5)         |
+| 0 %-covered lib files (≥40 lines)    | 36 → **13**                  | 85              | <20      | <10             |
+| server fns with cross-user test      | ~11 → **50 cases**           | 15              | 80       | 100 % (PR gate) |
+| `CHARACTERIZATION` pins (open bugs)  | 0 tagged → **14 registered** | ≈25             | ≈15      | trending to 0   |
+| source-grep / tautological tests     | 12                           | 0               | 0        | 0 (lint)        |
+| `toStrictEqual` share                | 0 %                          | ratchet         | 50 %     | 100 % new code  |
+| direct `process.env` writes in tests | 46                           | 0               | 0        | 0 (lint)        |
+| suite wall time                      | 6.5 s                        | ~4 s            | <10 s    | <15 s           |
+| CI integration job                   | red → **bootstrapped**       | green, required | green    | green           |
