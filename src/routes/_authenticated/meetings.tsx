@@ -23,6 +23,7 @@ import {
   resendMeetingBot,
 } from "@/lib/meetings.functions";
 import { formatDateTime, formatElapsed } from "@/lib/format";
+import { PLATFORM_LABEL, pickMime, platformOf } from "@/lib/ui/meeting-media";
 import { encodeWav } from "@/lib/wav-encoder";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -391,21 +392,6 @@ function MeetingsPage() {
       <MeetingDetail id={selectedId} onClose={() => setSelectedId(null)} />
     </div>
   );
-}
-
-const PLATFORM_LABEL: Record<string, string> = {
-  zoom: "Zoom",
-  google_meet: "Google Meet",
-  teams: "Microsoft Teams",
-  webex: "Webex",
-};
-
-function platformOf(url: string): string | null {
-  if (/zoom\.us/i.test(url)) return "zoom";
-  if (/meet\.google\.com/i.test(url)) return "google_meet";
-  if (/teams\.(microsoft|live)\.com/i.test(url)) return "teams";
-  if (/webex\.com/i.test(url)) return "webex";
-  return null;
 }
 
 function RecordDialog({ onRecorded }: { onRecorded: () => void }) {
@@ -814,14 +800,6 @@ function InPersonRecordDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-function pickMime(candidates: string[], fallback: string): string {
-  if (typeof MediaRecorder === "undefined") return fallback;
-  for (const c of candidates) {
-    if (MediaRecorder.isTypeSupported(c)) return c;
-  }
-  return fallback;
 }
 
 /**
