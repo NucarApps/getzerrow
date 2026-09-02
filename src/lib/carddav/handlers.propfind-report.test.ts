@@ -210,9 +210,9 @@ describe("PROPFIND", () => {
     expect(await res2.text()).toBe(MULTISTATUS_OPEN + MULTISTATUS_CLOSE);
   });
 
-  it("malformed XML body on PROPFIND is ignored — response is still a 207 multistatus", async () => {
-    // The handler never parses the PROPFIND body, so broken XML cannot 500
-    // into an iOS retry loop.
+  it("malformed XML body on PROPFIND falls back to the full prop set, not a 500", async () => {
+    // A body with no readable <D:prop> is treated as allprop, so broken XML
+    // cannot 500 into an iOS retry loop.
     const res = await propfind(`${EMAIL}`, { depth: "0" }, "<propfind><not-closed");
     expect(res.status).toBe(207);
     const body = await res.text();
@@ -220,12 +220,10 @@ describe("PROPFIND", () => {
     expect(body).toContain("<C:addressbook-home-set>");
   });
 
-  // CHARACTERIZATION(carddav-prop-subset-ignored)
-  it("requested-prop subsets are ignored — fixed prop set, no 404 propstat", async () => {
-    // RFC 4918 wants un-requested props omitted and unknown props reported in
-    // a 404 propstat. This server always returns its fixed prop set with a
-    // single 200 propstat. Benign for iOS (it tolerates extra props), but a
-    // documented deviation: unknown props are silently absent, not 404'd.
+  it("returns only the requested props, and 404s the ones it does not have", async () => {
+    // RFC 4918 §9.1: un-requested props are omitted and props the resource
+    // does not carry come back in their own 404 propstat, so the client can
+    // tell "not supported here" from "supported but empty".
     const reqBody =
       '<?xml version="1.0"?>' +
       '<D:propfind xmlns:D="DAV:" xmlns:X="urn:example:custom">' +
@@ -234,12 +232,52 @@ describe("PROPFIND", () => {
     const res = await propfind(`${EMAIL}/contacts`, { depth: "0" }, reqBody);
     expect(res.status).toBe(207);
     const body = await res.text();
-    // Props the client did NOT ask for are still returned...
+    expect(body).toContain(
+      "<D:propstat><D:prop><D:displayname>Atzro Contacts</D:displayname></D:prop>" +
+        "<D:status>HTTP/1.1 200 OK</D:status></D:propstat>",
+    );
+    expect(body).toContain(
+      '<D:propstat><D:prop><x:no-such-prop xmlns:x="urn:example:custom"/></D:prop>' +
+        "<D:status>HTTP/1.1 404 Not Found</D:status></D:propstat>",
+    );
+    // Props the client did not ask for are gone.
+    expect(body).not.toContain("<CS:getctag>");
+    expect(body).not.toContain("<D:sync-token>");
+    expect(body).not.toContain("<D:resourcetype>");
+  });
+
+  it("matches a requested prop by namespace, not by the prefix the client chose", async () => {
+    // Clients bind DAV: to whatever prefix they like; a `displayname` in some
+    // other namespace is a different property and must 404.
+    const reqBody =
+      '<?xml version="1.0"?>' +
+      '<A:propfind xmlns:A="DAV:" xmlns:B="urn:example:other">' +
+      "<A:prop><A:displayname/><B:displayname/></A:prop>" +
+      "</A:propfind>";
+    const body = await (await propfind(`${EMAIL}/contacts`, { depth: "0" }, reqBody)).text();
+    expect(body).toContain("<D:displayname>Atzro Contacts</D:displayname>");
+    expect(body).toContain('<x:displayname xmlns:x="urn:example:other"/>');
+    expect(body).toContain("<D:status>HTTP/1.1 404 Not Found</D:status>");
+  });
+
+  it("applies the requested subset to every member block of a depth-1 listing", async () => {
+    const reqBody =
+      '<?xml version="1.0"?>' +
+      '<D:propfind xmlns:D="DAV:"><D:prop><D:getetag/></D:prop></D:propfind>';
+    const body = await (await propfind(`${EMAIL}/contacts`, { depth: "1" }, reqBody)).text();
+    expect(body).toContain(xmlEscape(contactETag(C1, T1)));
+    expect(body).toContain(xmlEscape(groupETag(G1, TG)));
+    // getcontenttype was not asked for, so no block carries it.
+    expect(body).not.toContain("getcontenttype");
+    // The collection itself has no getetag → its own 404 propstat.
+    expect(body).toContain("<D:status>HTTP/1.1 404 Not Found</D:status>");
+  });
+
+  it("an empty body still returns the full prop set (allprop)", async () => {
+    const body = await (await propfind(`${EMAIL}/contacts`, { depth: "0" })).text();
     expect(body).toContain("<CS:getctag>");
     expect(body).toContain("<D:sync-token>");
-    // ...and the unknown prop produces no 404 propstat block.
     expect(body).not.toContain("404");
-    expect(body).not.toContain("no-such-prop");
   });
 });
 

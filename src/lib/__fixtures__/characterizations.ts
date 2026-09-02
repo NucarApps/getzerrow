@@ -53,10 +53,6 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     fixIn:
       "src/lib/carddav/handlers.server.ts — emit 507 and a token covering only what was returned.",
   },
-  "carddav-prop-subset-ignored": {
-    what: "PROPFIND ignores the requested prop subset and always returns a fixed set, with no 404 propstat for props it does not have.",
-    fixIn: "src/lib/carddav/handlers.server.ts",
-  },
   "folder-chat-skips-conflict-check": {
     what: "applyFolderChanges inserts folder_filters directly without calling checkRuleConflicts, so a rule created from chat can silently shadow an existing one — the rules editor warns.",
     fixIn: "src/lib/folder-chat.functions.ts — run checkRuleConflicts before inserting.",

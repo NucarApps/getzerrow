@@ -29,12 +29,38 @@ import {
   davResponse,
   MULTISTATUS_CLOSE,
   MULTISTATUS_OPEN,
+  NS_CALENDARSERVER,
+  NS_CARDDAV,
+  NS_DAV,
   parseMultigetHrefs,
+  parseRequestedProps,
   parseSyncCollection,
+  propfindResponseBlock,
   responseBlock,
   statusResponseBlock,
   xmlEscape,
+  type PropSpec,
+  type RequestedProp,
 } from "./xml";
+
+/** The one address-data declaration both collection blocks advertise. */
+const SUPPORTED_ADDRESS_DATA =
+  `<C:supported-address-data>` +
+  `<C:address-data-type content-type="text/vcard" version="3.0"/>` +
+  `</C:supported-address-data>`;
+
+/** Props carried by a member resource — a contact or a group .vcf. */
+function memberProps(etag: string): PropSpec[] {
+  return [
+    { ns: NS_DAV, name: "resourcetype", xml: `<D:resourcetype/>` },
+    { ns: NS_DAV, name: "getetag", xml: `<D:getetag>${xmlEscape(etag)}</D:getetag>` },
+    {
+      ns: NS_DAV,
+      name: "getcontenttype",
+      xml: `<D:getcontenttype>text/vcard; charset=utf-8</D:getcontenttype>`,
+    },
+  ];
+}
 
 const BASE = "/api/public/carddav";
 const GOOGLE_SYNC_DIRTY_SENTINEL = "1970-01-01T00:00:00.000Z";
@@ -357,28 +383,52 @@ export function handleOptions(): Response {
 
 // Root or principal-level PROPFIND: point iOS at the user's principal +
 // addressbook home.
-function propfindPrincipal(email: string, depth: string): Response {
+function propfindPrincipal(email: string, depth: string, wanted: RequestedProp[] | null): Response {
   const principal = principalHref(email);
   const book = addressbookHref(email);
 
-  const principalProps =
-    `<D:resourcetype><D:collection/><D:principal/></D:resourcetype>` +
-    `<D:displayname>${xmlEscape(email)}</D:displayname>` +
-    `<D:current-user-principal><D:href>${principal}</D:href></D:current-user-principal>` +
-    `<D:principal-URL><D:href>${principal}</D:href></D:principal-URL>` +
-    `<C:addressbook-home-set><D:href>${principal}</D:href></C:addressbook-home-set>`;
+  const principalProps: PropSpec[] = [
+    {
+      ns: NS_DAV,
+      name: "resourcetype",
+      xml: `<D:resourcetype><D:collection/><D:principal/></D:resourcetype>`,
+    },
+    { ns: NS_DAV, name: "displayname", xml: `<D:displayname>${xmlEscape(email)}</D:displayname>` },
+    {
+      ns: NS_DAV,
+      name: "current-user-principal",
+      xml: `<D:current-user-principal><D:href>${principal}</D:href></D:current-user-principal>`,
+    },
+    {
+      ns: NS_DAV,
+      name: "principal-URL",
+      xml: `<D:principal-URL><D:href>${principal}</D:href></D:principal-URL>`,
+    },
+    {
+      ns: NS_CARDDAV,
+      name: "addressbook-home-set",
+      xml: `<C:addressbook-home-set><D:href>${principal}</D:href></C:addressbook-home-set>`,
+    },
+  ];
 
-  let body = MULTISTATUS_OPEN + responseBlock(principal, principalProps);
+  let body = MULTISTATUS_OPEN + propfindResponseBlock(principal, principalProps, wanted);
 
   if (depth === "1") {
-    const bookProps =
-      `<D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>` +
-      `<D:displayname>Atzro Contacts</D:displayname>` +
-      `<C:addressbook-description>Contacts synced from Atzro</C:addressbook-description>` +
-      `<C:supported-address-data>` +
-      `<C:address-data-type content-type="text/vcard" version="3.0"/>` +
-      `</C:supported-address-data>`;
-    body += responseBlock(book, bookProps);
+    const bookProps: PropSpec[] = [
+      {
+        ns: NS_DAV,
+        name: "resourcetype",
+        xml: `<D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>`,
+      },
+      { ns: NS_DAV, name: "displayname", xml: `<D:displayname>Atzro Contacts</D:displayname>` },
+      {
+        ns: NS_CARDDAV,
+        name: "addressbook-description",
+        xml: `<C:addressbook-description>Contacts synced from Atzro</C:addressbook-description>`,
+      },
+      { ns: NS_CARDDAV, name: "supported-address-data", xml: SUPPORTED_ADDRESS_DATA },
+    ];
+    body += propfindResponseBlock(book, bookProps, wanted);
   }
   body += MULTISTATUS_CLOSE;
   return davResponse(body);
@@ -389,47 +439,54 @@ async function propfindAddressbook(
   userId: string,
   email: string,
   depth: string,
+  wanted: RequestedProp[] | null,
 ): Promise<Response> {
   const book = addressbookHref(email);
   const ctag = await computeBookCTag(userId);
   const snap = await currentSyncSnapshot(userId);
   const syncToken = buildSyncToken(userId, snap.updatedAt, snap.seq);
 
-  const bookProps =
-    `<D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>` +
-    `<D:displayname>Atzro Contacts</D:displayname>` +
-    `<CS:getctag>${xmlEscape(ctag)}</CS:getctag>` +
-    `<D:sync-token>${xmlEscape(syncToken)}</D:sync-token>` +
-    `<D:supported-report-set>` +
-    `<D:supported-report><D:report><D:sync-collection/></D:report></D:supported-report>` +
-    `<D:supported-report><D:report><C:addressbook-multiget/></D:report></D:supported-report>` +
-    `<D:supported-report><D:report><C:addressbook-query/></D:report></D:supported-report>` +
-    `</D:supported-report-set>` +
-    `<C:supported-address-data>` +
-    `<C:address-data-type content-type="text/vcard" version="3.0"/>` +
-    `</C:supported-address-data>`;
+  const bookProps: PropSpec[] = [
+    {
+      ns: NS_DAV,
+      name: "resourcetype",
+      xml: `<D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>`,
+    },
+    { ns: NS_DAV, name: "displayname", xml: `<D:displayname>Atzro Contacts</D:displayname>` },
+    { ns: NS_CALENDARSERVER, name: "getctag", xml: `<CS:getctag>${xmlEscape(ctag)}</CS:getctag>` },
+    { ns: NS_DAV, name: "sync-token", xml: `<D:sync-token>${xmlEscape(syncToken)}</D:sync-token>` },
+    {
+      ns: NS_DAV,
+      name: "supported-report-set",
+      xml:
+        `<D:supported-report-set>` +
+        `<D:supported-report><D:report><D:sync-collection/></D:report></D:supported-report>` +
+        `<D:supported-report><D:report><C:addressbook-multiget/></D:report></D:supported-report>` +
+        `<D:supported-report><D:report><C:addressbook-query/></D:report></D:supported-report>` +
+        `</D:supported-report-set>`,
+    },
+    { ns: NS_CARDDAV, name: "supported-address-data", xml: SUPPORTED_ADDRESS_DATA },
+  ];
 
-  let body = MULTISTATUS_OPEN + responseBlock(book, bookProps);
+  let body = MULTISTATUS_OPEN + propfindResponseBlock(book, bookProps, wanted);
 
   if (depth === "1") {
     const rows = await listContactRows(userId);
     for (const row of rows) {
-      const etag = contactETag(row.id, row.updated_at);
-      const props =
-        `<D:resourcetype/>` +
-        `<D:getetag>${xmlEscape(etag)}</D:getetag>` +
-        `<D:getcontenttype>text/vcard; charset=utf-8</D:getcontenttype>`;
-      body += responseBlock(contactHref(email, row.id), props);
+      body += propfindResponseBlock(
+        contactHref(email, row.id),
+        memberProps(contactETag(row.id, row.updated_at)),
+        wanted,
+      );
     }
     // Groups appear as their own vCards (Apple X-ADDRESSBOOKSERVER-KIND).
     const groups = await listGroupRows(userId);
     for (const g of groups) {
-      const etag = groupETag(g.id, g.updated_at);
-      const props =
-        `<D:resourcetype/>` +
-        `<D:getetag>${xmlEscape(etag)}</D:getetag>` +
-        `<D:getcontenttype>text/vcard; charset=utf-8</D:getcontenttype>`;
-      body += responseBlock(groupHref(email, g.id), props);
+      body += propfindResponseBlock(
+        groupHref(email, g.id),
+        memberProps(groupETag(g.id, g.updated_at)),
+        wanted,
+      );
     }
   }
   body += MULTISTATUS_CLOSE;
@@ -443,6 +500,16 @@ export async function handlePropfind(
   path: string,
 ): Promise<Response> {
   const depth = request.headers.get("depth") ?? "0";
+  // The prop subset the client asked for, or null when it asked for allprop /
+  // sent no body / sent XML we cannot read. Reading the body must never fail
+  // the request: iOS retries a 5xx hard.
+  const wanted: RequestedProp[] | null = await (async () => {
+    try {
+      return parseRequestedProps(await request.text());
+    } catch {
+      return null;
+    }
+  })();
   // path is what came after /api/public/carddav/, e.g. "" or "<email>/" or
   // "<email>/contacts/".
   const trimmed = path.replace(/^\/+|\/+$/g, "");
@@ -450,10 +517,10 @@ export async function handlePropfind(
 
   if (segments.length <= 1) {
     // "/" or "/<email>/" -> principal view
-    return propfindPrincipal(email, depth);
+    return propfindPrincipal(email, depth, wanted);
   }
   if (segments.length === 2 && segments[1] === "contacts") {
-    return propfindAddressbook(userId, email, depth);
+    return propfindAddressbook(userId, email, depth, wanted);
   }
   // Unknown depth: fall back to empty multistatus so iOS doesn't error.
   return davResponse(MULTISTATUS_OPEN + MULTISTATUS_CLOSE);
