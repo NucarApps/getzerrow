@@ -32,6 +32,7 @@ import {
   parseMultigetHrefs,
   parseSyncCollection,
   responseBlock,
+  statusResponseBlock,
   xmlEscape,
 } from "./xml";
 
@@ -468,14 +469,7 @@ async function buildContactResponse(
   includeVcard: boolean,
 ): Promise<string> {
   const { row } = await getContactDecrypted(contactId);
-  if (!row) {
-    return (
-      `<D:response>` +
-      `<D:href>${contactHref(email, contactId)}</D:href>` +
-      `<D:status>HTTP/1.1 404 Not Found</D:status>` +
-      `</D:response>`
-    );
-  }
+  if (!row) return statusResponseBlock(contactHref(email, contactId));
   const [phones, categories, emails, photo, includeSummary] = await Promise.all([
     fetchPhones(contactId),
     fetchCategoriesForContact(userId, contactId),
@@ -506,14 +500,7 @@ async function buildGroupResponse(
     .eq("id", groupId)
     .eq("user_id", userId)
     .maybeSingle();
-  if (!group) {
-    return (
-      `<D:response>` +
-      `<D:href>${groupHref(email, groupId)}</D:href>` +
-      `<D:status>HTTP/1.1 404 Not Found</D:status>` +
-      `</D:response>`
-    );
-  }
+  if (!group) return statusResponseBlock(groupHref(email, groupId));
   const members = await fetchGroupMembers(group.id);
   const displayName = await resolveGroupDisplayName(userId, group.id, group.name, style, treeMap);
   const vcard = buildGroupVCard({
@@ -639,11 +626,7 @@ async function handleSyncCollection(raw: string, userId: string, email: string):
       t.resource_type === "group"
         ? groupHref(email, t.resource_id)
         : contactHref(email, t.resource_id);
-    body +=
-      `<D:response>` +
-      `<D:href>${href}</D:href>` +
-      `<D:status>HTTP/1.1 404 Not Found</D:status>` +
-      `</D:response>`;
+    body += statusResponseBlock(href);
   }
 
   const newToken = buildSyncToken(userId, snap.updatedAt, snap.seq);
@@ -665,24 +648,42 @@ export async function handleReport(
     return handleSyncCollection(raw, userId, email);
   }
 
-  const contactIds: string[] = [];
-  const groupIds: string[] = [];
+  // One ordered list so the response blocks come back in the order the
+  // client listed its hrefs, contacts and groups interleaved as sent.
+  type Target =
+    | { kind: "contact"; id: string; href: string }
+    | { kind: "group"; id: string; href: string }
+    // A member href (…/<something>.vcf) that names no resource of ours.
+    | { kind: "unresolvable"; href: string };
+  const targets: Target[] = [];
+  // Only a multiget carries client-chosen hrefs that may not resolve; a
+  // query enumerates rows we already know exist.
+  let verifyOwnership = false;
+
   if (lower.includes("addressbook-multiget")) {
-    const hrefs = parseMultigetHrefs(raw);
-    for (const h of hrefs) {
-      const gid = h.match(/group-([0-9a-f-]{36})\.vcf$/i)?.[1];
+    verifyOwnership = true;
+    for (const href of parseMultigetHrefs(raw)) {
+      const gid = href.match(/group-([0-9a-f-]{36})\.vcf$/i)?.[1];
       if (gid) {
-        groupIds.push(gid);
+        targets.push({ kind: "group", id: gid, href });
         continue;
       }
-      const cid = h.match(/([0-9a-f-]{36})\.vcf$/i)?.[1];
-      if (cid) contactIds.push(cid);
+      const cid = href.match(/([0-9a-f-]{36})\.vcf$/i)?.[1];
+      if (cid) {
+        targets.push({ kind: "contact", id: cid, href });
+        continue;
+      }
+      // Anything else that looks like a member resource is reported gone.
+      // A href for a collection (no .vcf) names something that does exist,
+      // so it is skipped rather than 404'd.
+      if (/\.vcf$/i.test(href.trim())) targets.push({ kind: "unresolvable", href });
     }
   } else if (lower.includes("addressbook-query")) {
     // A full-collection query legitimately returns everything.
     const [rows, groups] = await Promise.all([listContactRows(userId), listGroupRows(userId)]);
-    contactIds.push(...rows.map((r) => r.id));
-    groupIds.push(...groups.map((g) => g.id));
+    for (const r of rows)
+      targets.push({ kind: "contact", id: r.id, href: contactHref(email, r.id) });
+    for (const g of groups) targets.push({ kind: "group", id: g.id, href: groupHref(email, g.id) });
   } else {
     // Empty or unrecognized REPORT body: do NOT fall through to a full
     // decrypted address-book dump (+ per-contact logo fetches). Return an
@@ -691,32 +692,51 @@ export async function handleReport(
     return davResponse(MULTISTATUS_OPEN + MULTISTATUS_CLOSE);
   }
 
-  let body = MULTISTATUS_OPEN;
-  if (contactIds.length > 0) {
-    const { data } = await supabaseAdmin
-      .from("contacts")
-      .select("id")
-      .eq("user_id", userId)
-      .in("id", contactIds);
-    const owned = new Set(((data as Array<{ id: string }> | null) ?? []).map((r) => r.id));
-    for (const id of contactIds) {
-      if (!owned.has(id)) continue;
-      body += await buildContactResponse(userId, email, id, includeVcard);
+  // Resolve ownership in one round trip per table. A row the caller does not
+  // own is answered EXACTLY like one that never existed — a bare 404 block —
+  // so a multiget cannot be used to probe whether an id exists on another
+  // account.
+  const ownedContacts = new Set<string>();
+  const ownedGroups = new Set<string>();
+  if (verifyOwnership) {
+    const contactIds = targets.filter((t) => t.kind === "contact").map((t) => t.id);
+    const groupIds = targets.filter((t) => t.kind === "group").map((t) => t.id);
+    const [contactsRes, groupsRes] = await Promise.all([
+      contactIds.length
+        ? supabaseAdmin.from("contacts").select("id").eq("user_id", userId).in("id", contactIds)
+        : Promise.resolve({ data: [] }),
+      groupIds.length
+        ? supabaseAdmin.from("contact_groups").select("id").eq("user_id", userId).in("id", groupIds)
+        : Promise.resolve({ data: [] }),
+    ]);
+    for (const r of (contactsRes.data as Array<{ id: string }> | null) ?? []) {
+      ownedContacts.add(r.id);
     }
+    for (const r of (groupsRes.data as Array<{ id: string }> | null) ?? []) ownedGroups.add(r.id);
   }
-  if (groupIds.length > 0) {
-    const { data } = await supabaseAdmin
-      .from("contact_groups")
-      .select("id")
-      .eq("user_id", userId)
-      .in("id", groupIds);
-    const owned = new Set(((data as Array<{ id: string }> | null) ?? []).map((r) => r.id));
-    const style = await getGroupNameStyle(userId);
-    const treeMap = style === "leaf" ? undefined : await loadGroupTreeMap(userId);
-    for (const id of groupIds) {
-      if (!owned.has(id)) continue;
-      body += await buildGroupResponse(userId, email, id, includeVcard, style, treeMap);
+  const owns = (t: Target): boolean => {
+    if (!verifyOwnership) return true;
+    if (t.kind === "contact") return ownedContacts.has(t.id);
+    if (t.kind === "group") return ownedGroups.has(t.id);
+    return false;
+  };
+
+  // Group display names need the tree; load it once, and only if a group
+  // block is actually going to be rendered.
+  const needsGroups = targets.some((t) => t.kind === "group" && owns(t));
+  const style = needsGroups ? await getGroupNameStyle(userId) : "leaf";
+  const treeMap = needsGroups && style !== "leaf" ? await loadGroupTreeMap(userId) : undefined;
+
+  let body = MULTISTATUS_OPEN;
+  for (const t of targets) {
+    if (t.kind === "unresolvable" || !owns(t)) {
+      body += statusResponseBlock(t.href);
+      continue;
     }
+    body +=
+      t.kind === "contact"
+        ? await buildContactResponse(userId, email, t.id, includeVcard)
+        : await buildGroupResponse(userId, email, t.id, includeVcard, style, treeMap);
   }
   body += MULTISTATUS_CLOSE;
   return davResponse(body);

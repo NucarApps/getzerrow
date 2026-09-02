@@ -27,6 +27,19 @@ export function responseBlock(href: string, propsXml: string, status = "HTTP/1.1
   );
 }
 
+/** A bare `<D:response>` carrying a status instead of a propstat — what
+ * RFC 6352 §8.7 wants for a multiget href that resolves to nothing, and what
+ * RFC 6578 wants for a resource that has been deleted since the last sync.
+ * The href is escaped because it can come straight off the request body. */
+export function statusResponseBlock(href: string, status = "HTTP/1.1 404 Not Found"): string {
+  return (
+    `<D:response>` +
+    `<D:href>${xmlEscape(href)}</D:href>` +
+    `<D:status>${status}</D:status>` +
+    `</D:response>`
+  );
+}
+
 // Wrap the standard PROPFIND response envelope + headers.
 export function davResponse(body: string, extraHeaders: Record<string, string> = {}): Response {
   return new Response(body, {

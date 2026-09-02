@@ -262,14 +262,26 @@ describe("REPORT probe guard", () => {
 });
 
 describe("REPORT addressbook-multiget", () => {
-  it("silently drops hrefs for contacts the authed user does not own", async () => {
+  it("reports a href for another user's contact as 404 without decrypting it", async () => {
     const res = await report(multigetBody([contactHref(C1), contactHref(FOREIGN)]));
     const body = await res.text();
     expect(body).toContain(contactHref(C1));
-    expect(body).not.toContain(FOREIGN);
+    expect(body).toContain(
+      `<D:response><D:href>${contactHref(FOREIGN)}</D:href>` +
+        "<D:status>HTTP/1.1 404 Not Found</D:status></D:response>",
+    );
     // The foreign id must not even reach the decrypt boundary.
     expect(mocks.getContactDecrypted).toHaveBeenCalledTimes(1);
     expect(mocks.getContactDecrypted).toHaveBeenCalledWith(C1);
+  });
+
+  it("answers a foreign contact exactly as it answers one that never existed", async () => {
+    // The two responses must be indistinguishable apart from the href, or
+    // the multiget becomes an oracle for "does this contact id exist on
+    // some other account".
+    const foreign = await (await report(multigetBody([contactHref(FOREIGN)]))).text();
+    const missing = await (await report(multigetBody([contactHref(NEVER_EXISTED)]))).text();
+    expect(foreign.replaceAll(FOREIGN, "<ID>")).toBe(missing.replaceAll(NEVER_EXISTED, "<ID>"));
   });
 
   it("returns a 404 response block for an owned contact whose decrypt comes back empty", async () => {
@@ -301,36 +313,58 @@ describe("REPORT addressbook-multiget", () => {
     expect(text).toContain(`UID:group-${G1}`);
   });
 
-  it("drops unowned group hrefs and ignores hrefs that do not name a resource", async () => {
+  it("404s an unowned group href and any other .vcf that resolves to nothing", async () => {
+    const bogus = `/api/public/carddav/${encodeURIComponent(EMAIL)}/contacts/bogus.vcf`;
+    const collection = `/api/public/carddav/${encodeURIComponent(EMAIL)}/contacts/`;
     const res = await report(
-      multigetBody([
-        groupHref(G1),
-        groupHref(FOREIGN_GROUP), // not in contact_groups → ownership filter drops it
-        `/api/public/carddav/${encodeURIComponent(EMAIL)}/contacts/`, // collection itself
-        `/api/public/carddav/${encodeURIComponent(EMAIL)}/contacts/bogus.vcf`, // non-UUID
-      ]),
+      multigetBody([groupHref(G1), groupHref(FOREIGN_GROUP), collection, bogus]),
     );
     expect(res.status).toBe(207);
     const text = await res.text();
     expect(text).toContain(groupHref(G1));
-    expect(text).not.toContain(FOREIGN_GROUP);
-    expect(text).not.toContain("bogus.vcf");
+    expect(text).toContain(
+      `<D:response><D:href>${groupHref(FOREIGN_GROUP)}</D:href>` +
+        "<D:status>HTTP/1.1 404 Not Found</D:status></D:response>",
+    );
+    expect(text).toContain(
+      `<D:response><D:href>${bogus}</D:href>` +
+        "<D:status>HTTP/1.1 404 Not Found</D:status></D:response>",
+    );
+    // The collection itself is not a member resource — it names something
+    // that DOES exist, so it must not be reported as gone.
+    expect(text).not.toContain(`<D:href>${collection}</D:href>`);
   });
 
-  // CHARACTERIZATION(carddav-multiget-missing-href-omitted)
-  it("a href for a contact that never existed is silently omitted, not 404'd", async () => {
-    // RFC 6352 §8.7 says unresolvable multiget hrefs SHOULD come back as
-    // 404 response blocks. This server filters by ownership first, so a
-    // never-existed (or foreign) contact simply vanishes from the response.
-    // iOS copes (it treats absence as "gone"), but this is a deviation worth
-    // knowing about when debugging ghost contacts on devices.
+  it("returns a 404 response block for a contact href that never existed", async () => {
+    // RFC 6352 §8.7: an href in a multiget that names no resource comes back
+    // as a 404 response block, so the client learns the resource is gone
+    // instead of having to infer it from the href's absence.
     const res = await report(multigetBody([contactHref(C1), contactHref(NEVER_EXISTED)]));
     const text = await res.text();
     expect(text).toContain(contactHref(C1));
-    expect(text).not.toContain(NEVER_EXISTED);
-    expect(text).not.toContain("404");
+    expect(text).toContain(
+      `<D:response><D:href>${contactHref(NEVER_EXISTED)}</D:href>` +
+        "<D:status>HTTP/1.1 404 Not Found</D:status></D:response>",
+    );
     expect(mocks.getContactDecrypted).toHaveBeenCalledTimes(1);
     expect(mocks.getContactDecrypted).toHaveBeenCalledWith(C1);
+  });
+
+  it("keeps response blocks in the order the client listed the hrefs", async () => {
+    const text = await (
+      await report(multigetBody([contactHref(NEVER_EXISTED), groupHref(G1), contactHref(C1)]))
+    ).text();
+    expect([
+      text.indexOf(contactHref(NEVER_EXISTED)),
+      text.indexOf(groupHref(G1)),
+      text.indexOf(contactHref(C1)),
+    ]).toStrictEqual(
+      [
+        text.indexOf(contactHref(NEVER_EXISTED)),
+        text.indexOf(groupHref(G1)),
+        text.indexOf(contactHref(C1)),
+      ].sort((a, b) => a - b),
+    );
   });
 
   it("etag-only multiget (no address-data prop) omits the vCard payload", async () => {
