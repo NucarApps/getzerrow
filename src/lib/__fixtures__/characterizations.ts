@@ -65,4 +65,12 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "addressbook-query ignores prop-filter/text-match entirely and returns every contact, so a filtering client does its own work over a full download.",
     fixIn: "src/lib/carddav/handlers.server.ts",
   },
+  "admin-ignores-email-verified": {
+    what: "assertAdmin matches the JWT `email` claim against ADMIN_EMAILS without ever consulting `email_verified`, so an unverified identity that merely asserts an allowlisted address is granted the cross-tenant admin dashboard.",
+    fixIn: "src/lib/admin.functions.ts — require claims.email_verified === true.",
+  },
+  "reports-topsenders-address-only": {
+    what: "getInboxReport never selects a sender display name, so parseSender's name branch is dead and topSenders can only ever show an address. There is no plaintext from_name column — only from_name_enc — so the fix is a decrypt pass over the window, not a wider select.",
+    fixIn: "src/lib/reports.functions.ts — resolve display names via the decrypt reader.",
+  },
 };
