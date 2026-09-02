@@ -5,18 +5,12 @@
 // userId — admin-client calls must never rely on RLS for scoping.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { logInfo, logError } from "@/lib/log.server";
-import { isPersonalDomain } from "@/lib/company-domains";
+import { emailDomain, isPersonalDomain } from "@/lib/company-domains";
 import { selectContactsForEnrichment, type EmailActivity } from "./enrich-queue";
 import { evaluateAutoApply } from "./suggestion-confidence";
 import { deriveLabelKey } from "./label-resolve";
 
-// contact_enrich_jobs is not in the generated Supabase types yet
-// (regenerate after applying migration 20260719150200) — go through an
-// untyped accessor until then.
-const enrichJobsTable = () =>
-  (supabaseAdmin as unknown as import("@supabase/supabase-js").SupabaseClient).from(
-    "contact_enrich_jobs",
-  );
+const enrichJobsTable = () => supabaseAdmin.from("contact_enrich_jobs");
 
 const MAX_USERS_PER_ENQUEUE = 20;
 const MAX_BIO_JOBS_PER_USER_PER_TICK = 20;
@@ -39,7 +33,7 @@ export async function enqueueUserScanJob(
     kind,
     contact_id: null,
     status: "pending",
-  } as never);
+  });
   if (error) {
     // 23505 = unique violation on the live-job index → a scan is already
     // queued or running; treat as success so the UI just starts polling.
@@ -162,7 +156,7 @@ export async function enqueueContactEnrichment(): Promise<{
             user_id: userId,
             kind: "bio",
             contact_id: contactId,
-          })) as never[],
+          })),
         );
         if (!insErr) bioJobs += picked.length;
       }
@@ -181,7 +175,7 @@ export async function enqueueContactEnrichment(): Promise<{
           const { error: insErr } = await enrichJobsTable().insert({
             user_id: userId,
             kind: "suggest",
-          } as never);
+          });
           if (!insErr) suggestJobs++;
         }
       }
@@ -243,8 +237,11 @@ async function autoApplyHighConfidenceSuggestions(
     company_id: string | null;
   }>) {
     companyIdByContact.set(c.id, c.company_id);
-    const at = c.email?.lastIndexOf("@") ?? -1;
-    domainByContact.set(c.id, at > 0 ? c.email!.slice(at + 1).toLowerCase() : null);
+    // Must be THE shared parser: company_domains rows are keyed by what
+    // emailDomain() produces, so a private lastIndexOf("@") reader here
+    // would derive "acme.test>" from an angle-bracketed header, match no
+    // company, and silently block an auto-apply the rest of the app allows.
+    domainByContact.set(c.id, emailDomain(c.email));
   }
   const companyIdByDomain = new Map<string, string>();
   for (const d of (domains ?? []) as Array<{ domain: string; company_id: string }>) {
@@ -366,7 +363,7 @@ export async function processContactEnrichJobs(limit: number): Promise<{
           error: ok ? null : (errMsg ?? "Unknown error").slice(0, 500),
           finished_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-        } as never)
+        })
         .eq("id", job.id);
     };
     try {
