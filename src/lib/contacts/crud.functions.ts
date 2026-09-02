@@ -467,12 +467,15 @@ export const updateContact = createServerFn({ method: "POST" })
       }
       throw new Error(error.message);
     }
+    // Pass the patch through verbatim: a field the caller omitted stays
+    // undefined ("leave alone"), while an explicit null clears it. Folding
+    // null into undefined here is what made cleared fields come back.
     await setContactEncryptedFields({
       contact_id: id,
-      phone: encryptedPatch.phone ?? undefined,
-      notes: encryptedPatch.notes ?? undefined,
-      address_line1: encryptedPatch.address_line1 ?? undefined,
-      address_line2: encryptedPatch.address_line2 ?? undefined,
+      phone: encryptedPatch.phone,
+      notes: encryptedPatch.notes,
+      address_line1: encryptedPatch.address_line1,
+      address_line2: encryptedPatch.address_line2,
     });
 
     if (phones) {

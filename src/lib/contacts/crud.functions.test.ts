@@ -297,6 +297,39 @@ describe("updateContact", () => {
     expect(setContactEncryptedFields).not.toHaveBeenCalled();
   });
 
+  it("clearing an encrypted field asks the writer to CLEAR it, not to keep it", async () => {
+    // Regression: `?? undefined` collapsed an explicit null into "field
+    // absent", and the RPC treats absent as "keep" — so a phone or note the
+    // user emptied reappeared on the next read.
+    rls.seed("contacts", [{ id: CONTACT_ID, user_id: TEST_USER, manual_overrides: [] }]);
+    await call(updateContact, {
+      data: { id: CONTACT_ID, phone: null, notes: null, title: "Engineer" },
+      context: asUser,
+    });
+    expect(setContactEncryptedFields).toHaveBeenCalledWith({
+      contact_id: CONTACT_ID,
+      phone: null,
+      notes: null,
+      address_line1: undefined,
+      address_line2: undefined,
+    });
+  });
+
+  it("an empty string clears too, and an omitted field is left alone", async () => {
+    rls.seed("contacts", [{ id: CONTACT_ID, user_id: TEST_USER, manual_overrides: [] }]);
+    await call(updateContact, {
+      data: { id: CONTACT_ID, phone: "" },
+      context: asUser,
+    });
+    expect(setContactEncryptedFields).toHaveBeenCalledWith({
+      contact_id: CONTACT_ID,
+      phone: "",
+      notes: undefined,
+      address_line1: undefined,
+      address_line2: undefined,
+    });
+  });
+
   it("email transform: trimmed + lowercased, and '' becomes null", async () => {
     rls.seed("contacts", [{ id: CONTACT_ID, user_id: TEST_USER, manual_overrides: [] }]);
     await call(updateContact, {

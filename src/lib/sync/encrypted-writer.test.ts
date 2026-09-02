@@ -196,7 +196,7 @@ describe("setReplyDraftEncrypted / setContactEncryptedFields", () => {
     ]);
   });
 
-  it("setContactEncryptedFields nulls omitted fields and propagates errors", async () => {
+  it("setContactEncryptedFields sends omitted fields as null (keep) with an empty clear list", async () => {
     await setContactEncryptedFields({ contact_id: "c-1", notes: "note" });
     expect(fake.calls.rpcs).toEqual([
       {
@@ -208,11 +208,32 @@ describe("setReplyDraftEncrypted / setContactEncryptedFields", () => {
           p_address_line1: null,
           p_address_line2: null,
           p_phone: null,
+          p_clear: [],
           p_key: KEY,
         },
       },
     ]);
+  });
 
+  it("setContactEncryptedFields names explicitly-null fields in p_clear", async () => {
+    // The RPC reads a null argument as "leave this column alone", so an
+    // explicit null has to be carried separately or the cleared value comes
+    // back on the next read.
+    await setContactEncryptedFields({
+      contact_id: "c-1",
+      phone: null,
+      notes: null,
+      address_line1: "1 Main St",
+    });
+    expect(fake.calls.rpcs[0]!.args).toMatchObject({
+      p_phone: null,
+      p_notes: null,
+      p_address_line1: "1 Main St",
+      p_clear: ["notes", "phone"],
+    });
+  });
+
+  it("setContactEncryptedFields propagates an RPC error", async () => {
     fake.onRpc("set_contact_encrypted_fields", () => ({ error: { message: "enc failed" } }));
     expect(await setContactEncryptedFields({ contact_id: "c-1" })).toEqual({
       error: "enc failed",

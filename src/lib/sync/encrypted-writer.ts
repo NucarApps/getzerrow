@@ -140,6 +140,23 @@ export async function setReplyDraftEncrypted(input: {
   return { id: (data as string | null) ?? null, error: null };
 }
 
+/** Encrypted contact fields a partial write can touch. */
+const CONTACT_ENCRYPTED_FIELDS = [
+  "notes",
+  "relationship_summary",
+  "address_line1",
+  "address_line2",
+  "phone",
+] as const;
+
+/**
+ * Partial write of a contact's encrypted fields.
+ *
+ * Per field: `undefined` (or absent) means LEAVE ALONE — every partial
+ * writer (enrichment, CardDAV merge, Google pull) depends on that — while
+ * an explicit `null` means CLEAR. Passing null used to collapse into the
+ * RPC's "keep" case, so a field the user emptied came back on the next read.
+ */
 export async function setContactEncryptedFields(input: {
   contact_id: string;
   notes?: string | null;
@@ -148,6 +165,7 @@ export async function setContactEncryptedFields(input: {
   address_line2?: string | null;
   phone?: string | null;
 }): Promise<{ error: string | null }> {
+  const clear = CONTACT_ENCRYPTED_FIELDS.filter((f) => input[f] === null);
   const { error } = await supabaseAdmin.rpc("set_contact_encrypted_fields", {
     p_contact_id: input.contact_id,
     p_notes: input.notes ?? null,
@@ -155,6 +173,7 @@ export async function setContactEncryptedFields(input: {
     p_address_line1: input.address_line1 ?? null,
     p_address_line2: input.address_line2 ?? null,
     p_phone: input.phone ?? null,
+    p_clear: clear,
     p_key: getKey(),
   } as never);
   return { error: error?.message ?? null };
