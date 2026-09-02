@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { createCoalescedInvalidator } from "@/lib/coalesced-invalidate";
+import { createRafCoalescer, createRealtimeConnection } from "@/lib/ui/realtime-coalescer";
 
 export type EmailRow = {
   id: string;
@@ -250,17 +251,11 @@ export function useEmailRealtime() {
   const qc = useQueryClient();
 
   useEffect(() => {
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-    let cancelled = false;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let reconnectAttempt = 0;
     // Liveness watchdog: a websocket can silently stop delivering while the
     // channel still reports "joined" (a zombie socket after sleep/network
-    // flaps). We track the last time we saw ANY realtime traffic and poll
-    // the channel state; if it's no longer joined, we rebuild it proactively
-    // instead of waiting for the 30s background sync.
-    let watchdogTimer: ReturnType<typeof setInterval> | null = null;
-    let lastEventAt = Date.now();
+    // flaps). The shared connection tracks the last time we saw ANY realtime
+    // traffic and polls the channel state; if it's no longer joined, it
+    // rebuilds proactively instead of waiting for the 30s background sync.
     const REALTIME_WATCHDOG_INTERVAL_MS = 15_000;
 
     type CachedList = EmailRow[] | { rows: EmailRow[] };
@@ -307,86 +302,67 @@ export function useEmailRealtime() {
       });
     }
 
-    // Coalesce realtime events into a single rAF tick. A catch-up burst
-    // that delivers N events within ~16ms now collapses to ONE
-    // setQueryData call per cached query — one React render instead of N.
-    // Buffer is keyed by row id; later events for the same id win
-    // (UPDATE after INSERT, DELETE after either) so it self-deduplicates.
-    const pending = new Map<string, PendingRealtimeOp>();
-    let rafHandle: number | null = null;
     // Dwell timer for settled-out rows (AI just filed them out of view).
     // One shared sweep per batch; a refetch replacing the list wholesale
     // also clears tags, so a missed sweep can never strand a row.
     let settleSweepTimer: ReturnType<typeof setTimeout> | null = null;
     const SETTLED_OUT_DWELL_MS = 4_000;
-    const SWEEP_OP_KEY = " sweep";
+    const SWEEP_OP_KEY = " sweep";
 
     function scheduleSettleSweep() {
       if (settleSweepTimer !== null) return;
       settleSweepTimer = setTimeout(() => {
         settleSweepTimer = null;
-        pending.set(SWEEP_OP_KEY, { kind: "sweep" });
-        scheduleFlush();
+        coalescer.push(SWEEP_OP_KEY, { kind: "sweep" });
       }, SETTLED_OUT_DWELL_MS);
     }
 
-    function flush() {
-      rafHandle = null;
-      if (pending.size === 0) return;
-      const ops = Array.from(pending.values());
-      pending.clear();
-
-      const entries = qc.getQueriesData<CachedList>({ queryKey: ["emails"] });
-      let anyRefetch = false;
-      let anySettledOut = false;
-      for (const [key] of entries) {
-        patchOneQuery(key as unknown[], (rows) => {
-          const { next, needsRefetch, hasSettledOut } = applyPendingOpsToList(
-            rows,
-            ops,
-            key as unknown[],
-          );
-          if (needsRefetch) anyRefetch = true;
-          if (hasSettledOut) anySettledOut = true;
-          return next;
-        });
-      }
-      if (anySettledOut) scheduleSettleSweep();
-      if (anyRefetch) {
-        Promise.resolve().then(() => qc.invalidateQueries({ queryKey: ["emails"] }));
-      }
-      bumpCounts();
-    }
-
-    function scheduleFlush() {
-      if (rafHandle !== null) return;
-      if (typeof requestAnimationFrame === "function") {
-        rafHandle = requestAnimationFrame(flush);
-      } else {
-        rafHandle = setTimeout(flush, 16) as unknown as number;
-      }
-      // Counts are bumped once per batch in flush() — bumping here too made
-      // every realtime batch invalidate folder-counts twice.
-    }
+    // Coalesce realtime events into a single rAF tick. A catch-up burst that
+    // delivers N events within ~16ms collapses to ONE setQueryData call per
+    // cached query — one React render instead of N — and ONE folder-count
+    // invalidation. The buffer is keyed by row id, so later events for the
+    // same id win (UPDATE after INSERT, DELETE after either).
+    const coalescer = createRafCoalescer<PendingRealtimeOp>({
+      flush(ops) {
+        const entries = qc.getQueriesData<CachedList>({ queryKey: ["emails"] });
+        let anyRefetch = false;
+        let anySettledOut = false;
+        for (const [key] of entries) {
+          patchOneQuery(key as unknown[], (rows) => {
+            const { next, needsRefetch, hasSettledOut } = applyPendingOpsToList(
+              rows,
+              ops,
+              key as unknown[],
+            );
+            if (needsRefetch) anyRefetch = true;
+            if (hasSettledOut) anySettledOut = true;
+            return next;
+          });
+        }
+        if (anySettledOut) scheduleSettleSweep();
+        if (anyRefetch) {
+          Promise.resolve().then(() => qc.invalidateQueries({ queryKey: ["emails"] }));
+        }
+        // Counts are bumped once per batch here — never once per event.
+        bumpCounts();
+      },
+    });
 
     function applyInsert(row: EmailRow) {
-      lastEventAt = Date.now();
-      pending.set(row.id, { kind: "insert", row: withCachedFolder(row) });
-      scheduleFlush();
+      connection.markActivity();
+      coalescer.push(row.id, { kind: "insert", row: withCachedFolder(row) });
     }
 
     function applyUpdate(row: EmailRow) {
       // An update supersedes a pending insert (the row already exists in
       // the DB; we want the latest version).
-      lastEventAt = Date.now();
-      pending.set(row.id, { kind: "update", row: withCachedFolder(row) });
-      scheduleFlush();
+      connection.markActivity();
+      coalescer.push(row.id, { kind: "update", row: withCachedFolder(row) });
     }
 
     function applyDelete(row: { id: string }) {
-      lastEventAt = Date.now();
-      pending.set(row.id, { kind: "delete", row });
-      scheduleFlush();
+      connection.markActivity();
+      coalescer.push(row.id, { kind: "delete", row });
     }
 
     const invalidateFolders = () => {
@@ -413,186 +389,91 @@ export function useEmailRealtime() {
       damagedPushInvalidator.request(["folder-counts"]);
     }
 
-    function scheduleReconnect() {
-      if (cancelled || reconnectTimer) return;
-      const delays = [1000, 2000, 5000];
-      const delay = delays[Math.min(reconnectAttempt, delays.length - 1)];
-      reconnectAttempt += 1;
-      reconnectTimer = setTimeout(() => {
-        reconnectTimer = null;
-        teardown();
-        connect();
-      }, delay);
-    }
-
-    // Watchdog: while the tab is visible, verify the channel is still
-    // actually joined. A zombie socket (joined but not delivering) or one
-    // that dropped without firing our status callback gets torn down and
-    // rebuilt here, tightening the worst case from the 30s background sync
-    // to ~15s. Skipped while hidden (realtime is expected idle) and while a
-    // reconnect is already scheduled.
-    /** Returns true when the channel was stale and had to be rebuilt — the
-     * SUBSCRIBED handler of the new channel then runs the catch-up
-     * invalidate, so callers must not invalidate again themselves. */
-    function checkRealtimeLiveness(): boolean {
-      if (cancelled || reconnectTimer) return false;
-      if (typeof document !== "undefined" && document.visibilityState !== "visible") return false;
-      const state = channel?.state;
-      const channelDead = !channel || (state !== "joined" && state !== "joining");
-      // The underlying phoenix socket can drop without our channel status
-      // callback firing (a zombie). If it reports disconnected while we've
-      // seen no realtime traffic recently, treat the channel as stale too.
-      let socketDead = false;
-      try {
-        const idleMs = Date.now() - lastEventAt;
-        socketDead = idleMs > REALTIME_WATCHDOG_INTERVAL_MS && !supabase.realtime.isConnected();
-      } catch {
-        // isConnected may not exist on older clients; ignore.
-      }
-      if (channelDead || socketDead) {
-        teardown();
-        connect();
-        return true;
-      }
-      return false;
-    }
-
-    function startWatchdog() {
-      if (watchdogTimer) return;
-      watchdogTimer = setInterval(checkRealtimeLiveness, REALTIME_WATCHDOG_INTERVAL_MS);
-    }
-
-    async function connect() {
-      const { data } = await supabase.auth.getSession();
-      const session = data.session;
-      if (!session || cancelled) return;
-
-      try {
-        supabase.realtime.setAuth(session.access_token);
-      } catch {
-        // older clients may not need this; ignore.
-      }
-
-      const userFilter = `user_id=eq.${session.user.id}`;
-      const channelId = `inbox-rt-${session.user.id}-${Math.random().toString(36).slice(2, 10)}`;
-      channel = supabase
-        .channel(channelId)
-        .on(
-          "postgres_changes",
-          { event: "INSERT", schema: "public", table: "emails", filter: userFilter },
-          (payload) => {
-            if (isDamagedPayload(payload)) {
-              refetchFromDamagedPush();
-              return;
-            }
-            applyInsert(payload.new as EmailRow);
-          },
-        )
-        .on(
-          "postgres_changes",
-          { event: "UPDATE", schema: "public", table: "emails", filter: userFilter },
-          (payload) => {
-            if (isDamagedPayload(payload)) {
-              refetchFromDamagedPush();
-              return;
-            }
-            applyUpdate(payload.new as EmailRow);
-          },
-        )
-        .on(
-          "postgres_changes",
-          { event: "DELETE", schema: "public", table: "emails", filter: userFilter },
-          (payload) => {
-            if (isDamagedPayload(payload)) {
-              refetchFromDamagedPush();
-              return;
-            }
-            applyDelete(payload.old as { id: string });
-          },
-        )
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "folders", filter: userFilter },
-          invalidateFolders,
-        )
-        .subscribe((status) => {
-          if (status === "SUBSCRIBED") {
-            reconnectAttempt = 0;
-            lastEventAt = Date.now();
-            startWatchdog();
-            // Catch up on anything missed while disconnected.
-            qc.invalidateQueries({ queryKey: ["emails"] });
-            qc.invalidateQueries({ queryKey: ["folders"] });
-            bumpCounts();
-          } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-            scheduleReconnect();
-          }
+    const connection = createRealtimeConnection<ReturnType<typeof supabase.channel>>({
+      channelPrefix: "inbox-rt",
+      watchdogIntervalMs: REALTIME_WATCHDOG_INTERVAL_MS,
+      async session() {
+        const { data } = await supabase.auth.getSession();
+        const s = data.session;
+        return s ? { accessToken: s.access_token, userId: s.user.id } : null;
+      },
+      setAuth: (token) => supabase.realtime.setAuth(token),
+      socketConnected: () => supabase.realtime.isConnected(),
+      onAuthEvent(handler) {
+        const { data } = supabase.auth.onAuthStateChange((event, session) => {
+          handler(event, session?.access_token ?? null);
         });
-    }
-
-    function teardown() {
-      if (channel) {
-        supabase.removeChannel(channel);
-        channel = null;
-      }
-      if (rafHandle !== null) {
-        if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(rafHandle);
-        else clearTimeout(rafHandle as unknown as ReturnType<typeof setTimeout>);
-        rafHandle = null;
-      }
-      pending.clear();
-    }
-
-    connect();
-
-    // Reconnect / re-auth realtime on session changes. TOKEN_REFRESHED fires
-    // every ~hour; without re-applying the new JWT, RLS-filtered postgres_changes
-    // events silently stop flowing.
-    const { data: authSub } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "TOKEN_REFRESHED" && session) {
-        try {
-          supabase.realtime.setAuth(session.access_token);
-        } catch {
-          // ignore
-        }
-        return;
-      }
-      if (event !== "SIGNED_IN" && event !== "SIGNED_OUT") return;
-      teardown();
-      connect();
+        return () => data.subscription.unsubscribe();
+      },
+      stateOf: (channel) => channel.state,
+      close: (channel) => void supabase.removeChannel(channel),
+      open: ({ channelId, userFilter, onStatus }) =>
+        supabase
+          .channel(channelId)
+          .on(
+            "postgres_changes",
+            { event: "INSERT", schema: "public", table: "emails", filter: userFilter },
+            (payload) => {
+              if (isDamagedPayload(payload)) {
+                refetchFromDamagedPush();
+                return;
+              }
+              applyInsert(payload.new as EmailRow);
+            },
+          )
+          .on(
+            "postgres_changes",
+            { event: "UPDATE", schema: "public", table: "emails", filter: userFilter },
+            (payload) => {
+              if (isDamagedPayload(payload)) {
+                refetchFromDamagedPush();
+                return;
+              }
+              applyUpdate(payload.new as EmailRow);
+            },
+          )
+          .on(
+            "postgres_changes",
+            { event: "DELETE", schema: "public", table: "emails", filter: userFilter },
+            (payload) => {
+              if (isDamagedPayload(payload)) {
+                refetchFromDamagedPush();
+                return;
+              }
+              applyDelete(payload.old as { id: string });
+            },
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "folders", filter: userFilter },
+            invalidateFolders,
+          )
+          .subscribe(onStatus),
+      onSubscribed() {
+        // Catch up on anything missed while disconnected.
+        qc.invalidateQueries({ queryKey: ["emails"] });
+        qc.invalidateQueries({ queryKey: ["folders"] });
+        bumpCounts();
+      },
+      onTeardown: () => coalescer.clear(),
+      // Rebuild the channel if it went stale while hidden. When it was
+      // healthy the whole time, realtime already patched the cache — no
+      // blanket invalidate. (A rebuild's SUBSCRIBED handler catches up; the
+      // emails query's own staleTime-gated focus refetch covers the rest.)
+      // The old unconditional triple-invalidate here was the main source of
+      // the focus-time decrypt burst.
+      onVisible: ({ checkLiveness }) => void checkLiveness(),
     });
 
-    const onVisible = () => {
-      if (document.visibilityState === "visible") {
-        // Rebuild the channel if it went stale while hidden. When it was
-        // healthy the whole time, realtime already patched the cache — no
-        // blanket invalidate. (A rebuild's SUBSCRIBED handler catches up;
-        // the emails query's own staleTime-gated focus refetch covers the
-        // rest.) The old unconditional triple-invalidate here was the main
-        // source of the focus-time decrypt burst.
-        checkRealtimeLiveness();
-      }
-    };
-    document.addEventListener("visibilitychange", onVisible);
+    connection.start();
 
     return () => {
-      cancelled = true;
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-      }
-      if (watchdogTimer) {
-        clearInterval(watchdogTimer);
-        watchdogTimer = null;
-      }
       if (settleSweepTimer) {
         clearTimeout(settleSweepTimer);
         settleSweepTimer = null;
       }
       damagedPushInvalidator.dispose();
-      teardown();
-      authSub.subscription.unsubscribe();
-      document.removeEventListener("visibilitychange", onVisible);
+      connection.stop();
     };
   }, [qc]);
 }
