@@ -7,7 +7,7 @@
 // been deleted, and which badge a `classified_by` value earns — is decided
 // here where it can be tested.
 
-import { matchesLeaf } from "@/lib/sync/filter-engine";
+import { EXCLUDE_OPS, matchesLeaf } from "@/lib/sync/filter-engine";
 import type { Filter, HistoryEmail } from "@/components/folders/editor/types";
 
 export type ReasonTone = "ai" | "manual" | "rule" | "label" | "muted";
@@ -46,13 +46,19 @@ export function getReasonMeta(by: string | null | undefined): ReasonMeta {
  * filed the mail; `snippet` stands in for the body, which the history panel
  * does not load.
  *
- * Returns null when no current rule matches — which is the normal outcome for
- * an email filed by a rule the user has since deleted, since the panel only
- * ever sees the folder's rules as they are now.
+ * Exclude-op rules are skipped, the way the engine partitions a folder's
+ * rules: an exclude only ever vetoes a candidate, and it evaluates true for
+ * exactly the mail it does NOT veto, so naming one would report the rule the
+ * email merely survived instead of the rule that filed it.
+ *
+ * Returns null when no current include rule matches — which is the normal
+ * outcome for an email filed by a rule the user has since deleted, since the
+ * panel only ever sees the folder's rules as they are now.
  */
 export function matchFilter(email: HistoryEmail, filters: Filter[]): Filter | null {
   for (const f of filters) {
     if (!f.value) continue;
+    if (EXCLUDE_OPS.has(f.op)) continue;
     const hit = matchesLeaf(
       {
         from_addr: email.from_addr ?? "",
