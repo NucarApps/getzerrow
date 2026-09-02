@@ -81,6 +81,11 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "The folder chat prompt builder interpolates email text without sanitizeUntrustedText, the same gap as the inbox assistant.",
     fixIn: "src/lib/folder-chat.server.ts — wrap untrusted fields the way ai.server.ts does.",
   },
+  "carddav-basic-auth-utf8-mangled": {
+    what: 'verifyCardDavAuth decodes Basic credentials with atob, which yields a Latin-1 byte string. A UTF-8 email or password comes through as mojibake ("é" becomes "Ã©"), so an account with a non-ASCII address can never pair a phone and the failure is indistinguishable from a wrong password.',
+    fixIn:
+      'src/lib/carddav/auth.server.ts — decode the base64 bytes with TextDecoder("utf-8") instead of atob alone.',
+  },
   "carddav-addressbook-query-filter-ignored": {
     what: "addressbook-query ignores prop-filter/text-match entirely and returns every contact, so a filtering client does its own work over a full download.",
     fixIn: "src/lib/carddav/handlers.server.ts",

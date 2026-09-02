@@ -20,6 +20,14 @@ function basic(creds: string): string {
   return `Basic ${btoa(creds)}`;
 }
 
+/** What a real client sends for credentials outside Latin-1: the UTF-8 bytes,
+ * base64'd. `btoa` alone throws on those characters. */
+function basicUtf8(creds: string): string {
+  let bin = "";
+  for (const byte of new TextEncoder().encode(creds)) bin += String.fromCharCode(byte);
+  return `Basic ${btoa(bin)}`;
+}
+
 async function expectRejectedWithoutRpc(header?: string) {
   const result = await verifyCardDavAuth(reqWithAuth(header));
   expect(result.ok).toBe(false);
@@ -99,6 +107,48 @@ describe("verifyCardDavAuth", () => {
     const result = await verifyCardDavAuth(reqWithAuth(basic("user@example.com:tok")));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(401);
+  });
+
+  it("keeps every colon after the first as part of the password", async () => {
+    // RFC 7617: the username cannot contain a colon, the password can. A
+    // generated app password is base64url today, but splitting on the LAST
+    // colon (or on all of them) would silently truncate a pasted password.
+    fake.onRpc("verify_carddav_token", () => ({ data: USER_ID }));
+    const result = await verifyCardDavAuth(reqWithAuth(basic("user@example.com:pa:ss:word")));
+    expect(result.ok).toBe(true);
+    expect(fake.calls.rpcs[0]!.args).toEqual({
+      p_user_email: "user@example.com",
+      p_token_hash: hashToken("pa:ss:word"),
+    });
+  });
+
+  it("does not trim the password (a trailing space is part of the secret)", async () => {
+    fake.onRpc("verify_carddav_token", () => ({ data: USER_ID }));
+    await verifyCardDavAuth(reqWithAuth(basic("user@example.com: spaced ")));
+    expect(fake.calls.rpcs[0]!.args.p_token_hash).toBe(hashToken(" spaced "));
+  });
+
+  // CHARACTERIZATION(carddav-basic-auth-utf8-mangled)
+  it("mangles a non-ASCII email into mojibake before the lookup", async () => {
+    // `atob` yields a BYTE string: the UTF-8 bytes of "é" (C3 A9) come back
+    // as the two Latin-1 characters "Ã©". The address that reaches
+    // verify_carddav_token therefore never matches the stored one, so an
+    // account with a non-ASCII address can never pair a phone — and the
+    // failure looks exactly like a wrong password.
+    fake.onRpc("verify_carddav_token", () => ({ data: null }));
+    const result = await verifyCardDavAuth(reqWithAuth(basicUtf8("josé@example.com:tok-secret")));
+    expect(result.ok).toBe(false);
+    expect(fake.calls.rpcs[0]!.args.p_user_email).toBe("josã©@example.com");
+  });
+
+  // CHARACTERIZATION(carddav-basic-auth-utf8-mangled)
+  it("mangles a non-ASCII password the same way, so the hash never matches", async () => {
+    fake.onRpc("verify_carddav_token", () => ({ data: null }));
+    await verifyCardDavAuth(reqWithAuth(basicUtf8("user@example.com:pässwörd")));
+    // The hash is taken over the mojibake, not over the password the user
+    // actually typed.
+    expect(fake.calls.rpcs[0]!.args.p_token_hash).toBe(hashToken("pÃ¤sswÃ¶rd"));
+    expect(fake.calls.rpcs[0]!.args.p_token_hash).not.toBe(hashToken("pässwörd"));
   });
 
   it("rejects when the rpc finds no matching token (null data)", async () => {
