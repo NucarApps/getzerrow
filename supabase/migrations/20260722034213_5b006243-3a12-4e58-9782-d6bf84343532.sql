@@ -1,5 +1,5 @@
 -- Rules-engine action fan-out foundation (rules upgrade, task 4).
-CREATE TABLE public.folder_actions (
+CREATE TABLE IF NOT EXISTS public.folder_actions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   folder_id uuid NOT NULL REFERENCES public.folders(id) ON DELETE CASCADE,
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -24,11 +24,13 @@ CREATE TABLE public.folder_actions (
   enabled boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX folder_actions_folder_idx ON public.folder_actions (folder_id) WHERE enabled;
+CREATE INDEX IF NOT EXISTS folder_actions_folder_idx ON public.folder_actions (folder_id) WHERE enabled;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.folder_actions TO authenticated;
 GRANT ALL ON public.folder_actions TO service_role;
 ALTER TABLE public.folder_actions ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users access own folder actions" ON public.folder_actions
+DROP POLICY IF EXISTS "Users access own folder actions" ON public.folder_actions;
+CREATE POLICY "Users access own folder actions"
+  ON public.folder_actions
   FOR ALL TO authenticated
   USING (user_id = auth.uid())
   WITH CHECK (
@@ -36,7 +38,7 @@ CREATE POLICY "Users access own folder actions" ON public.folder_actions
     AND EXISTS (SELECT 1 FROM public.folders f WHERE f.id = folder_id AND f.user_id = auth.uid())
   );
 
-CREATE TABLE public.scheduled_actions (
+CREATE TABLE IF NOT EXISTS public.scheduled_actions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   folder_action_id uuid REFERENCES public.folder_actions(id) ON DELETE CASCADE,
@@ -49,14 +51,18 @@ CREATE TABLE public.scheduled_actions (
   claimed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX scheduled_actions_due_idx ON public.scheduled_actions (run_at) WHERE status = 'pending';
-CREATE INDEX scheduled_actions_user_idx ON public.scheduled_actions (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS scheduled_actions_due_idx ON public.scheduled_actions (run_at) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS scheduled_actions_user_idx ON public.scheduled_actions (user_id, created_at DESC);
 GRANT SELECT, UPDATE ON public.scheduled_actions TO authenticated;
 GRANT ALL ON public.scheduled_actions TO service_role;
 ALTER TABLE public.scheduled_actions ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users view own scheduled actions" ON public.scheduled_actions
+DROP POLICY IF EXISTS "Users view own scheduled actions" ON public.scheduled_actions;
+CREATE POLICY "Users view own scheduled actions"
+  ON public.scheduled_actions
   FOR SELECT TO authenticated USING (user_id = auth.uid());
-CREATE POLICY "Users cancel own scheduled actions" ON public.scheduled_actions
+DROP POLICY IF EXISTS "Users cancel own scheduled actions" ON public.scheduled_actions;
+CREATE POLICY "Users cancel own scheduled actions"
+  ON public.scheduled_actions
   FOR UPDATE TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
 -- Task 5: webhook delivery
@@ -163,7 +169,7 @@ REVOKE EXECUTE ON FUNCTION public.get_folder_action_outbound(uuid, text) FROM PU
 GRANT EXECUTE ON FUNCTION public.get_folder_action_outbound(uuid, text) TO service_role;
 
 -- Task 9: digest action
-CREATE TABLE public.digest_items (
+CREATE TABLE IF NOT EXISTS public.digest_items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   email_id uuid REFERENCES public.emails(id) ON DELETE CASCADE,
@@ -171,7 +177,7 @@ CREATE TABLE public.digest_items (
   sent_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX digest_items_pending_idx ON public.digest_items (user_id, bucket) WHERE sent_at IS NULL;
+CREATE INDEX IF NOT EXISTS digest_items_pending_idx ON public.digest_items (user_id, bucket) WHERE sent_at IS NULL;
 GRANT SELECT, DELETE ON public.digest_items TO authenticated;
 GRANT ALL ON public.digest_items TO service_role;
 ALTER TABLE public.digest_items ENABLE ROW LEVEL SECURITY;
@@ -197,7 +203,7 @@ SELECT cron.schedule('send-digest-hourly', '7 * * * *',
   $$ SELECT private.cron_post('/api/public/hooks/send-digest'); $$);
 
 -- Task 12: classification feedback
-CREATE TABLE public.classification_feedback (
+CREATE TABLE IF NOT EXISTS public.classification_feedback (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   executed_rule_id uuid REFERENCES public.executed_rules(id) ON DELETE CASCADE,
@@ -205,7 +211,7 @@ CREATE TABLE public.classification_feedback (
   note text CHECK (note IS NULL OR length(note) <= 500),
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX classification_feedback_user_idx ON public.classification_feedback (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS classification_feedback_user_idx ON public.classification_feedback (user_id, created_at DESC);
 GRANT SELECT, INSERT ON public.classification_feedback TO authenticated;
 GRANT ALL ON public.classification_feedback TO service_role;
 ALTER TABLE public.classification_feedback ENABLE ROW LEVEL SECURITY;

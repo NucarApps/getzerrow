@@ -1,6 +1,13 @@
 -- Reduce realtime WebSocket traffic by dropping body_text + body_html from
 -- the published columns.
 --
+-- NOTE: this list named `updated_at`, which public.emails has never had (no
+-- migration adds it and it is absent from the generated types), so replaying
+-- this file against a fresh database failed here and no environment could be
+-- built from scratch. Removed from the list; on a database where this
+-- already ran, the publication is defined by the later
+-- 20260707100000_realtime_restore_slim_email_columns.sql anyway.
+--
 -- BACKGROUND
 --   ALTER TABLE emails REPLICA IDENTITY FULL was set up so postgres_changes
 --   payloads include the entire row. That works for label/classification
@@ -62,6 +69,5 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.emails (
   forwarded_at,
   processed_at,
   published_at_ms,
-  created_at,
-  updated_at
+  created_at
 );

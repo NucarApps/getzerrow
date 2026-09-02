@@ -197,6 +197,12 @@ BEGIN
 END;
 $$;
 
+-- The body-encryption trigger writes into the plaintext columns being
+-- removed here, so it has to go first; without this the ALTER below failed
+-- on a fresh replay ("other objects depend on it") and no environment could
+-- be built from scratch. Harmless where it has already run.
+DROP TRIGGER IF EXISTS emails_encrypt_body ON public.emails;
+
 ALTER TABLE public.emails
   DROP COLUMN body_text,
   DROP COLUMN body_html,

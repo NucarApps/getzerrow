@@ -179,7 +179,13 @@ CREATE TRIGGER emails_encrypt_body
 -- Note: CREATE OR REPLACE VIEW preserves dependent objects. Drop+create
 -- pattern would invalidate downstream views/grants.
 
-CREATE OR REPLACE VIEW public.emails_decrypted
+-- NOTE: was CREATE OR REPLACE VIEW, which cannot change a view's column
+-- list; the definition below differs from the previous one, so replaying
+-- this file against a fresh database failed. Drop-and-create instead. The
+-- view is dropped for good by 20260528105923 and replaced by
+-- get_emails_decrypted(), so nothing downstream depends on it.
+DROP VIEW IF EXISTS public.emails_decrypted;
+CREATE VIEW public.emails_decrypted
 WITH (security_invoker = true)
 AS
 SELECT
@@ -193,7 +199,11 @@ SELECT
   e.ai_summary, e.ai_confidence, e.matched_filter_ids, e.matched_folder_ids,
   e.snoozed_until, e.forwarded_to, e.forwarded_at,
   e.forward_attempts, e.forward_last_error, e.forward_next_retry_at, e.forward_locked_at,
-  e.processed_at, e.published_at_ms, e.created_at, e.updated_at
+  -- NOTE: e.updated_at was listed here but public.emails has never had that
+  -- column (the original CREATE TABLE has only created_at), so replaying
+  -- this file against a fresh database failed and no environment could be
+  -- built from scratch.
+  e.processed_at, e.published_at_ms, e.created_at
 FROM public.emails e;
 
 GRANT SELECT ON public.emails_decrypted TO authenticated, service_role;

@@ -50,6 +50,21 @@ CREATE TABLE IF NOT EXISTS audit.decryption_log (
   error text
 );
 
+-- An earlier migration created audit.decryption_log with a different column
+-- set (caller / kind / row_id / success), and the CREATE above is
+-- IF NOT EXISTS, so on any database that ran it first the new columns were
+-- never added and the index below failed — which is why replaying this
+-- history against a fresh database could not complete. Converge both shapes
+-- to the superset before anything reads the new names.
+ALTER TABLE audit.decryption_log
+  ADD COLUMN IF NOT EXISTS resource_kind text,
+  ADD COLUMN IF NOT EXISTS resource_id uuid,
+  ADD COLUMN IF NOT EXISTS caller_kind text,
+  ADD COLUMN IF NOT EXISTS caller_id uuid,
+  ADD COLUMN IF NOT EXISTS context text,
+  ADD COLUMN IF NOT EXISTS outcome text NOT NULL DEFAULT 'ok',
+  ADD COLUMN IF NOT EXISTS error text;
+
 -- "What did user X decrypt?" — primary forensics query.
 CREATE INDEX IF NOT EXISTS decryption_log_caller_idx
   ON audit.decryption_log (caller_id, occurred_at DESC)
@@ -207,7 +222,13 @@ GRANT EXECUTE ON FUNCTION private.decrypt_oauth_token(bytea, uuid, text) TO serv
 
 -- View now passes the row's id and a context label so the audit log
 -- can answer "who decrypted email X via the inbox view".
-CREATE OR REPLACE VIEW public.emails_decrypted
+-- NOTE: was CREATE OR REPLACE VIEW, which cannot change a view's column
+-- list; the definition below differs from the previous one, so replaying
+-- this file against a fresh database failed. Drop-and-create instead. The
+-- view is dropped for good by 20260528105923 and replaced by
+-- get_emails_decrypted(), so nothing downstream depends on it.
+DROP VIEW IF EXISTS public.emails_decrypted;
+CREATE VIEW public.emails_decrypted
 WITH (security_invoker = true)
 AS
 SELECT
@@ -227,7 +248,11 @@ SELECT
   e.ai_summary, e.ai_confidence, e.matched_filter_ids, e.matched_folder_ids,
   e.snoozed_until, e.forwarded_to, e.forwarded_at,
   e.forward_attempts, e.forward_last_error, e.forward_next_retry_at, e.forward_locked_at,
-  e.processed_at, e.published_at_ms, e.created_at, e.updated_at
+  -- NOTE: e.updated_at was listed here but public.emails has never had that
+  -- column (the original CREATE TABLE has only created_at), so replaying
+  -- this file against a fresh database failed and no environment could be
+  -- built from scratch.
+  e.processed_at, e.published_at_ms, e.created_at
 FROM public.emails e;
 
 GRANT SELECT ON public.emails_decrypted TO authenticated, service_role;

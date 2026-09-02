@@ -12,7 +12,10 @@
 -- go through service-role-only RPCs; RLS gives users read access to their
 -- own rows (ciphertext only for the reason column).
 
-CREATE TABLE public.executed_rules (
+-- IF NOT EXISTS: an earlier migration (20260721183630) creates the same two
+-- tables with the same definitions, so a fresh replay tripped over
+-- "relation already exists" and no environment could be built from scratch.
+CREATE TABLE IF NOT EXISTS public.executed_rules (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   gmail_account_id uuid NOT NULL REFERENCES public.gmail_accounts(id) ON DELETE CASCADE,
@@ -35,17 +38,18 @@ CREATE TABLE public.executed_rules (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX executed_rules_user_created_idx
+CREATE INDEX IF NOT EXISTS executed_rules_user_created_idx
   ON public.executed_rules (user_id, created_at DESC);
 
-CREATE INDEX executed_rules_folder_created_idx
+CREATE INDEX IF NOT EXISTS executed_rules_folder_created_idx
   ON public.executed_rules (folder_id, created_at DESC);
 
-CREATE INDEX executed_rules_email_idx
+CREATE INDEX IF NOT EXISTS executed_rules_email_idx
   ON public.executed_rules (email_id);
 
 ALTER TABLE public.executed_rules ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users view own executed rules" ON public.executed_rules;
 CREATE POLICY "Users view own executed rules"
   ON public.executed_rules FOR SELECT
   TO authenticated
@@ -54,7 +58,7 @@ CREATE POLICY "Users view own executed rules"
 GRANT SELECT ON public.executed_rules TO authenticated;
 GRANT ALL ON public.executed_rules TO service_role;
 
-CREATE TABLE public.executed_actions (
+CREATE TABLE IF NOT EXISTS public.executed_actions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   executed_rule_id uuid NOT NULL REFERENCES public.executed_rules(id) ON DELETE CASCADE,
   action_type text NOT NULL,
@@ -69,11 +73,12 @@ CREATE TABLE public.executed_actions (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX executed_actions_rule_idx
+CREATE INDEX IF NOT EXISTS executed_actions_rule_idx
   ON public.executed_actions (executed_rule_id);
 
 ALTER TABLE public.executed_actions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users view own executed actions" ON public.executed_actions;
 CREATE POLICY "Users view own executed actions"
   ON public.executed_actions FOR SELECT
   TO authenticated
