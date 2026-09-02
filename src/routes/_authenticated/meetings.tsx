@@ -24,6 +24,7 @@ import {
 } from "@/lib/meetings.functions";
 import { formatDateTime, formatElapsed } from "@/lib/format";
 import { PLATFORM_LABEL, pickMime, platformOf } from "@/lib/ui/meeting-media";
+import { skipReasonLabel } from "@/lib/ui/meeting-skip-reason";
 import { encodeWav } from "@/lib/wav-encoder";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -133,16 +134,6 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 const formatWhen = (iso: string | null) => formatDateTime(iso);
-
-// Short, friendly reason a recent calendar meeting wasn't recorded.
-const SKIP_REASON_LABEL: Record<string, string> = {
-  no_link: "No video link",
-  auto_record_off: "Auto-record off",
-  declined: "Declined",
-  off: "Turned off",
-  in_person: "Recording in person",
-  blocked: "Blocked contact",
-};
 
 function MeetingsPage() {
   const qc = useQueryClient();
@@ -372,8 +363,7 @@ function MeetingsPage() {
                           </span>
                         </div>
                         <div className="mt-1 truncate text-xs text-muted-foreground">
-                          {SKIP_REASON_LABEL[row.event.skipReason ?? ""] ?? "Not recorded"} ·{" "}
-                          {formatWhen(row.event.start)}
+                          {skipReasonLabel(row.event.skipReason)} · {formatWhen(row.event.start)}
                         </div>
                       </div>
                     </div>

@@ -1,0 +1,64 @@
+import { describe, it, expect } from "vitest";
+import { SKIP_REASON_LABEL, skipReasonLabel } from "./meeting-skip-reason";
+
+/**
+ * Every value `resolveRecordingPlan` can assign to `skipReason`, in the
+ * precedence order it tries them (meetings-autojoin.server.ts). This list is
+ * the contract the label map has to satisfy.
+ */
+const SERVER_REASONS = [
+  "no_link",
+  "auto_record_off",
+  "declined",
+  "color",
+  "off",
+  "in_person",
+  "blocked",
+] as const;
+
+describe("skipReasonLabel", () => {
+  it.each([
+    ["no_link", "No video link"],
+    ["auto_record_off", "Auto-record off"],
+    ["declined", "Declined"],
+    ["off", "Turned off"],
+    ["in_person", "Recording in person"],
+    ["blocked", "Blocked contact"],
+  ])("explains %s as %s", (reason, label) => {
+    expect(skipReasonLabel(reason)).toBe(label);
+  });
+
+  it("falls back to a bare 'Not recorded' when there is no reason at all", () => {
+    expect(skipReasonLabel(null)).toBe("Not recorded");
+    expect(skipReasonLabel(undefined)).toBe("Not recorded");
+    expect(skipReasonLabel("")).toBe("Not recorded");
+  });
+
+  it("falls back rather than showing a raw slug for an unknown reason", () => {
+    expect(skipReasonLabel("some_future_reason")).toBe("Not recorded");
+  });
+
+  // A plain-object lookup answers inherited keys, so without an own-property
+  // check "toString" resolves to a function that sails past the ?? and is
+  // handed to React as a child.
+  it("does not treat an inherited Object property as a label", () => {
+    expect(skipReasonLabel("toString")).toBe("Not recorded");
+    expect(skipReasonLabel("constructor")).toBe("Not recorded");
+  });
+
+  // CHARACTERIZATION(meeting-skip-reason-color-has-no-label): the server emits
+  // a `color` skip reason that the label map has no copy for — flip when fixed
+  it("shows no explanation for a meeting skipped by its calendar colour", () => {
+    expect(skipReasonLabel("color")).toBe("Not recorded");
+    expect(SKIP_REASON_LABEL).not.toHaveProperty("color");
+
+    // Every other reason the server can emit does have copy of its own.
+    const unlabelled = SERVER_REASONS.filter((r) => SKIP_REASON_LABEL[r] === undefined);
+    expect(unlabelled).toStrictEqual(["color"]);
+  });
+
+  it("has no label copy that no server reason can produce", () => {
+    const known = new Set<string>(SERVER_REASONS);
+    expect(Object.keys(SKIP_REASON_LABEL).filter((k) => !known.has(k))).toStrictEqual([]);
+  });
+});

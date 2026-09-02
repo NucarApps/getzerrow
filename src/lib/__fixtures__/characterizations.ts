@@ -141,6 +141,10 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     fixIn:
       "src/lib/sync/filter-engine.ts — match `from` on the address only, or add a searchable name column.",
   },
+  "meeting-skip-reason-color-has-no-label": {
+    what: "resolveRecordingPlan emits a `color` skipReason for a meeting skipped because of its calendar colour, but SKIP_REASON_LABEL has no copy for it, so the meetings list shows a bare 'Not recorded' with no explanation. Every other reason the ladder can produce has its own label.",
+    fixIn: "src/lib/ui/meeting-skip-reason.ts — add copy for `color`.",
+  },
   "swipe-row-archives-on-touchcancel": {
     what: "SwipeRow binds touchcancel to the same handler as touchend, so a gesture the system aborts — an incoming call, an edge swipe, the browser taking over the scroll — archives the message as if the user had released past the threshold. touchcancel means the gesture did not happen.",
     fixIn:
