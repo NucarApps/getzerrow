@@ -295,3 +295,36 @@ describe("filter-string quirks", () => {
     expect(fake.calls.updates[0]!.options).toEqual({ count: "exact" });
   });
 });
+
+describe("embeds and query metadata", () => {
+  it("resolves the bare table(cols) and table!inner(cols) embed spellings", async () => {
+    const fake = makeSupabaseFake();
+    fake.seedRaw("contact_group_members", [{ group_id: "g1", contact_id: "c1" }]);
+    fake.seedRaw("contacts", [{ id: "c1", email: "a@x.com", user_id: "u1" }]);
+    fake.onEmbed("contact_group_members", "contacts", { table: "contacts" });
+
+    // `contacts!inner(...)` — the spelling account-context.ts actually uses.
+    const inner = await fake.supabaseAdmin
+      .from("contact_group_members")
+      .select("group_id,contacts!inner(email,user_id)");
+    expect((inner.data?.[0] as { contacts: { email: string } }).contacts.email).toBe("a@x.com");
+
+    // `contacts(...)` with no alias and no modifier.
+    const bare = await fake.supabaseAdmin
+      .from("contact_group_members")
+      .select("group_id,contacts(email)");
+    expect((bare.data?.[0] as { contacts: { email: string } }).contacts.email).toBe("a@x.com");
+  });
+
+  it("records limit and range on the select without disturbing the filter list", async () => {
+    const fake = makeSupabaseFake();
+    fake.seedRaw("emails", [{ id: "1", user_id: "u1" }]);
+    await fake.supabaseAdmin.from("emails").select("id").eq("user_id", "u1").limit(25);
+    await fake.supabaseAdmin.from("emails").select("id").range(10, 19);
+    expect(fake.calls.selects[0]).toMatchObject({
+      limit: 25,
+      filters: [{ op: "eq", col: "user_id", value: "u1" }],
+    });
+    expect(fake.calls.selects[1]).toMatchObject({ range: [10, 19], filters: [] });
+  });
+});

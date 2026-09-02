@@ -100,6 +100,10 @@ export type RecordedSelect = {
   table: string;
   columns: string | undefined;
   filters: Filter[];
+  /** Row cap the query asked for, when it called `.limit()`. */
+  limit?: number;
+  /** `[from, to]` when the query called `.range()`. */
+  range?: [number, number];
 };
 export type RecordedWrite = {
   table: string;
@@ -443,7 +447,15 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
   /** Aliases named by a `select()` string: `"a, alias:tbl(x,y), b"`. */
   function embedAliases(columns: string | undefined): string[] {
     if (!columns) return [];
-    return [...columns.matchAll(/([A-Za-z_][\w]*)\s*:\s*[A-Za-z_][\w]*\s*\(/g)].map((m) => m[1]!);
+    // Both spellings PostgREST accepts: the aliased `alias:table(cols)` form
+    // and the bare `table(cols)` / `table!inner(cols)` form, where the alias
+    // IS the table name. Missing the second meant an inner join silently
+    // resolved to undefined, which reads as "no matching rows".
+    const aliased = [...columns.matchAll(/([A-Za-z_]\w*)\s*:\s*[A-Za-z_]\w*(?:!\w+)?\s*\(/g)].map(
+      (m) => m[1]!,
+    );
+    const bare = [...columns.matchAll(/(?:^|,)\s*([A-Za-z_]\w*)(?:!\w+)?\s*\(/g)].map((m) => m[1]!);
+    return [...new Set([...aliased, ...bare])];
   }
 
   /** Resolve every registered embed the select asked for onto a copy of the row. */
@@ -478,7 +490,8 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
     let limitN: number | null = null;
     let offsetN = 0;
     const opts = options as { count?: string; head?: boolean } | undefined;
-    calls.selects.push({ table, columns, filters });
+    const recorded: RecordedSelect = { table, columns, filters };
+    calls.selects.push(recorded);
 
     function resolveRows(): { rows: FakeRow[]; error: FakeError | null; total: number } {
       const handler = selectHandlers.get(table);
@@ -511,11 +524,16 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
       },
       limit(n) {
         limitN = n;
+        // Recorded on the select entry (NOT in `filters`, which tests
+        // compare wholesale) so a test can assert the cap a query asked for
+        // rather than inferring it from the row count.
+        recorded.limit = n;
         return builder;
       },
       range(from, to) {
         offsetN = from;
         limitN = to - from + 1;
+        recorded.range = [from, to];
         return builder;
       },
       async single() {
