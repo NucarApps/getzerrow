@@ -82,8 +82,11 @@ export function computeBackoffSeconds(opts: {
     return jitter(Math.min(secondsUntilMidnightPT(), 6 * 3600));
   }
   const table = opts.retryable ? RETRYABLE_BACKOFF_SECONDS : BACKOFF_SECONDS;
-  const idx = opts.retryable
-    ? Math.min(opts.currentAttempt, table.length - 1)
-    : Math.min(opts.nextAttempt - 1, table.length - 1);
+  const raw = opts.retryable ? opts.currentAttempt : opts.nextAttempt - 1;
+  // Clamp BOTH ends. Running off the top just repeats the longest wait, but
+  // running off the bottom used to read table[-1] === undefined and return
+  // NaN — and run-jobs writes `Date.now() + seconds * 1000` into next_run_at,
+  // so that NaN became an invalid timestamp and the job never ran again.
+  const idx = Math.min(Math.max(raw, 0), table.length - 1);
   return jitter(table[idx]!);
 }

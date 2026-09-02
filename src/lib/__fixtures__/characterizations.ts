@@ -61,10 +61,6 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "applyFolderChanges inserts folder_filters directly without calling checkRuleConflicts, so a rule created from chat can silently shadow an existing one — the rules editor warns.",
     fixIn: "src/lib/folder-chat.functions.ts — run checkRuleConflicts before inserting.",
   },
-  "summary-enqueue-no-dedupe": {
-    what: "enqueueFolderSummaryJob always inserts, with no pending-job check and no unique index behind it, so two clicks send two identical digests.",
-    fixIn: "src/lib/summaries.server.ts — skip when a pending job exists, or add a unique index.",
-  },
   "carddav-quoted-printable-not-decoded": {
     what: 'parseVCard ignores ENCODING=QUOTED-PRINTABLE, which vCard 2.1 exporters (Android\'s contact share, several Windows address books) use for every non-ASCII value. "Jürgen Müller" is stored, displayed and pushed to Google as "J=C3=BCrgen M=C3=BCller".',
     fixIn:
@@ -92,10 +88,6 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     fixIn:
       "src/lib/gmail.server.ts — skip parts whose Content-Disposition is inline, or that are referenced by a cid: in the HTML.",
   },
-  "backoff-nan-below-table-floor": {
-    what: "computeBackoffSeconds' terminal branch indexes BACKOFF_SECONDS with nextAttempt - 1 and clamps only the top of the range, so nextAttempt 0 reads table[-1] === undefined and jitter returns NaN. run-jobs writes `Date.now() + seconds * 1000` into next_run_at, so a NaN there becomes an invalid timestamp on the queue row.",
-    fixIn: "src/lib/sync/backoff.ts — clamp the index to 0 as well as to the table length.",
-  },
   "engine-tree-rule-has-no-age": {
     what: "folders.filter_tree is a JSON column with no authoring timestamp, so adapt.toRules stamps a tree rule with the epoch. The v2 ladder's last-resort tiebreak is 'the older rule wins', so a tree rule silently out-ages every real folder_filters rule at the same level.",
     fixIn:
@@ -119,27 +111,6 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "applyFilter's `from` field concatenates the display name, so `from contains acme` fires on 'Acme Support <noreply@vendor.test>'. The preview only ILIKEs from_addr and cannot reproduce it — from_name is stored encrypted, so there is no column to search.",
     fixIn:
       "src/lib/sync/filter-engine.ts — match `from` on the address only, or add a searchable name column.",
-  },
-  "meeting-skip-reason-color-has-no-label": {
-    what: "resolveRecordingPlan emits a `color` skipReason for a meeting skipped because of its calendar colour, but SKIP_REASON_LABEL has no copy for it, so the meetings list shows a bare 'Not recorded' with no explanation. Every other reason the ladder can produce has its own label.",
-    fixIn: "src/lib/ui/meeting-skip-reason.ts — add copy for `color`.",
-  },
-  "swipe-row-archives-on-touchcancel": {
-    what: "SwipeRow binds touchcancel to the same handler as touchend, so a gesture the system aborts — an incoming call, an edge swipe, the browser taking over the scroll — archives the message as if the user had released past the threshold. touchcancel means the gesture did not happen.",
-    fixIn:
-      "src/components/emails/swipe-row.tsx — give touchcancel its own handler that resets without calling onArchive.",
-  },
-  "format-unparseable-date-echoed-raw": {
-    what: "formatDateTime and formatEventTime return the raw input string when it will not parse, while formatRelativeTime, formatShortDate and formatShortDateTime return the caller's fallback. An unparseable timestamp therefore renders as garbage text in two places and as an em dash in three, and the caller's fallback argument is silently ignored on the first two.",
-    fixIn: "src/lib/format.ts — return the fallback from every formatter on NaN input.",
-  },
-  "folder-history-reports-exclude-rule": {
-    what: "The folder history panel explains a filed email with the first folder rule whose leaf evaluates true, without partitioning includes from excludes the way the engine does. An exclude-op rule (not_contains / not_equals / domain_in) evaluates true for exactly the mail it does NOT veto, so a veto rule is routinely named as the rule that filed the email, ahead of the include rule that actually did.",
-    fixIn: "src/lib/ui/folder-history.ts — skip filter-engine's EXCLUDE_OPS in matchFilter.",
-  },
-  "folder-history-surfaced-reason-blank": {
-    what: "An email stamped classified_by=surfaced_to_inbox gets a 'Surfaced' badge, but describeReason has no branch for it and falls through to 'Imported with this folder / No classifier ran on this email yet'. The panel contradicts its own badge, and the surface check that filed the mail is never explained.",
-    fixIn: "src/lib/ui/folder-history.ts — give describeReason a surfaced_to_inbox branch.",
   },
   "inbox-override-duplicate-unguarded": {
     what: "Adding an always-inbox entry does not look at the entries already on the list, so a repeat is only caught by inbox_overrides' UNIQUE (user_id, match_type, value). That key predates the gmail_account_id column and still ignores it, so the same domain cannot be listed on two Gmail accounts at all — and either way the user is shown the raw Postgres unique-violation text instead of a sentence.",

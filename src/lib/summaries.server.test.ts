@@ -38,6 +38,7 @@ import {
 } from "./summaries.server";
 
 const SCHEDULE = "11111111-1111-4111-8111-111111111111";
+const OTHER_SCHEDULE = "66666666-6666-4666-8666-666666666666";
 const FOLDER = "22222222-2222-4222-8222-222222222222";
 const ACCOUNT = "33333333-3333-4333-8333-333333333333";
 const JOB = "44444444-4444-4444-8444-444444444444";
@@ -315,21 +316,77 @@ describe("enqueueFolderSummaryJob", () => {
     );
   });
 
-  // CHARACTERIZATION(summary-enqueue-no-dedupe): enqueueing twice for one
-  // schedule creates two pending jobs — there is no "pending job already
-  // exists" check here and no unique index behind it (migration
-  // 20260527131842 creates only non-unique indexes), so a double-click
-  // sends the user two identical digests. Flip when enqueue dedupes.
-  it("queues a second job for a schedule that already has one pending", async () => {
+  it("hands back the pending job rather than queueing a second identical digest", async () => {
     fake.seed("folder_summary_jobs", [
       { id: JOB, schedule_id: SCHEDULE, user_id: USER, status: "pending" },
     ]);
+
+    await expect(
+      enqueueFolderSummaryJob({ scheduleId: SCHEDULE, userId: USER }),
+    ).resolves.toStrictEqual({ jobId: JOB });
+    expect(fake.calls.inserts).toStrictEqual([]);
+  });
+
+  it("hands back a job the worker has already claimed, since it has not sent yet", async () => {
+    fake.seed("folder_summary_jobs", [
+      { id: JOB, schedule_id: SCHEDULE, user_id: USER, status: "running" },
+    ]);
+
+    await expect(
+      enqueueFolderSummaryJob({ scheduleId: SCHEDULE, userId: USER }),
+    ).resolves.toStrictEqual({ jobId: JOB });
+    expect(fake.calls.inserts).toStrictEqual([]);
+  });
+
+  it.each(["done", "failed"])("queues a fresh job once the previous one is %s", async (status) => {
+    fake.seed("folder_summary_jobs", [{ id: JOB, schedule_id: SCHEDULE, user_id: USER, status }]);
     fake.onInsert("folder_summary_jobs", () => ({ data: { id: "second-job" } }));
 
     await expect(
       enqueueFolderSummaryJob({ scheduleId: SCHEDULE, userId: USER }),
     ).resolves.toStrictEqual({ jobId: "second-job" });
     expect(fake.calls.inserts).toHaveLength(1);
+  });
+
+  it("does not let another schedule's pending job suppress this one", async () => {
+    fake.seed("folder_summary_jobs", [
+      { id: JOB, schedule_id: OTHER_SCHEDULE, user_id: USER, status: "pending" },
+    ]);
+    fake.onInsert("folder_summary_jobs", () => ({ data: { id: "second-job" } }));
+
+    await expect(
+      enqueueFolderSummaryJob({ scheduleId: SCHEDULE, userId: USER }),
+    ).resolves.toStrictEqual({ jobId: "second-job" });
+  });
+
+  it("returns the winner when a concurrent enqueue beat it to the unique index", async () => {
+    // Two clicks race past the pre-check together: the loser's insert trips
+    // the partial unique index, and it must report the job that did land, not
+    // raise at the user.
+    let reads = 0;
+    fake.onSelect("folder_summary_jobs", () => {
+      reads += 1;
+      return reads === 1
+        ? { data: [] }
+        : { data: [{ id: JOB, schedule_id: SCHEDULE, user_id: USER, status: "pending" }] };
+    });
+    fake.onInsert("folder_summary_jobs", () => ({
+      message: "duplicate key value violates unique constraint",
+      code: "23505",
+    }));
+
+    await expect(
+      enqueueFolderSummaryJob({ scheduleId: SCHEDULE, userId: USER }),
+    ).resolves.toStrictEqual({ jobId: JOB });
+  });
+
+  it("raises when the pre-check read itself fails, rather than queueing blind", async () => {
+    fake.onSelect("folder_summary_jobs", () => ({ message: "read denied" }));
+
+    await expect(enqueueFolderSummaryJob({ scheduleId: SCHEDULE, userId: USER })).rejects.toThrow(
+      "read denied",
+    );
+    expect(fake.calls.inserts).toStrictEqual([]);
   });
 });
 

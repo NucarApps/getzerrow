@@ -6,6 +6,10 @@
  * runtime locale is respected everywhere. Callers supply a `fallback` for the
  * null/empty case (kept configurable because "Never" vs "No start time" vs "—"
  * carry different meaning at different call-sites).
+ *
+ * Unparseable input is the null case: every formatter here returns the
+ * caller's fallback rather than echoing the raw string, so a corrupt
+ * timestamp reads as a placeholder instead of as garbage in the UI.
  */
 
 const DEFAULT_FALLBACK = "—"; // em dash
@@ -68,7 +72,7 @@ export function formatDateTime(
 ): string {
   if (!iso) return fallback;
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
+  if (Number.isNaN(d.getTime())) return fallback;
   return d.toLocaleString();
 }
 
@@ -83,7 +87,7 @@ export function formatEventTime(
   const { fallback = DEFAULT_FALLBACK, weekday = false } = opts;
   if (!iso) return fallback;
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
+  if (Number.isNaN(d.getTime())) return fallback;
   return d.toLocaleString(undefined, {
     ...(weekday ? { weekday: "short" as const } : {}),
     month: "short",
@@ -107,9 +111,8 @@ export function formatShortDate(
 /**
  * Short date + zero-padded time (e.g. "Jan 23, 04:05 PM").
  *
- * Differs from `formatEventTime` in two ways that are deliberate rather than
- * accidental: the hour is zero-padded (dense admin tables line up) and an
- * unparseable timestamp reads as the fallback instead of the raw ISO string.
+ * Differs from `formatEventTime` deliberately rather than accidentally: the
+ * hour is zero-padded, so dense admin tables line up.
  */
 export function formatShortDateTime(
   iso: string | null | undefined,

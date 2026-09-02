@@ -97,16 +97,29 @@ describe("computeBackoffSeconds — which table, at an index that distinguishes 
     expect(computeBackoffSeconds(opts({ retryable: false, nextAttempt: 99 }))).toBe(7200);
   });
 
-  // CHARACTERIZATION(backoff-nan-below-table-floor): the terminal branch
-  // indexes with nextAttempt - 1 and clamps only the TOP of the range, so
-  // nextAttempt 0 reads table[-1] === undefined and jitter returns NaN.
-  // run-jobs never produces that pair today (a non-retryable failure always
-  // increments), but the caller writes `Date.now() + seconds * 1000` into
-  // next_run_at, so a NaN here becomes an invalid timestamp on the row.
-  it("a terminal failure with nextAttempt 0 falls off the bottom of the table and returns NaN", () => {
-    expect(computeBackoffSeconds(opts({ retryable: false, nextAttempt: 0 }))).toBeNaN();
-    // The retryable branch clamps at zero and is safe.
+  // run-jobs writes `Date.now() + seconds * 1000` into next_run_at, so an
+  // index that falls off the BOTTOM of the table must not reach the caller
+  // as a NaN — that becomes an invalid timestamp on the queue row, and the
+  // job never runs again.
+  it("clamps to the first entry when the attempt counter is below the table", () => {
+    expect(computeBackoffSeconds(opts({ retryable: false, nextAttempt: 0 }))).toBe(30);
     expect(computeBackoffSeconds(opts({ retryable: true, currentAttempt: 0 }))).toBe(30);
+  });
+
+  it("clamps to the first entry for a negative attempt counter on either table", () => {
+    expect(computeBackoffSeconds(opts({ retryable: false, nextAttempt: -7 }))).toBe(30);
+    expect(computeBackoffSeconds(opts({ retryable: true, currentAttempt: -7 }))).toBe(30);
+  });
+
+  it("returns a usable interval for every attempt counter, never NaN", () => {
+    for (const n of [-100, -1, 0, 1, 2, 5, 99]) {
+      const terminal = computeBackoffSeconds(opts({ retryable: false, nextAttempt: n }));
+      const transient = computeBackoffSeconds(opts({ retryable: true, currentAttempt: n }));
+      expect(Number.isFinite(terminal), `terminal backoff for nextAttempt ${n}`).toBe(true);
+      expect(Number.isFinite(transient), `transient backoff for currentAttempt ${n}`).toBe(true);
+      expect(terminal).toBeGreaterThan(0);
+      expect(transient).toBeGreaterThan(0);
+    }
   });
 });
 

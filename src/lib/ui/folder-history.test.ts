@@ -126,16 +126,29 @@ describe("matchFilter — which rule is reported", () => {
     ).toBeNull();
   });
 
-  // CHARACTERIZATION(folder-history-reports-exclude-rule): an exclude-op rule can never file mail, but the panel reports it as the cause — flip when fixed
-  it("reports an exclude-op rule as the cause even though such a rule never files mail", () => {
+  it("names the include rule that filed the email, not the veto rule it merely survived", () => {
     // The engine partitions a folder's rules into includes and excludes and
     // only an include can put mail in the folder (filter-engine EXCLUDE_OPS).
-    // matchFilter does not partition, so `subject not_contains receipt` —
-    // true for this email merely because it is not vetoed — is named as the
-    // rule that filed it, ahead of the include rule that actually did.
+    // `subject not_contains receipt` is true for this email merely because it
+    // is not vetoed, so it must not out-rank the include rule that filed it.
     const veto = filter({ id: "f-veto", field: "subject", op: "not_contains", value: "receipt" });
     const real = filter({ id: "f-real", field: "subject", op: "contains", value: "invoice" });
-    expect(matchFilter(email(), [veto, real])?.id).toBe("f-veto");
+    expect(matchFilter(email(), [veto, real])?.id).toBe("f-real");
+  });
+
+  it.each(["not_contains", "not_equals", "domain_in"])(
+    "never reports a %s rule as the cause, since an exclude can only veto",
+    (op) => {
+      expect(matchFilter(email(), [filter({ op, field: "subject", value: "receipt" })])).toBeNull();
+    },
+  );
+
+  it("stays vague when the folder holds nothing but exclude rules", () => {
+    expect(
+      describeReason(email({ classified_by: "filter" }), [
+        filter({ id: "f-veto", field: "subject", op: "not_contains", value: "receipt" }),
+      ]),
+    ).toStrictEqual({ title: "Matched a folder rule", body: { kind: "rule_unnamed" } });
   });
 });
 
@@ -214,14 +227,20 @@ describe("describeReason", () => {
     });
   });
 
-  // CHARACTERIZATION(folder-history-surfaced-reason-blank): the surfaced-to-inbox explanation contradicts its own badge — flip when fixed
-  it("claims no classifier ran on an email the surface check filed", () => {
-    // The badge for this email reads "Surfaced" (getReasonMeta above), but
-    // the expanded explanation falls through to the imported-with-the-folder
-    // branch, so the panel contradicts itself about the same email.
+  it("explains a surfaced email as filed here but kept visible in the inbox", () => {
+    // Surfacing does not undo the filing: the folder's rules put the email
+    // here, the folder's surface rule then re-added INBOX so it stays visible
+    // too. The explanation has to agree with the "Surfaced" badge.
     expect(describeReason(email({ classified_by: "surfaced_to_inbox" }), [])).toStrictEqual({
-      title: "Imported with this folder",
-      body: { kind: "imported" },
+      title: "Kept in your inbox by this folder's surface rule",
+      body: { kind: "surfaced" },
+    });
+  });
+
+  it("gives the surfaced explanation whether or not a rule can still be named", () => {
+    const f = filter({ field: "subject", op: "contains", value: "invoice" });
+    expect(describeReason(email({ classified_by: "surfaced_to_inbox" }), [f]).body).toStrictEqual({
+      kind: "surfaced",
     });
   });
 
