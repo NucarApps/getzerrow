@@ -411,6 +411,7 @@ export const AUDIT_FOLDER_WRITE_PATHS: Array<{
     coveredBy: [
       "src/lib/sync/folder-write-contracts.test.ts",
       "src/lib/gmail/move.functions.test.ts",
+      "src/lib/gmail/folder-mgmt.functions.test.ts",
     ],
     writers: [
       "src/lib/move-email.server.ts",
