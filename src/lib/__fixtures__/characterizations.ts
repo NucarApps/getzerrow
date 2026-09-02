@@ -97,6 +97,11 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     fixIn:
       "src/lib/ui/inbox-overrides.ts and supabase/migrations — widen the unique key to include gmail_account_id and report a duplicate in the validator.",
   },
+  "suggested-merge-skips-google-tombstones": {
+    what: "mergeContactDuplicate skips a Google link whose gmail_account_id the survivor already holds, then deletes the duplicate contact — the link row disappears by FK cascade and nothing is recorded in google_contact_tombstones. The Google-side duplicate is never deleted upstream and comes back on the next pull. Its sibling mergeContactsManual tombstones exactly those collision resources, so the two merge paths disagree.",
+    fixIn:
+      "src/lib/contacts/dedup.functions.ts — tombstone the colliding resources in mergeContactDuplicate the way the manual merge does.",
+  },
   "reports-topsenders-address-only": {
     what: "getInboxReport never selects a sender display name, so parseSender's name branch is dead and topSenders can only ever show an address. There is no plaintext from_name column — only from_name_enc — so the fix is a decrypt pass over the window, not a wider select.",
     fixIn: "src/lib/reports.functions.ts — resolve display names via the decrypt reader.",

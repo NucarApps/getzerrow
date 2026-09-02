@@ -1,7 +1,15 @@
+// Dominant brand colour for a company logo, used to tint contact and
+// company cards.
+//
+// Three cache tiers, cheapest first: a module-level memo (same tab, same
+// session), sessionStorage (survives a client-side navigation), then an
+// actual image decode. A miss is cached as null too — a domain with no
+// usable logo must not re-download on every render.
 import { logoCandidates } from "./company-domains";
 
 const memCache = new Map<string, string | null>();
 const STORAGE_PREFIX = "logoColor:";
+const SAMPLE_TIMEOUT_MS = 6000;
 
 function readSession(domain: string): string | null | undefined {
   try {
@@ -18,6 +26,12 @@ function writeSession(domain: string, color: string | null) {
   } catch {
     /* ignore */
   }
+}
+
+/** Drop the in-memory tier. Tests use it to isolate cases; production has
+ * no reason to call it — the memo is meant to live as long as the tab. */
+export function resetLogoColorCache(): void {
+  memCache.clear();
 }
 
 function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
@@ -48,22 +62,18 @@ function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   return [h, s, l];
 }
 
-function extractFromImage(img: HTMLImageElement): string | null {
-  const size = 32;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return null;
-  ctx.drawImage(img, 0, 0, size, size);
-  let data: Uint8ClampedArray;
-  try {
-    data = ctx.getImageData(0, 0, size, size).data;
-  } catch {
-    return null; // CORS taint
-  }
-
-  // 12 hue bins; track summed saturation*weight + avg rgb per bin
+/**
+ * The brand colour of one decoded logo: RGBA pixels in, `rgb(r, g, b)` out.
+ *
+ * Pixels are dropped when they are transparent, near-white/black or
+ * near-neutral — a logo is mostly its background and its outline, and both
+ * would otherwise win. What survives is binned into 12 hues weighted by
+ * saturation and mid-lightness, and the heaviest bin's mean colour wins.
+ * Returns null when nothing survived (a greyscale or empty mark).
+ *
+ * Pure, and exported so the bucketing is testable without a canvas.
+ */
+export function dominantColorFromPixels(data: Uint8ClampedArray | number[]): string | null {
   const bins = Array.from({ length: 12 }, () => ({
     weight: 0,
     r: 0,
@@ -108,47 +118,81 @@ function extractFromImage(img: HTMLImageElement): string | null {
   return `rgb(${r}, ${g}, ${bl})`;
 }
 
-export function getLogoDominantColor(domain: string): Promise<string | null> {
-  if (memCache.has(domain)) return Promise.resolve(memCache.get(domain)!);
-  const sess = readSession(domain);
-  if (sess !== undefined) {
-    memCache.set(domain, sess);
-    return Promise.resolve(sess);
+function extractFromImage(img: HTMLImageElement): string | null {
+  const size = 32;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.drawImage(img, 0, 0, size, size);
+  let data: Uint8ClampedArray;
+  try {
+    data = ctx.getImageData(0, 0, size, size).data;
+  } catch {
+    return null; // CORS taint
+  }
+  return dominantColorFromPixels(data);
+}
+
+/**
+ * Sample one candidate URL. Resolves to the colour, or null when the image
+ * failed to load, was CORS-tainted, or held no usable colour — in every one
+ * of those cases the caller moves on to the next candidate.
+ */
+export type LogoSampler = (url: string) => Promise<string | null>;
+
+const sampleWithImage: LogoSampler = (url) =>
+  new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.decoding = "async";
+    img.referrerPolicy = "no-referrer";
+    img.onload = () => resolve(extractFromImage(img));
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+
+let sampler: LogoSampler = sampleWithImage;
+
+/** Swap the image decode for a stub. Passing null restores the real one. */
+export function setLogoSampler(next: LogoSampler | null): void {
+  sampler = next ?? sampleWithImage;
+}
+
+export async function getLogoDominantColor(domain: string): Promise<string | null> {
+  // `has` rather than a truthiness check: a cached null is a real answer
+  // ("this domain has no usable logo"), not a miss.
+  if (memCache.has(domain)) return memCache.get(domain) ?? null;
+  const stored = readSession(domain);
+  if (stored !== undefined) {
+    memCache.set(domain, stored);
+    return stored;
   }
 
-  const urls = logoCandidates(domain, 64);
+  const color = await withTimeout(walkCandidates(domain), SAMPLE_TIMEOUT_MS);
+  memCache.set(domain, color);
+  writeSession(domain, color);
+  return color;
+}
+
+/** First candidate that yields a colour wins; a candidate that fails to
+ * load or has no usable colour falls through to the next. */
+async function walkCandidates(domain: string): Promise<string | null> {
+  for (const url of logoCandidates(domain, 64)) {
+    const color = await sampler(url);
+    if (color) return color;
+  }
+  return null;
+}
+
+/** A logo host that never answers must not leave the caller hanging. */
+function withTimeout(work: Promise<string | null>, ms: number): Promise<string | null> {
   return new Promise((resolve) => {
-    let i = 0;
-    let settled = false;
-    const finish = (c: string | null) => {
-      if (settled) return;
-      settled = true;
-      memCache.set(domain, c);
-      writeSession(domain, c);
-      resolve(c);
-    };
-    const tryNext = () => {
-      const url = urls[i];
-      if (url === undefined) return finish(null);
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.decoding = "async";
-      img.referrerPolicy = "no-referrer";
-      img.onload = () => {
-        const c = extractFromImage(img);
-        if (c) finish(c);
-        else {
-          i++;
-          tryNext();
-        }
-      };
-      img.onerror = () => {
-        i++;
-        tryNext();
-      };
-      img.src = url;
-    };
-    tryNext();
-    setTimeout(() => finish(null), 6000);
+    const timer = setTimeout(() => resolve(null), ms);
+    void work.then((value) => {
+      clearTimeout(timer);
+      resolve(value);
+    });
   });
 }
