@@ -35,14 +35,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { toast } from "sonner";
 import { CompanyLogo } from "@/components/contacts/CompanyLogo";
 import { CompanyBucketHeader } from "@/components/contacts/CompanyBucketHeader";
-import {
-  emailDomain,
-  isPersonalDomain,
-  isRoutableDomain,
-  prettyCompanyName,
-  contactLogoDomain,
-  resolveCompanyDomain,
-} from "@/lib/company-domains";
+import { contactLogoDomain, resolveCompanyDomain } from "@/lib/company-domains";
 import { ContactDrawer } from "@/components/contacts/ContactDrawer";
 import { AddContactsDialog } from "@/components/contacts/AddContactsDialog";
 import { getContactAiToolsStatus } from "@/lib/contacts/ai-scan-status.functions";
@@ -52,7 +45,6 @@ import {
 } from "@/components/contacts/ContactDetailView";
 import { listCompanyAliases, addCompanyAlias } from "@/lib/company-aliases.functions";
 import { renameCompanyForContacts } from "@/lib/contacts/crud.functions";
-import { companyBrandKey } from "@/lib/contacts/company-name";
 import { listCompanyLogoChoices } from "@/lib/company-logo.functions";
 import {
   listCompanies,
@@ -65,6 +57,24 @@ import {
   buildInlineCompanyMergeSuggestions,
   type InlineCompanyMergeSuggestion,
 } from "@/lib/companies/inline-merge";
+import {
+  buildAliasesByPrimary,
+  buildAliasMap,
+  buildCompanyById,
+  buildCompanyBuckets,
+  buildCompanyIdByDomain,
+  type Bucket as CompanyBucket,
+} from "@/lib/ui/contact-buckets";
+import {
+  allBucketsCollapsed as allCollapsed,
+  buildContactGroupMap,
+  contactInitial,
+  countUngrouped,
+  filterContacts,
+  toggleAllBuckets as nextCollapsedSet,
+  toggleId,
+  toggleIds,
+} from "@/lib/ui/contacts-list";
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
   head: () => ({
@@ -78,11 +88,6 @@ export const Route = createFileRoute("/_authenticated/contacts/")({
   component: ContactsPage,
   errorComponent: RouteErrorFallback,
 });
-
-/** First display letter for a contact's monogram avatar. */
-function initialOf(c: { name?: string | null; email?: string | null }): string {
-  return (c.name || c.email || "?").trim().charAt(0).toUpperCase() || "?";
-}
 
 /** Colored membership dots shown at the right edge of a contact row. */
 function GroupDots({
@@ -333,15 +338,10 @@ function ContactsPage() {
   }, [lq.data]);
 
   // contact_id -> [group ids]
-  const contactGroupMap = useMemo(() => {
-    const m = new Map<string, string[]>();
-    for (const x of gq.data?.memberships ?? []) {
-      const arr = m.get(x.contact_id) ?? [];
-      arr.push(x.group_id);
-      m.set(x.contact_id, arr);
-    }
-    return m;
-  }, [gq.data]);
+  const contactGroupMap = useMemo(
+    () => buildContactGroupMap(gq.data?.memberships ?? []),
+    [gq.data],
+  );
 
   const groupsById = useMemo(() => {
     const m = new Map<string, GroupRow>();
@@ -355,34 +355,22 @@ function ContactsPage() {
   // groupId -> Set of descendant group ids (including itself) for filtering.
   const descendantsById = useMemo(() => buildDescendantsById(gq.data?.groups ?? []), [gq.data]);
 
-  const filtered = useMemo(() => {
-    const all = q.data?.contacts ?? [];
-    const t = debouncedQuery.toLowerCase().trim();
-    const allowedGroupIds =
-      filter !== "all" && filter !== "ungrouped"
-        ? (descendantsById.get(filter) ?? new Set([filter]))
-        : null;
-    return all.filter((x) => {
-      if (filter === "ungrouped" && (contactGroupMap.get(x.id)?.length ?? 0) > 0) return false;
-      if (allowedGroupIds) {
-        const gids = contactGroupMap.get(x.id) ?? [];
-        if (!gids.some((gid) => allowedGroupIds.has(gid))) return false;
-      }
-      if (!t) return true;
-      return (
-        (x.name ?? "").toLowerCase().includes(t) ||
-        (x.email ?? "").toLowerCase().includes(t) ||
-        (x.company ?? "").toLowerCase().includes(t)
-      );
-    });
-  }, [q.data, debouncedQuery, filter, contactGroupMap, descendantsById]);
+  const filtered = useMemo(
+    () =>
+      filterContacts({
+        contacts: q.data?.contacts ?? [],
+        query: debouncedQuery,
+        filter,
+        contactGroupMap,
+        descendantsById,
+      }),
+    [q.data, debouncedQuery, filter, contactGroupMap, descendantsById],
+  );
 
-  const ungroupedCount = useMemo(() => {
-    const all = q.data?.contacts ?? [];
-    let n = 0;
-    for (const c of all) if ((contactGroupMap.get(c.id)?.length ?? 0) === 0) n++;
-    return n;
-  }, [q.data, contactGroupMap]);
+  const ungroupedCount = useMemo(
+    () => countUngrouped(q.data?.contacts ?? [], contactGroupMap),
+    [q.data, contactGroupMap],
+  );
 
   // Incremental list rendering: mounting the whole address book (up to 2,000
   // rows / hundreds of company sections) at once makes the page sluggish.
@@ -411,21 +399,10 @@ function ContactsPage() {
   };
 
   function toggleSelect(id: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    setSelectedIds((prev) => toggleId(prev, id));
   }
   function toggleBucketSelection(ids: string[]) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      const allSelected = ids.length > 0 && ids.every((id) => next.has(id));
-      if (allSelected) ids.forEach((id) => next.delete(id));
-      else ids.forEach((id) => next.add(id));
-      return next;
-    });
+    setSelectedIds((prev) => toggleIds(prev, ids));
   }
   /** Open a contact: docked pane on wide screens (flushing any half-saved
    * edit in the pane first), slide-over drawer below the breakpoint. */
@@ -482,197 +459,26 @@ function ContactsPage() {
     setPaneId(first ? first.id : null);
   }, [isPane, paneId, q.data, filtered]);
   type Contact = (typeof filtered)[number];
-  type Bucket = {
-    key: string;
-    domain: string | null;
-    name: string;
-    kind: "company" | "personal" | "other";
-    contacts: Contact[];
-    /** Resolved Company entity id, when the bucket is a linked company. */
-    companyId?: string;
-    /** Custom uploaded company logo URL, when set. */
-    companyLogoUrl?: string | null;
-  };
+  type Bucket = CompanyBucket<Contact>;
 
-  const aliasMap = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const r of aq.data ?? []) m.set(r.alias_domain, r.primary_domain);
-    return m;
-  }, [aq.data]);
+  const aliasMap = useMemo(() => buildAliasMap(aq.data ?? []), [aq.data]);
 
-  const aliasesByPrimary = useMemo(() => {
-    const m = new Map<string, string[]>();
-    for (const r of aq.data ?? []) {
-      const arr = m.get(r.primary_domain) ?? [];
-      arr.push(r.alias_domain);
-      m.set(r.primary_domain, arr);
-    }
-    return m;
-  }, [aq.data]);
+  const aliasesByPrimary = useMemo(() => buildAliasesByPrimary(aq.data ?? []), [aq.data]);
 
   // Company-entity lookups so bucketing can group by the LINKED company
   // first: a contact tied to a Company row belongs in that company's bucket
   // even when their email domain is missing/personal (fixes "two Zimmerman
   // Advertising rows" when one member has no work email).
-  const companyById = useMemo(() => {
-    const m = new Map<string, { name: string; domain: string | null; logoUrl: string | null }>();
-    for (const c of cq.data?.companies ?? []) {
-      m.set(c.id, {
-        name: c.name,
-        domain: c.domains?.[0]?.domain ?? null,
-        logoUrl: (c as { logo_url?: string | null }).logo_url ?? null,
-      });
-    }
-    return m;
-  }, [cq.data]);
-  const companyIdByDomain = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const c of cq.data?.companies ?? []) {
-      for (const d of c.domains ?? []) {
-        if (d.domain) m.set(d.domain.toLowerCase(), c.id);
-      }
-    }
-    return m;
-  }, [cq.data]);
+  const companyById = useMemo(() => buildCompanyById(cq.data?.companies ?? []), [cq.data]);
+  const companyIdByDomain = useMemo(
+    () => buildCompanyIdByDomain(cq.data?.companies ?? []),
+    [cq.data],
+  );
 
-  const companyBuckets = useMemo<Bucket[]>(() => {
-    const map = new Map<string, Bucket>();
-    const PERSONAL_KEY = "__personal__";
-    const OTHER_KEY = "__other__";
-    for (const c of filtered) {
-      const rawDomainRaw = emailDomain(c.email);
-      // Dotless hosts must not become their own bucket (emailDomain no longer
-      // filters them; that check now lives in isRoutableDomain).
-      const rawDomain = isRoutableDomain(rawDomainRaw) ? rawDomainRaw : null;
-      const d = resolveCompanyDomain(rawDomain, aliasMap);
-      const webDomain = contactLogoDomain(c.website, c.email);
-      const resolvedWeb = resolveCompanyDomain(webDomain, aliasMap);
-      let key: string;
-      let bucket: Bucket | undefined;
-      const manualCompany = (c.company ?? "").trim();
-      // Linked company wins; contacts whose email domain belongs to a known
-      // company collapse into the same bucket even without an explicit link.
-      // Personal domains never participate in the domain lookup or in seeding
-      // the bucket's display domain — a gmail-only member of a domainless
-      // company must not turn the bucket into a "gmail.com company".
-      const workDomain = d && !isPersonalDomain(d) ? d : null;
-      const linkedCompanyId =
-        (c.company_id && companyById.has(c.company_id) ? c.company_id : null) ??
-        (workDomain ? (companyIdByDomain.get(workDomain) ?? null) : null);
-      if (linkedCompanyId) {
-        const company = companyById.get(linkedCompanyId)!;
-        key = `cid:${linkedCompanyId}`;
-        bucket = map.get(key) ?? {
-          key,
-          domain: company.domain ?? resolvedWeb ?? workDomain,
-          name: company.name,
-          kind: "company",
-          contacts: [],
-          companyId: linkedCompanyId,
-          companyLogoUrl: company.logoUrl,
-        };
-      } else if (!d && manualCompany) {
-        key = `name:${companyBrandKey(manualCompany)}`;
-        bucket = map.get(key) ?? {
-          key,
-          domain: null,
-          name: manualCompany,
-          kind: "company",
-          contacts: [],
-        };
-      } else if (!d) {
-        key = OTHER_KEY;
-        bucket = map.get(key) ?? { key, domain: null, name: "Other", kind: "other", contacts: [] };
-      } else if (isPersonalDomain(d)) {
-        key = PERSONAL_KEY;
-        bucket = map.get(key) ?? {
-          key,
-          domain: null,
-          name: "Personal email",
-          kind: "personal",
-          contacts: [],
-        };
-      } else {
-        key = d;
-        bucket = map.get(key) ?? {
-          key,
-          domain: resolvedWeb ?? d,
-          name: prettyCompanyName(d),
-          kind: "company",
-          contacts: [],
-        };
-        if (c.company && bucket.name === prettyCompanyName(d)) bucket.name = c.company;
-        if (resolvedWeb && bucket.domain === d) bucket.domain = resolvedWeb;
-      }
-      bucket.contacts.push(c);
-      map.set(key, bucket);
-    }
-    const arr = Array.from(map.values());
-    // For name-keyed buckets (no email domain), derive a domain from the
-    // dominant contact website so the edit dialog can key off it.
-    for (const b of arr) {
-      if (b.kind === "company" && !b.domain && b.key.startsWith("name:")) {
-        const domCounts = new Map<string, number>();
-        for (const c of b.contacts) {
-          const wd = contactLogoDomain(c.website, c.email);
-          const rd = wd ? resolveCompanyDomain(wd, aliasMap) : null;
-          if (rd && !isPersonalDomain(rd)) {
-            domCounts.set(rd, (domCounts.get(rd) ?? 0) + 1);
-          }
-        }
-        let best = 0;
-        for (const [d, n] of domCounts) {
-          if (n > best) {
-            best = n;
-            b.domain = d;
-          }
-        }
-      }
-    }
-    // Collapse name-keyed buckets whose members share a website/email domain
-    // with an existing domain bucket (e.g. contacts with no email but a
-    // website pointing to nucar.com should merge into the nucar.com bucket).
-    // Name-keyed buckets with no derivable domain at all fold into a company
-    // bucket with the same normalized name instead — a contact with only
-    // "Zimmerman Advertising" typed in must not mint a second company row.
-    const byDomain = new Map<string, Bucket>();
-    const byNormName = new Map<string, Bucket>();
-    for (const b of arr) {
-      if (b.kind === "company" && !b.key.startsWith("name:")) {
-        if (b.domain) byDomain.set(b.domain, b);
-        const norm = companyBrandKey(b.name);
-        if (norm && !byNormName.has(norm)) byNormName.set(norm, b);
-      }
-    }
-    const collapsed: Bucket[] = [];
-    for (const b of arr) {
-      if (b.kind === "company" && b.key.startsWith("name:")) {
-        if (b.domain && byDomain.has(b.domain)) {
-          byDomain.get(b.domain)!.contacts.push(...b.contacts);
-          continue;
-        }
-        // Name fold only when the bucket has NO domain evidence at all — a
-        // derived domain that matches nothing means these contacts belong to
-        // a DIFFERENT company that merely shares a brand token ("Apex Group"
-        // at apexgroup.com must not fold into "Apex" at apex.com).
-        if (!b.domain) {
-          const norm = companyBrandKey(b.name);
-          if (norm && byNormName.has(norm)) {
-            byNormName.get(norm)!.contacts.push(...b.contacts);
-            continue;
-          }
-        }
-      }
-      collapsed.push(b);
-    }
-
-    const companies = collapsed
-      .filter((b) => b.kind === "company")
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-    const personal = collapsed.filter((b) => b.kind === "personal");
-    const other = collapsed.filter((b) => b.kind === "other");
-    return [...companies, ...personal, ...other];
-  }, [filtered, aliasMap, companyById, companyIdByDomain]);
+  const companyBuckets = useMemo<Bucket[]>(
+    () => buildCompanyBuckets({ contacts: filtered, aliasMap, companyById, companyIdByDomain }),
+    [filtered, aliasMap, companyById, companyIdByDomain],
+  );
 
   // Same-name merge suggestions: buckets that share a normalized company name
   // but live on different domains. Persisted dismissals live in localStorage.
@@ -782,20 +588,13 @@ function ContactsPage() {
   }
 
   function toggleBucket(key: string) {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+    setCollapsed((prev) => toggleId(prev, key));
   }
   // True when every visible company bucket is collapsed — drives the
   // Expand-all / Collapse-all toolbar toggle.
-  const allBucketsCollapsed =
-    companyBuckets.length > 0 && companyBuckets.every((b) => collapsed.has(b.key));
+  const allBucketsCollapsed = allCollapsed(companyBuckets, collapsed);
   function toggleAllBuckets() {
-    if (allBucketsCollapsed) setCollapsed(new Set());
-    else setCollapsed(new Set(companyBuckets.map((b) => b.key)));
+    setCollapsed((prev) => nextCollapsedSet(companyBuckets, prev));
   }
   // Auto-collapse all buckets when toggling "By company" on, and again the
   // first time buckets become available (initial load races contacts query).
@@ -1266,7 +1065,7 @@ function ContactsPage() {
                                           : undefined
                                       }
                                     >
-                                      {initialOf(c)}
+                                      {contactInitial(c)}
                                     </div>
                                     <div className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
                                       <span className="truncate text-[15px] font-medium text-foreground sm:text-sm">
@@ -1321,7 +1120,7 @@ function ContactsPage() {
                     const showLogo = !!dom;
                     // Personal initial when no company link — never a company's
                     // initial (which produced the stray "N" for Nissan before).
-                    const personInitial = initialOf(c);
+                    const personInitial = contactInitial(c);
                     const isActive = isPane && paneId === c.id;
                     const isChecked = selectedIds.has(c.id);
                     return (
