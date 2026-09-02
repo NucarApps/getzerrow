@@ -69,11 +69,6 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "enqueueFolderSummaryJob always inserts, with no pending-job check and no unique index behind it, so two clicks send two identical digests.",
     fixIn: "src/lib/summaries.server.ts — skip when a pending job exists, or add a unique index.",
   },
-  "carddav-quoted-printable-not-decoded": {
-    what: 'parseVCard ignores ENCODING=QUOTED-PRINTABLE, which vCard 2.1 exporters (Android\'s contact share, several Windows address books) use for every non-ASCII value. "Jürgen Müller" is stored, displayed and pushed to Google as "J=C3=BCrgen M=C3=BCller".',
-    fixIn:
-      'src/lib/carddav/vcard.ts — decode quoted-printable values, including the soft "=" line continuations, before unescaping.',
-  },
   "carddav-addressbook-query-filter-ignored": {
     what: "addressbook-query ignores prop-filter/text-match entirely and returns every contact, so a filtering client does its own work over a full download.",
     fixIn: "src/lib/carddav/handlers.server.ts",
