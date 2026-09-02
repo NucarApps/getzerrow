@@ -65,10 +65,6 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "applyFolderChanges inserts folder_filters directly without calling checkRuleConflicts, so a rule created from chat can silently shadow an existing one — the rules editor warns.",
     fixIn: "src/lib/folder-chat.functions.ts — run checkRuleConflicts before inserting.",
   },
-  "summary-enqueue-no-dedupe": {
-    what: "enqueueFolderSummaryJob always inserts, with no pending-job check and no unique index behind it, so two clicks send two identical digests.",
-    fixIn: "src/lib/summaries.server.ts — skip when a pending job exists, or add a unique index.",
-  },
   "carddav-quoted-printable-not-decoded": {
     what: 'parseVCard ignores ENCODING=QUOTED-PRINTABLE, which vCard 2.1 exporters (Android\'s contact share, several Windows address books) use for every non-ASCII value. "Jürgen Müller" is stored, displayed and pushed to Google as "J=C3=BCrgen M=C3=BCller".',
     fixIn:

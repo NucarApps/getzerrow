@@ -216,19 +216,55 @@ export async function runFolderSummary(
   }
 }
 
+/** Statuses that mean a digest for this schedule is still on its way out:
+ * queued, or claimed by the worker but not yet sent. */
+const LIVE_JOB_STATUSES = ["pending", "running"];
+
+/** Postgres unique_violation. */
+const UNIQUE_VIOLATION = "23505";
+
+/** The live job for a schedule, if it already has one. */
+async function findLiveJob(scheduleId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("folder_summary_jobs")
+    .select("id")
+    .eq("schedule_id", scheduleId)
+    .in("status", LIVE_JOB_STATUSES)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data?.id ?? null;
+}
+
 /**
  * Enqueue a digest run as a background job. Returns the job id so the caller
  * can poll for completion instead of blocking on the model.
+ *
+ * Idempotent per schedule while a run is in flight: a schedule that already
+ * has a queued or claimed job gets that job's id back rather than a second
+ * one, so a double-click (or a cron tick landing on top of a manual run)
+ * cannot send the user two identical digests. The pre-check leaves a race
+ * window between two concurrent callers, which the partial unique index on
+ * `(schedule_id) WHERE status IN ('pending','running')` closes; the loser of
+ * that race reports the job that did land instead of raising.
  */
 export async function enqueueFolderSummaryJob(args: {
   scheduleId: string;
   userId: string;
 }): Promise<{ jobId: string }> {
+  const live = await findLiveJob(args.scheduleId);
+  if (live) return { jobId: live };
+
   const { data, error } = await supabaseAdmin
     .from("folder_summary_jobs")
     .insert({ schedule_id: args.scheduleId, user_id: args.userId, status: "pending" })
     .select("id")
     .single();
+  if (error?.code === UNIQUE_VIOLATION) {
+    const winner = await findLiveJob(args.scheduleId);
+    if (winner) return { jobId: winner };
+  }
   if (error || !data) throw new Error(error?.message ?? "Failed to enqueue digest job");
   return { jobId: data.id };
 }
