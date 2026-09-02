@@ -35,6 +35,11 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "createFolderAndAssign assembles its own emails patch instead of calling performMove: the old folder's Gmail label stays on the message and matched_filter_ids is left stale.",
     fixIn: "src/lib/gmail/rules.functions.ts — assign through performMove.",
   },
+  "run-jobs-now-drains-global-queue": {
+    what: "runJobsNow passes a client-chosen limit (up to 100) straight to runMessageJobs, whose claim_message_jobs RPC takes only a limit and a priority — no user id. Any authenticated user can therefore drain the shared queue on behalf of every tenant and read back the aggregate processed/failed/dlq counts of work that is not theirs.",
+    fixIn:
+      "src/lib/gmail/rules.functions.ts and src/lib/sync/run-jobs.ts — claim only the caller's jobs (a p_user_id argument on claim_message_jobs), or make the UI button enqueue a scoped drain.",
+  },
   "domain-reassign-not-transactional": {
     what: "reassignDomainToFolder inserts the destination domain rule BEFORE the bulk email update, so a failing update throws but leaves the new rule behind.",
     fixIn:
