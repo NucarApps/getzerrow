@@ -328,15 +328,16 @@ describe("bulkCatchupClaim", () => {
     expect(reset.payload).toMatchObject({ status: "pending", locked_at: null });
   });
 
-  // CHARACTERIZATION(catchup-upsert-error-drops-message): when the encrypted
-  // upsert fails the row is never written, yet the job is still deleted as
-  // "rules matched" — the message is lost until a reconcile re-ingests it.
-  it("deletes the job even when the row upsert failed (message lost until reconcile)", async () => {
+  it("requeues the job when the row upsert failed, instead of deleting it", async () => {
+    // Deleting a job whose row never landed loses the message until a
+    // reconcile happens to re-ingest it.
     fake.onRpc("claim_message_jobs", () => [queueJob({ id: "j1" })]);
     upsertEmailEncrypted.mockResolvedValue({ id: null, error: "encrypt failed" });
     const res = await bulkCatchupClaim(ACC, USER);
     expect(res.inserted).toBe(0);
-    expect(idsOf(jobDeletes()[0]!)).toEqual(["j1"]);
+    expect(jobDeletes()).toHaveLength(0);
+    const released = jobUpdates().find((u) => idsOf(u).includes("j1"))!;
+    expect(released.payload).toMatchObject({ status: "pending", locked_at: null });
   });
 
   it("reports overflow when live jobs remain pending for the account", async () => {

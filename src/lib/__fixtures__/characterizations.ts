@@ -27,10 +27,6 @@ export type Characterization = {
 };
 
 export const CHARACTERIZATIONS: Record<string, Characterization> = {
-  "catchup-upsert-error-drops-message": {
-    what: "Bulk catch-up deletes the queue job as done even when the encrypted row upsert failed, so the message is lost until a reconcile re-ingests it.",
-    fixIn: "src/lib/sync/catchup.ts — release the job instead of deleting it on upsert failure.",
-  },
   "reclassify-skips-gmail-labels": {
     what: "reclassifyEmails writes emails.folder_id but never swaps the Gmail labels, so the DB and the mailbox drift apart. Its single-message sibling reanalyzeEmail does swap them.",
     fixIn: "src/lib/gmail/rules.functions.ts — route the bulk path through performMove.",

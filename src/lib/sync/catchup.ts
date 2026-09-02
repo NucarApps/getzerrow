@@ -229,7 +229,9 @@ export async function bulkCatchupClaim(
   const fetched = await parallelFetch(accountId, jobs, CATCHUP_FETCH_CONCURRENCY);
 
   // ─── 4. Classify by rules, build write payloads, partition by needs_ai.
-  const toWrite: CatchupBuilt[] = [];
+  // Each row carries the job that produced it: a failed persist has to move
+  // that job to the release list instead of the delete list.
+  const toWrite: Array<CatchupBuilt & { jobId: string }> = [];
   const rulesMatchedJobIds: string[] = []; // job rows to DELETE (done)
   const pendingAiJobIds: string[] = []; // job rows to RESET → pending
   const releaseJobIds: string[] = []; // jobs whose Gmail fetch failed (transient)
@@ -259,7 +261,7 @@ export async function bulkCatchupClaim(
       rulesMatchedJobIds.push(job.id);
       continue;
     }
-    toWrite.push(built);
+    toWrite.push({ ...built, jobId: job.id });
     if (built.needs_ai) {
       pendingAiJobIds.push(job.id);
     } else {
@@ -283,6 +285,10 @@ export async function bulkCatchupClaim(
   //         the RPC upserts on (gmail_account_id, gmail_message_id), which
   //         also handles the rare case where a webhook beat us to it.
   let inserted = 0;
+  // Jobs whose row never landed. Deleting them (the default for a
+  // rules-matched job) would drop the message until a reconcile happened to
+  // re-ingest it, so they go back on the queue instead.
+  const failedPersistJobIds = new Set<string>();
   for (const item of toWrite) {
     const { id, error: upErr } = await upsertEmailEncrypted(item.upsert);
     if (upErr || !id) {
@@ -291,6 +297,7 @@ export async function bulkCatchupClaim(
         { account_id: accountId, gmail_message_id: item.upsert.gmail_message_id },
         upErr,
       );
+      failedPersistJobIds.add(item.jobId);
       continue;
     }
     inserted++;
@@ -307,10 +314,13 @@ export async function bulkCatchupClaim(
 
   // ─── 6. Update job queue: drop done jobs, reset AI-needed back to
   //         pending so the live cron lane (5s) picks them up to run AI.
-  if (rulesMatchedJobIds.length > 0) {
-    await supabaseAdmin.from("message_jobs").delete().in("id", rulesMatchedJobIds);
+  const doneJobIds = rulesMatchedJobIds.filter((id) => !failedPersistJobIds.has(id));
+  const aiJobIds = pendingAiJobIds.filter((id) => !failedPersistJobIds.has(id));
+  const retryJobIds = [...releaseJobIds, ...failedPersistJobIds];
+  if (doneJobIds.length > 0) {
+    await supabaseAdmin.from("message_jobs").delete().in("id", doneJobIds);
   }
-  if (pendingAiJobIds.length > 0) {
+  if (aiJobIds.length > 0) {
     await supabaseAdmin
       .from("message_jobs")
       .update({
@@ -318,9 +328,9 @@ export async function bulkCatchupClaim(
         locked_at: null,
         next_run_at: new Date().toISOString(),
       })
-      .in("id", pendingAiJobIds);
+      .in("id", aiJobIds);
   }
-  if (releaseJobIds.length > 0) {
+  if (retryJobIds.length > 0) {
     await supabaseAdmin
       .from("message_jobs")
       .update({
@@ -328,7 +338,7 @@ export async function bulkCatchupClaim(
         locked_at: null,
         next_run_at: new Date(Date.now() + 30_000).toISOString(),
       })
-      .in("id", releaseJobIds);
+      .in("id", retryJobIds);
   }
 
   // ─── 7. Folder side effects (Gmail label modify, forward) for
@@ -336,33 +346,36 @@ export async function bulkCatchupClaim(
   //         already in the INSERT.
   if (folderSideEffects.length > 0) {
     await Promise.all(
-      folderSideEffects.map(async ({ job, parsed, folder, inInbox }) => {
-        try {
-          const { data: row } = await supabaseAdmin
-            .from("emails")
-            .select("id")
-            .eq("gmail_account_id", job.gmail_account_id)
-            .eq("gmail_message_id", job.gmail_message_id)
-            .maybeSingle();
-          if (!row) return;
-          void bumpEmailsSinceLearn(folder.id);
-          await applyFolderActions(
-            job.gmail_account_id,
-            job.gmail_message_id,
-            row.id,
-            folder,
-            parsed,
-            inInbox,
-            { persistFlags: false },
-          );
-        } catch (e) {
-          logError(
-            "catchup.folder_actions_failed",
-            { account_id: job.gmail_account_id, gmail_message_id: job.gmail_message_id },
-            e,
-          );
-        }
-      }),
+      folderSideEffects
+        // A row that never persisted has no side effects to apply.
+        .filter(({ job }) => !failedPersistJobIds.has(job.id))
+        .map(async ({ job, parsed, folder, inInbox }) => {
+          try {
+            const { data: row } = await supabaseAdmin
+              .from("emails")
+              .select("id")
+              .eq("gmail_account_id", job.gmail_account_id)
+              .eq("gmail_message_id", job.gmail_message_id)
+              .maybeSingle();
+            if (!row) return;
+            void bumpEmailsSinceLearn(folder.id);
+            await applyFolderActions(
+              job.gmail_account_id,
+              job.gmail_message_id,
+              row.id,
+              folder,
+              parsed,
+              inInbox,
+              { persistFlags: false },
+            );
+          } catch (e) {
+            logError(
+              "catchup.folder_actions_failed",
+              { account_id: job.gmail_account_id, gmail_message_id: job.gmail_message_id },
+              e,
+            );
+          }
+        }),
     );
   }
 
@@ -377,7 +390,7 @@ export async function bulkCatchupClaim(
   return {
     scanned: jobs.length,
     inserted,
-    ai_pending: pendingAiJobIds.length,
+    ai_pending: aiJobIds.length,
     fetch_failed,
     overflowed: (remainingPending ?? 0) > 0,
   };
