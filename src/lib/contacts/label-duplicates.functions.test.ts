@@ -10,6 +10,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
+import { asSupabaseAdmin } from "./__fixtures__/rows";
 
 const fake = makeSupabaseFake();
 
@@ -156,7 +157,7 @@ describe("consolidateLabelDuplicatesImpl", () => {
     // Two identically-named root labels cluster by name; one is folded away.
     fake.seed("contact_groups", [group("g1", { name: "Honda" }), group("g2", { name: "Honda" })]);
 
-    const res = await consolidateLabelDuplicatesImpl(fake.supabaseAdmin as never, USER);
+    const res = await consolidateLabelDuplicatesImpl(asSupabaseAdmin(fake), USER);
 
     expect(res.mergedClusters).toBe(1);
     expect(res.mergedLabels).toBe(1);
@@ -170,7 +171,7 @@ describe("consolidateLabelDuplicatesImpl", () => {
       group("g1", { name: "Attorneys" }),
       group("g2", { name: "Banks" }),
     ]);
-    const res = await consolidateLabelDuplicatesImpl(fake.supabaseAdmin as never, USER);
+    const res = await consolidateLabelDuplicatesImpl(asSupabaseAdmin(fake), USER);
     expect(res).toEqual({ mergedClusters: 0, mergedLabels: 0, failedLabels: 0, errors: [] });
   });
 });
