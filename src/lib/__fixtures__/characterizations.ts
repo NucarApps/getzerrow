@@ -92,10 +92,6 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     fixIn:
       "src/lib/gmail.server.ts — skip parts whose Content-Disposition is inline, or that are referenced by a cid: in the HTML.",
   },
-  "backoff-nan-below-table-floor": {
-    what: "computeBackoffSeconds' terminal branch indexes BACKOFF_SECONDS with nextAttempt - 1 and clamps only the top of the range, so nextAttempt 0 reads table[-1] === undefined and jitter returns NaN. run-jobs writes `Date.now() + seconds * 1000` into next_run_at, so a NaN there becomes an invalid timestamp on the queue row.",
-    fixIn: "src/lib/sync/backoff.ts — clamp the index to 0 as well as to the table length.",
-  },
   "engine-tree-rule-has-no-age": {
     what: "folders.filter_tree is a JSON column with no authoring timestamp, so adapt.toRules stamps a tree rule with the epoch. The v2 ladder's last-resort tiebreak is 'the older rule wins', so a tree rule silently out-ages every real folder_filters rule at the same level.",
     fixIn:
