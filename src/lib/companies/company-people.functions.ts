@@ -538,16 +538,19 @@ export const addCompanyPeople = createServerFn({ method: "POST" })
 
     // Existing rows already assigned to another company are left alone.
 
-    // Insert net-new contacts.
-    const toInsert = data.items.filter((it) => !existingByEmail.has(it.email));
+    // Insert net-new contacts. Iterate the deduped address list, not
+    // `data.items`: the same address twice in one payload would otherwise
+    // produce two rows in one statement, which the partial unique index on
+    // (user_id, lower(email)) rejects — failing the whole call.
+    const toInsert = emails.filter((email) => !existingByEmail.has(email));
     if (toInsert.length > 0) {
       const { data: inserted, error: insErr } = await supabase
         .from("contacts")
         .insert(
-          toInsert.map((it) => ({
+          toInsert.map((email) => ({
             user_id: userId,
-            email: it.email,
-            name: it.name || null,
+            email,
+            name: nameByEmail.get(email) ?? null,
             company: companyName,
             company_id: data.companyId,
             source: "email",
