@@ -24,6 +24,17 @@ import {
 } from "@/lib/meetings.functions";
 import { formatDateTime, formatElapsed } from "@/lib/format";
 import { PLATFORM_LABEL, pickMime, platformOf } from "@/lib/ui/meeting-media";
+import {
+  artifactLabel,
+  artifactPresence,
+  canGenerateTitle,
+  isTerminalMeetingStatus,
+  meetingPollIntervalMs,
+  meetingStatusBadge,
+  mergePastRows,
+  pendingMeetings,
+  titleSaveDecision,
+} from "@/lib/ui/meeting-status";
 import { skipReasonLabel } from "@/lib/ui/meeting-skip-reason";
 import { encodeWav } from "@/lib/wav-encoder";
 import { supabase } from "@/integrations/supabase/client";
@@ -88,8 +99,6 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
 
-const TERMINAL = new Set(["done", "failed"]);
-
 export const Route = createFileRoute("/_authenticated/meetings")({
   head: () => ({
     meta: [
@@ -105,30 +114,11 @@ export const Route = createFileRoute("/_authenticated/meetings")({
   errorComponent: RouteErrorFallback,
 });
 
-const STATUS_LABEL: Record<string, string> = {
-  scheduled: "Scheduled",
-  joining: "Joining",
-  recording: "Recording",
-  processing: "Processing",
-  done: "Done",
-  failed: "Failed",
-};
-
-const STATUS_STYLE: Record<string, string> = {
-  scheduled: "bg-muted text-muted-foreground",
-  joining: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  recording: "bg-red-500/10 text-red-600 dark:text-red-400",
-  processing: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-  done: "bg-primary/10 text-primary",
-  failed: "bg-destructive/10 text-destructive",
-};
-
 function StatusBadge({ status }: { status: string }) {
+  const badge = meetingStatusBadge(status);
   return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[status] ?? "bg-muted text-muted-foreground"}`}
-    >
-      {STATUS_LABEL[status] ?? status}
+    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>
+      {badge.label}
     </span>
   );
 }
@@ -163,31 +153,13 @@ function MeetingsPage() {
 
   // Merge recorded meetings with recent calendar meetings that were never
   // recorded, newest first, so the past list shows everything that happened.
-  const pastRows = useMemo(() => {
-    type Row =
-      | { kind: "meeting"; sortKey: string; meeting: (typeof meetings)[number] }
-      | { kind: "unrecorded"; sortKey: string; event: (typeof unrecorded)[number] };
-    const rows: Row[] = [
-      ...meetings.map((m) => ({
-        kind: "meeting" as const,
-        sortKey: m.scheduled_start ?? m.created_at ?? "",
-        meeting: m,
-      })),
-      ...unrecorded.map((e) => ({
-        kind: "unrecorded" as const,
-        sortKey: e.start ?? "",
-        event: e,
-      })),
-    ];
-    rows.sort((a, b) => (a.sortKey < b.sortKey ? 1 : a.sortKey > b.sortKey ? -1 : 0));
-    return rows;
-  }, [meetings, unrecorded]);
+  const pastRows = useMemo(() => mergePastRows({ meetings, unrecorded }), [meetings, unrecorded]);
 
   // Best-effort: pull live status for any non-terminal meetings so the list
   // badges advance without opening each one, then refresh the list once.
   const syncingRef = useRef(false);
   useEffect(() => {
-    const pending = meetings.filter((m) => !TERMINAL.has(m.status));
+    const pending = pendingMeetings(meetings);
     if (!pending.length || syncingRef.current) return;
     syncingRef.current = true;
     void (async () => {
@@ -1123,10 +1095,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     queryKey: ["meeting", id],
     queryFn: () => getFn({ data: { id: id as string } }),
     enabled: !!id,
-    refetchInterval: (query) => {
-      const status = query.state.data?.meeting.status;
-      return status && !TERMINAL.has(status) ? 10000 : false;
-    },
+    refetchInterval: (query) => meetingPollIntervalMs(query.state.data?.meeting.status),
   });
 
   const meeting = q.data?.meeting;
@@ -1135,13 +1104,18 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     () => (meeting?.transcript as TranscriptSegment[] | null) ?? [],
     [meeting?.transcript],
   );
-  const hasRecording = !!(diagnostics?.hasRecording || meeting?.recording_url);
+  const artifacts = artifactPresence({
+    diagnostics,
+    recordingUrl: meeting?.recording_url,
+    transcriptLength: transcript.length,
+    summary: meeting?.summary,
+  });
 
   // Pull the live status from Recall whenever a non-terminal meeting is open,
   // and again on each poll tick, so the badge advances even without webhooks.
   const status = meeting?.status;
   useEffect(() => {
-    if (!id || !status || TERMINAL.has(status)) return;
+    if (!id || !status || isTerminalMeetingStatus(status)) return;
     void sync({ data: { id } })
       .then((r) => {
         if (r.status !== status) qc.invalidateQueries({ queryKey: ["meeting", id] });
@@ -1158,7 +1132,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
     setRecordingError(null);
     setVideoError(false);
     setDiagnostics(null);
-    if (!id || !status || !TERMINAL.has(status)) return;
+    if (!id || !status || !isTerminalMeetingStatus(status)) return;
     let cancelled = false;
     void refreshRec({ data: { id } })
       .then(async (r) => {
@@ -1286,16 +1260,22 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
   }
 
   async function saveTitle() {
-    if (cancelTitleRef.current) {
+    const decision = titleSaveDecision({
+      cancelled: cancelTitleRef.current,
+      hasMeeting: !!id,
+      draft: titleDraft,
+      currentTitle: meeting?.title,
+    });
+    if (decision.action === "cancelled") {
       cancelTitleRef.current = false;
       return;
     }
-    if (!id) return;
-    const next = titleDraft.trim();
-    if (next === (meeting?.title ?? "")) {
+    if (decision.action === "skip") return;
+    if (decision.action === "unchanged") {
       setEditingTitle(false);
       return;
     }
+    const next = decision.title;
     setSavingTitle(true);
     try {
       await rename({ data: { id, title: next } });
@@ -1371,10 +1351,12 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                   className="h-8 w-8 shrink-0"
                   onClick={onGenerateTitle}
                   disabled={
-                    generatingTitle || savingTitle || !(meeting.summary || transcript.length)
+                    generatingTitle ||
+                    savingTitle ||
+                    !canGenerateTitle(meeting.summary, transcript.length)
                   }
                   title={
-                    meeting.summary || transcript.length
+                    canGenerateTitle(meeting.summary, transcript.length)
                       ? "Generate title from the meeting"
                       : "Add a recording first to generate a title"
                   }
@@ -1474,12 +1456,9 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                       <div className="space-y-1 max-sm:hidden">
                         <p className="font-medium text-foreground">Recording status</p>
                         <p className="text-muted-foreground">
-                          Recording {hasRecording ? "found" : "not found yet"} · Transcript{" "}
-                          {diagnostics?.hasTranscript || transcript.length > 0
-                            ? "found"
-                            : "not found yet"}{" "}
-                          · Summary{" "}
-                          {diagnostics?.hasSummary || !!meeting.summary ? "found" : "not found yet"}
+                          Recording {artifactLabel(artifacts.recording)} · Transcript{" "}
+                          {artifactLabel(artifacts.transcript)} · Summary{" "}
+                          {artifactLabel(artifacts.summary)}
                         </p>
                       </div>
                       <Button
@@ -1519,7 +1498,7 @@ function MeetingDetail({ id, onClose }: { id: string | null; onClose: () => void
                 </TabsList>
 
                 <TabsContent value="summary" className="mt-0 space-y-5 p-4 pt-4 sm:p-6">
-                  {!TERMINAL.has(meeting.status) ? (
+                  {!isTerminalMeetingStatus(meeting.status) ? (
                     <div className="flex flex-col gap-3 rounded-md bg-muted/50 p-3 sm:flex-row sm:items-center sm:justify-between">
                       <p className="text-sm text-muted-foreground">
                         Recording in progress — the transcript and summary appear here once the
