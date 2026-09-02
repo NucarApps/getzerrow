@@ -76,14 +76,15 @@ describe("assertAdmin", () => {
   it("matches the allowlist ignoring case and surrounding whitespace on both sides", async () => {
     vi.stubEnv("ADMIN_EMAILS", "  Boss@Atzro.test  , second@atzro.test ");
 
-    // The match trims both sides; the value handed back is only lowercased,
-    // so it echoes whatever padding the claim carried.
-    await expect(withClaims(getAdminMe, { email: " BOSS@atzro.TEST " })()).resolves.toStrictEqual({
-      email: " boss@atzro.test ",
-    });
-    await expect(withClaims(getAdminMe, { email: "second@atzro.test" })()).resolves.toStrictEqual({
-      email: "second@atzro.test",
-    });
+    // Both sides are trimmed and lowercased, for the match and for the
+    // value handed back — which used to echo whatever padding the claim
+    // carried.
+    await expect(
+      withClaims(getAdminMe, { email: " BOSS@atzro.TEST ", email_verified: true })(),
+    ).resolves.toStrictEqual({ email: "boss@atzro.test" });
+    await expect(
+      withClaims(getAdminMe, { email: "second@atzro.test", email_verified: true })(),
+    ).resolves.toStrictEqual({ email: "second@atzro.test" });
   });
 
   it("forbids an email that is not on the allowlist", async () => {
@@ -116,14 +117,16 @@ describe("assertAdmin", () => {
     }
   });
 
-  // CHARACTERIZATION(admin-ignores-email-verified): assertAdmin matches the
-  // JWT `email` claim against ADMIN_EMAILS without ever consulting
-  // `email_verified`, so an unverified identity that merely asserts an admin
-  // address is granted the cross-tenant dashboard — flip when fixed.
-  it("admits a claim whose email is unverified", async () => {
-    await expect(
-      withClaims(getAdminMe, { email: "boss@atzro.test", email_verified: false })(),
-    ).resolves.toStrictEqual({ email: "boss@atzro.test" });
+  it("refuses a claim whose email is unverified", async () => {
+    // An allowlisted address is not an identity: anyone who can sign up
+    // asserting it would otherwise get the cross-tenant dashboard.
+    await expectForbidden(
+      withClaims(getAdminMe, { email: "boss@atzro.test", email_verified: false }),
+    );
+  });
+
+  it("refuses a claim with no email_verified at all, rather than assuming it", async () => {
+    await expectForbidden(withClaims(getAdminMe, { email: "boss@atzro.test" }));
   });
 });
 

@@ -49,10 +49,6 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     fixIn:
       "src/lib/carddav/query-filter.ts — widen the grammar, and consider a 403 supported-filter precondition (RFC 6352 §8.6.2) for what stays unimplemented.",
   },
-  "admin-ignores-email-verified": {
-    what: "assertAdmin matches the JWT `email` claim against ADMIN_EMAILS without ever consulting `email_verified`, so an unverified identity that merely asserts an allowlisted address is granted the cross-tenant admin dashboard.",
-    fixIn: "src/lib/admin.functions.ts — require claims.email_verified === true.",
-  },
   "replay-ignores-gmail-label-placement": {
     what: "buildChangeSet evaluates every historical message with skipGmailLabelMatch:true, so the Gmail label mirror (stage 3) never runs. Mail the user filed by applying a label in Gmail — which the live pipeline files by label on every pass — reads as unexplained, is proposed for a move to the Inbox, and is not even flagged requires_review, so Apply All (planner-apply applyMoves) would carry it out.",
     fixIn:

@@ -18,11 +18,18 @@ function isAdminEmail(email: unknown): boolean {
 }
 
 function assertAdmin(claims: unknown): string {
-  const email = (claims as { email?: unknown })?.email;
-  if (!isAdminEmail(email)) {
+  const c = claims as { email?: unknown; email_verified?: unknown } | null | undefined;
+  // An allowlisted ADDRESS is not an identity: without this an unverified
+  // sign-up that merely asserts an admin address is handed the
+  // cross-tenant dashboard. Fail closed when the claim is absent too —
+  // this gate guards every other user's data.
+  if (c?.email_verified !== true) {
     throw new Response("Forbidden", { status: 403 });
   }
-  return String(email).toLowerCase();
+  if (!isAdminEmail(c.email)) {
+    throw new Response("Forbidden", { status: 403 });
+  }
+  return String(c.email).toLowerCase().trim();
 }
 
 export const getAdminMe = createServerFn({ method: "GET" })
