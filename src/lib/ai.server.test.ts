@@ -49,7 +49,16 @@ vi.mock("./ai-budget", () => ({
   },
 }));
 
-import { buildFolderProfile, classifyEmail, suggestFolderFromEmails } from "./ai.server";
+import {
+  buildFolderProfile,
+  classifyEmail,
+  generateAiRuleFromLabelSamples,
+  generateAiRuleFromPurpose,
+  suggestFolderFromEmails,
+  suggestReply,
+  summarizeEmail,
+  summarizeFolderEmails,
+} from "./ai.server";
 import { AI_CLASSIFY_ATTEMPT_TIMEOUT_MS, AI_CLASSIFY_TOTAL_BUDGET_MS } from "./sync/config";
 
 const FOLDERS = [
@@ -358,5 +367,231 @@ describe("suggestFolderFromEmails", () => {
     const prompt = callArgs(0).prompt;
     expect(prompt).toContain("30. From:  <s29@acme.test>");
     expect(prompt).not.toContain("31. From:  <s30@acme.test>");
+  });
+});
+
+describe("summarizeFolderEmails", () => {
+  const DIGEST = {
+    folderName: "Vendors",
+    instructions: "Group by vendor.",
+    emails: [
+      {
+        from_addr: "billing@acme.test",
+        from_name: "Acme Billing",
+        subject: "Invoice 1042",
+        snippet: "Your invoice is ready",
+        received_at: "2026-09-01T08:00:00.000Z",
+      },
+    ],
+  };
+
+  it("returns the structured digest from the primary model untouched", async () => {
+    const digest = { subject: "Vendors — 1 email", body_text: "text", body_html: "<p>html</p>" };
+    generateText.mockResolvedValue({ output: digest });
+
+    const res = await summarizeFolderEmails(DIGEST);
+    expect(res).toEqual(digest);
+    expect(generateText).toHaveBeenCalledTimes(1);
+    expect(callArgs(0).prompt).toContain(
+      "1. [2026-09-01T08:00:00.000Z] Acme Billing <billing@acme.test>",
+    );
+    expect(callArgs(0).prompt).toContain("Group by vendor.");
+  });
+
+  it("falls back to Markdown and renders it to text + HTML when structured output fails", async () => {
+    generateText.mockRejectedValueOnce(new Error("schema not supported")).mockResolvedValueOnce({
+      text: `# Vendors, 2 Sep
+
+## Invoices
+
+- Acme <invoice 1042>
+- Beta & Co
+
+Nothing else needs
+your attention today.`,
+    });
+
+    const res = await summarizeFolderEmails(DIGEST);
+    // The first heading becomes the email subject and is stripped from the body.
+    expect(res.subject).toBe("Vendors, 2 Sep");
+    expect(res.body_text).toBe(`## Invoices
+
+- Acme <invoice 1042>
+- Beta & Co
+
+Nothing else needs
+your attention today.`);
+    // Markdown → HTML by hand, and every interpolated fragment is escaped —
+    // this body is sent as an email, so an unescaped subject line from a
+    // sender would be markup injection.
+    expect(res.body_html).toBe(
+      [
+        '<h3 style="margin:16px 0 8px">Invoices</h3>',
+        '<ul style="margin:8px 0 8px 20px">' +
+          "<li>Acme &lt;invoice 1042&gt;</li><li>Beta &amp; Co</li></ul>",
+        '<p style="margin:8px 0">Nothing else needs<br>your attention today.</p>',
+      ].join("\n"),
+    );
+    expect(res._fallback).toBe(true);
+  });
+
+  it("names the digest after the folder when the fallback answer has no heading", async () => {
+    generateText
+      .mockRejectedValueOnce(new Error("schema not supported"))
+      .mockResolvedValueOnce({ text: "Just one paragraph, no heading." });
+
+    const res = await summarizeFolderEmails(DIGEST);
+    expect(res.subject).toBe("Vendors daily digest");
+    expect(res.body_text).toBe("Just one paragraph, no heading.");
+  });
+
+  it("trims the email list harder when the user's instructions are long", async () => {
+    generateText.mockResolvedValue({ output: { subject: "s", body_text: "t", body_html: "h" } });
+    const emails = Array.from({ length: 150 }, (_, i) => ({
+      from_addr: `s${i}@acme.test`,
+      from_name: null,
+      subject: `Subject ${i}`,
+      snippet: null,
+      received_at: null,
+    }));
+
+    await summarizeFolderEmails({ folderName: "Vendors", instructions: "short", emails });
+    expect(callArgs(0).prompt).toContain("150. ");
+
+    generateText.mockClear();
+    // A heavy custom prompt plus a long list blows the gateway budget, so
+    // the list is capped at 100 instead of 150.
+    await summarizeFolderEmails({
+      folderName: "Vendors",
+      instructions: "x".repeat(1501),
+      emails,
+    });
+    expect(callArgs(0).prompt).toContain("100. ");
+    expect(callArgs(0).prompt).not.toContain("101. ");
+  });
+});
+
+describe("generateAiRuleFromPurpose", () => {
+  it("refuses an empty purpose without calling a model", async () => {
+    await expect(generateAiRuleFromPurpose({ purpose: "   " })).rejects.toThrow(
+      "Describe the folder's purpose first.",
+    );
+    expect(generateText).not.toHaveBeenCalled();
+  });
+
+  it("strips the code fence and quotes a model wraps its rule in", async () => {
+    generateText.mockResolvedValue({
+      text: '```\n"Emails from vendors about invoices and receipts."\n```',
+    });
+
+    const res = await generateAiRuleFromPurpose({
+      purpose: "vendor invoices",
+      folderName: "Vendors",
+    });
+    expect(res).toBe("Emails from vendors about invoices and receipts.");
+    expect(callArgs(0).prompt).toContain('Folder name: "Vendors"');
+    expect(callArgs(0).prompt).toContain('"vendor invoices"');
+  });
+
+  it("reports an unusable answer rather than saving an empty rule", async () => {
+    generateText.mockResolvedValue({ text: "```json\n```" });
+    await expect(generateAiRuleFromPurpose({ purpose: "vendor invoices" })).rejects.toThrow(
+      "AI returned an empty rule. Try rephrasing the purpose.",
+    );
+  });
+
+  it("caps a runaway rule at 600 characters", async () => {
+    generateText.mockResolvedValue({ text: "a".repeat(2000) });
+    const res = await generateAiRuleFromPurpose({ purpose: "vendor invoices" });
+    expect(res).toHaveLength(600);
+  });
+});
+
+describe("generateAiRuleFromLabelSamples", () => {
+  it("refuses when every sample is blank, without calling a model", async () => {
+    await expect(
+      generateAiRuleFromLabelSamples({
+        samples: [{ from: "", subject: "", snippet: "" }],
+      }),
+    ).rejects.toThrow("No emails found under this label to learn from.");
+    expect(generateText).not.toHaveBeenCalled();
+  });
+
+  it("lists the samples it has, omitting the parts a sample is missing", async () => {
+    generateText.mockResolvedValue({ text: "Vendor invoices." });
+
+    const res = await generateAiRuleFromLabelSamples({
+      folderName: "Vendors",
+      samples: [
+        { from: "billing@acme.test", subject: "Invoice 1042", snippet: "Due next week" },
+        { from: "", subject: "Receipt", snippet: "" },
+      ],
+    });
+    expect(res).toBe("Vendor invoices.");
+
+    const prompt = callArgs(0).prompt;
+    expect(prompt).toContain(
+      "1. From: billing@acme.test | Subject: Invoice 1042 | Snippet: Due next week",
+    );
+    // A sample with no sender still reads as a row rather than a blank line.
+    expect(prompt).toContain("2. From: (unknown) | Subject: Receipt");
+  });
+
+  it("reports an unusable answer rather than saving an empty rule", async () => {
+    generateText.mockResolvedValue({ text: "  " });
+    await expect(
+      generateAiRuleFromLabelSamples({ samples: [{ from: "a@b.test", subject: "", snippet: "" }] }),
+    ).rejects.toThrow("AI returned an empty rule. Try again.");
+  });
+
+  it("unwraps a fence closed on its own line without leaving a stray quote behind", async () => {
+    // Regression: the closing quote sat before the newline the fence strip
+    // left behind, so only the opening quote was removed and the rule saved
+    // on the folder ended with a `"`.
+    generateText.mockResolvedValue({ text: '```text\n"Invoices from vendors."\n```' });
+    const res = await generateAiRuleFromLabelSamples({
+      samples: [{ from: "billing@acme.test", subject: "Invoice", snippet: "" }],
+    });
+    expect(res).toBe("Invoices from vendors.");
+  });
+});
+
+describe("summarizeEmail / suggestReply", () => {
+  it("summarizeEmail unwraps a quoted one-liner and caps it at 140 characters", async () => {
+    generateText.mockResolvedValue({ text: `  "${"a".repeat(200)}"  ` });
+
+    const res = await summarizeEmail({
+      from_name: "Acme",
+      from_addr: "billing@acme.test",
+      subject: "Invoice 1042",
+      body_text: "Your invoice is ready.",
+      snippet: "",
+    });
+    expect(res).toBe("a".repeat(140));
+  });
+
+  it("summarizeEmail falls back to the snippet when the email has no body", async () => {
+    generateText.mockResolvedValue({ text: "An invoice is ready." });
+
+    await summarizeEmail({
+      from_name: "Acme",
+      from_addr: "billing@acme.test",
+      subject: "Invoice 1042",
+      body_text: "",
+      snippet: "Snippet stands in for the body",
+    });
+    expect(callArgs(0).prompt).toContain("Snippet stands in for the body");
+  });
+
+  it("suggestReply returns the drafted body trimmed", async () => {
+    generateText.mockResolvedValue({ text: "\n Happy to help — sending it over today.\n" });
+
+    const res = await suggestReply({
+      from_name: "Acme",
+      subject: "Invoice 1042",
+      body_text: "Could you confirm?",
+    });
+    expect(res).toBe("Happy to help — sending it over today.");
+    expect(callArgs(0).prompt).toContain("Could you confirm?");
   });
 });

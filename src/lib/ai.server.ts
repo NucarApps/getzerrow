@@ -827,6 +827,26 @@ Write a daily digest in Markdown. Start with a single line: "# <short subject>" 
   };
 }
 
+/**
+ * Unwrap a rule the model dressed up: a ```-fence and/or surrounding
+ * quotes, in either order.
+ *
+ * The trim BETWEEN the two strips is load-bearing. A fence closed on its
+ * own line leaves the newline that preceded it, and `["']$` has no `m`
+ * flag — so without the trim the closing quote is not at the end of the
+ * string, the opening one is stripped alone, and the rule saved on the
+ * folder ends with a stray `"`.
+ */
+function unwrapRuleText(text: string): string {
+  return text
+    .trim()
+    .replace(/^```(?:\w+)?\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .trim();
+}
+
 // Turn a plain-language description of a folder's purpose into a concise,
 // classifier-friendly AI rule. Used by the folder editor's "generate from
 // purpose" helper. Returns a short rule string.
@@ -849,12 +869,7 @@ Write a single, clear rule (1-2 sentences, plain text, no markdown, no quotes, n
     prompt,
   });
 
-  const cleaned = text
-    .trim()
-    .replace(/^```(?:\w+)?\s*/i, "")
-    .replace(/```\s*$/i, "")
-    .replace(/^["']|["']$/g, "")
-    .trim();
+  const cleaned = unwrapRuleText(text);
 
   if (!cleaned) throw new Error("AI returned an empty rule. Try rephrasing the purpose.");
   return cleaned.slice(0, 600);
@@ -895,12 +910,7 @@ Infer what these emails have in common and write a single, clear rule (1-2 sente
     prompt,
   });
 
-  const cleaned = text
-    .trim()
-    .replace(/^```(?:\w+)?\s*/i, "")
-    .replace(/```\s*$/i, "")
-    .replace(/^["']|["']$/g, "")
-    .trim();
+  const cleaned = unwrapRuleText(text);
 
   if (!cleaned) throw new Error("AI returned an empty rule. Try again.");
   return cleaned.slice(0, 600);
