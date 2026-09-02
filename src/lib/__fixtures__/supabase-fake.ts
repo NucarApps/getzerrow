@@ -66,12 +66,35 @@ export type Filter = { op: string; col?: string; value?: unknown; extra?: unknow
 export type WriteHandlerResult = FakeError | { data: unknown } | null | undefined | void;
 export type WriteHandler = (payload: unknown, filters: Filter[]) => WriteHandlerResult;
 
+/** How a PostgREST embed (`select("…, contacts:contacts(id, name)")`)
+ * resolves: the row's `<fk>` column is looked up in `table` by `on`. */
+export type EmbedSpec = {
+  /** Table the embedded rows come from. */
+  table: TableName;
+  /** Column on the OUTER row holding the key. Defaults to `${alias}_id`,
+   * then the singular form (`contacts:contacts(…)` on a row that carries
+   * `contact_id`, which is the shape this schema uses). */
+  localKey?: string;
+  /** Column on the INNER row matched against it (default "id"). */
+  foreignKey?: string;
+  /** Many rather than one: return an array of matches. */
+  many?: boolean;
+};
+
 /** Returned by a select handler: an error fails the read, `{ data }`
  * overrides the resolved rows, nullish keeps the seeded result. */
 export type SelectHandlerResult = FakeError | { data: FakeRow[] } | null | undefined | void;
 export type SelectHandler = (filters: Filter[], columns: string | undefined) => SelectHandlerResult;
 
 export type AuthHandler = (args: unknown) => { data?: unknown; error?: FakeError | null } | unknown;
+
+/** Storage call, recorded per bucket so a test can assert which object was
+ * touched. `args` is whatever the method was given (key, keys, bytes…). */
+export type StorageMethod = "upload" | "download" | "remove" | "createSignedUrl" | "getPublicUrl";
+export type RecordedStorage = { bucket: string; method: string; args: unknown[] };
+export type StorageHandler = (
+  ...args: unknown[]
+) => { data?: unknown; error?: FakeError | null } | unknown;
 
 export type RecordedSelect = {
   table: string;
@@ -174,7 +197,10 @@ function parseLogic(expr: string, kind: "and" | "or"): OrNode {
     const m = /^([^.]+)\.(not\.)?([a-z]+)\.(.*)$/s.exec(s);
     if (!m) throw new Error(`supabase-fake: cannot parse or() term "${s}"`);
     const [, col, negate, op, raw] = m;
-    let value: unknown = raw;
+    // Inside a filter STRING, PostgREST spells the LIKE wildcard `*`
+    // (a literal % would have to be percent-encoded). The column-method
+    // form `.ilike(col, "%x%")` uses % — both reach the same matcher.
+    let value: unknown = op === "like" || op === "ilike" ? raw!.replace(/\*/g, "%") : raw;
     if (op === "in") {
       value = raw!
         .replace(/^\(|\)$/g, "")
@@ -219,6 +245,8 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
   const writeHandlers = new Map<string, WriteHandler>(); // key: `${kind}:${table}`
   const selectHandlers = new Map<string, SelectHandler>();
   const authHandlers = new Map<string, AuthHandler>();
+  const storageHandlers = new Map<string, StorageHandler>(); // key: `${bucket}:${method}`
+  const embeds = new Map<string, EmbedSpec>(); // key: `${table}:${alias}`
   const applyWrites = init?.applyWrites === true;
   const strict = init?.strict === true;
 
@@ -230,6 +258,7 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
     deletes: [] as RecordedWrite[],
     rpcs: [] as RecordedRpc[],
     auth: [] as RecordedAuth[],
+    storage: [] as RecordedStorage[],
   };
 
   function seed<T extends TableName>(table: T, rows: SeedRow<T>[]) {
@@ -283,6 +312,27 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
   ) {
     authHandlers.set(method, handler);
   }
+  /** Stub one storage method on one bucket, e.g.
+   * `onStorage("contact-cards", "createSignedUrl", () => ({ data: { signedUrl: "…" } }))`.
+   * Unstubbed methods resolve `{ data: null, error: null }` and are still
+   * recorded in `calls.storage`. */
+  function onStorage(
+    bucket: string,
+    method: StorageMethod | (string & {}),
+    handler: StorageHandler,
+  ) {
+    storageHandlers.set(`${bucket}:${method}`, handler);
+  }
+  /**
+   * Teach the fake one PostgREST embed so a `select("…, alias:table(cols)")`
+   * resolves instead of coming back undefined — which silently makes a join
+   * look empty rather than failing.
+   *
+   *   fake.onEmbed("contact_group_members", "contacts", { table: "contacts" });
+   */
+  function onEmbed(table: TableName, alias: string, spec: EmbedSpec) {
+    embeds.set(`${table}:${alias}`, spec);
+  }
 
   function reset() {
     tables.clear();
@@ -290,6 +340,8 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
     writeHandlers.clear();
     selectHandlers.clear();
     authHandlers.clear();
+    storageHandlers.clear();
+    embeds.clear();
     for (const arr of Object.values(calls)) arr.length = 0;
   }
 
@@ -388,6 +440,38 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
     };
   }
 
+  /** Aliases named by a `select()` string: `"a, alias:tbl(x,y), b"`. */
+  function embedAliases(columns: string | undefined): string[] {
+    if (!columns) return [];
+    return [...columns.matchAll(/([A-Za-z_][\w]*)\s*:\s*[A-Za-z_][\w]*\s*\(/g)].map((m) => m[1]!);
+  }
+
+  /** Resolve every registered embed the select asked for onto a copy of the row. */
+  function withEmbeds(table: string, columns: string | undefined, row: FakeRow): FakeRow {
+    const aliases = embedAliases(columns);
+    if (aliases.length === 0) return row;
+    const out = { ...row };
+    for (const alias of aliases) {
+      const spec = embeds.get(`${table}:${alias}`);
+      if (!spec) continue;
+      const candidates = spec.localKey
+        ? [spec.localKey]
+        : [`${alias}_id`, `${alias.replace(/s$/, "")}_id`];
+      const localKey = candidates.find((c) => c in row);
+      const foreignKey = spec.foreignKey ?? "id";
+      if (!localKey) {
+        throw new Error(
+          `supabase-fake: embed "${alias}" on ${table} found no key column ` +
+            `(tried ${candidates.join(", ")}) — pass localKey to onEmbed`,
+        );
+      }
+      const key = row[localKey];
+      const matches = (tables.get(spec.table) ?? []).filter((r) => looseEq(r[foreignKey], key));
+      out[alias] = spec.many ? matches : (matches[0] ?? null);
+    }
+    return out;
+  }
+
   function makeSelectBuilder(table: string, columns: string | undefined, options?: unknown) {
     const filters: Filter[] = [];
     let orderBy: { col: string; ascending: boolean } | null = null;
@@ -406,7 +490,9 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
         }
         if (r && typeof r === "object" && "data" in r) base = (r as { data: FakeRow[] }).data;
       }
-      let out = base.filter((r) => rowMatches(r, filters));
+      let out = base
+        .filter((r) => rowMatches(r, filters))
+        .map((r) => withEmbeds(table, columns, r));
       const total = out.length;
       if (orderBy) {
         const { col, ascending } = orderBy;
@@ -606,6 +692,18 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
     return builder;
   }
 
+  async function storageCall(bucket: string, method: StorageMethod, args: unknown[]) {
+    calls.storage.push({ bucket, method, args });
+    const handler = storageHandlers.get(`${bucket}:${method}`);
+    if (!handler) return { data: null, error: null };
+    const result = handler(...args);
+    if (result && typeof result === "object" && ("data" in result || "error" in result)) {
+      const r = result as { data?: unknown; error?: FakeError | null };
+      return { data: r.data ?? null, error: r.error ?? null };
+    }
+    return { data: result ?? null, error: null };
+  }
+
   async function authCall(method: string, args: unknown) {
     calls.auth.push({ method, args });
     const handler = authHandlers.get(method);
@@ -622,11 +720,13 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
     from(table: string) {
       return {
         select: (columns?: string, options?: unknown) => makeSelectBuilder(table, columns, options),
-        insert: (payload: unknown) => makeWriteBuilder("insert", table, payload),
-        update: (payload: unknown) => makeWriteBuilder("update", table, payload),
+        insert: (payload: unknown, options?: unknown) =>
+          makeWriteBuilder("insert", table, payload, options),
+        update: (payload: unknown, options?: unknown) =>
+          makeWriteBuilder("update", table, payload, options),
         upsert: (payload: unknown, options?: unknown) =>
           makeWriteBuilder("upsert", table, payload, options),
-        delete: () => makeWriteBuilder("delete", table, null),
+        delete: (options?: unknown) => makeWriteBuilder("delete", table, null, options),
       };
     },
     async rpc(fn: string, args: Record<string, unknown> = {}) {
@@ -645,6 +745,30 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
         listUsers: (args?: unknown) => authCall("listUsers", args),
         getUserById: (id: string) => authCall("getUserById", id),
         deleteUser: (id: string) => authCall("deleteUser", id),
+      },
+    },
+    storage: {
+      from(bucket: string) {
+        const call =
+          (method: StorageMethod) =>
+          (...args: unknown[]) =>
+            storageCall(bucket, method, args);
+        return {
+          upload: call("upload"),
+          download: call("download"),
+          remove: call("remove"),
+          createSignedUrl: call("createSignedUrl"),
+          // Synchronous in the real client — no await, no error channel.
+          getPublicUrl(key: string) {
+            calls.storage.push({ bucket, method: "getPublicUrl", args: [key] });
+            const handler = storageHandlers.get(`${bucket}:getPublicUrl`);
+            const result = handler?.(key);
+            if (result && typeof result === "object" && "data" in result) {
+              return result as { data: { publicUrl: string } };
+            }
+            return { data: { publicUrl: `https://storage.test/${bucket}/${key}` } };
+          },
+        };
       },
     },
   };
@@ -666,6 +790,8 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
     onUpsert,
     onDelete,
     onAuth,
+    onStorage,
+    onEmbed,
   };
 }
 
@@ -684,6 +810,9 @@ export function mockSupabaseAdmin(get: () => SupabaseFake) {
         getUserById: (id: string) => get().supabaseAdmin.auth.admin.getUserById(id),
         deleteUser: (id: string) => get().supabaseAdmin.auth.admin.deleteUser(id),
       },
+    },
+    storage: {
+      from: (bucket: string) => get().supabaseAdmin.storage.from(bucket),
     },
   };
 }

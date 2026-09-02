@@ -206,3 +206,92 @@ describe("auth.admin and the hoist-safe mock", () => {
     expect(fake.calls.rpcs).toEqual([{ fn: "cron_secret_matches", args: { p_secret: "x" } }]);
   });
 });
+
+describe("storage", () => {
+  it("records every call and lets a test drive the signed-url and download paths", async () => {
+    const fake = makeSupabaseFake();
+    fake.onStorage("cards", "createSignedUrl", (key) => ({
+      data: { signedUrl: `https://signed.test/${key}` },
+    }));
+    const signed = await fake.supabaseAdmin.storage.from("cards").createSignedUrl("u/1.png", 600);
+    expect(signed).toEqual({ data: { signedUrl: "https://signed.test/u/1.png" }, error: null });
+
+    fake.onStorage("cards", "download", () => ({ error: { message: "gone" } }));
+    expect(await fake.supabaseAdmin.storage.from("cards").download("u/1.png")).toEqual({
+      data: null,
+      error: { message: "gone" },
+    });
+
+    // Unstubbed methods still resolve and are still recorded.
+    await fake.supabaseAdmin.storage.from("cards").remove(["u/1.png"]);
+    expect(fake.calls.storage).toEqual([
+      { bucket: "cards", method: "createSignedUrl", args: ["u/1.png", 600] },
+      { bucket: "cards", method: "download", args: ["u/1.png"] },
+      { bucket: "cards", method: "remove", args: [["u/1.png"]] },
+    ]);
+  });
+
+  it("getPublicUrl is synchronous and has a usable default", () => {
+    const fake = makeSupabaseFake();
+    expect(fake.supabaseAdmin.storage.from("logos").getPublicUrl("a/b.png")).toEqual({
+      data: { publicUrl: "https://storage.test/logos/a/b.png" },
+    });
+  });
+});
+
+describe("PostgREST embeds", () => {
+  it("resolves a registered embed instead of leaving the join undefined", async () => {
+    const fake = makeSupabaseFake();
+    fake.seedRaw("contact_group_members", [
+      { group_id: "g1", contact_id: "c1" },
+      { group_id: "g1", contact_id: "c2" },
+    ]);
+    fake.seedRaw("contacts", [
+      { id: "c1", company: "Acme" },
+      { id: "c2", company: "Globex" },
+    ]);
+    fake.onEmbed("contact_group_members", "contacts", { table: "contacts" });
+
+    const { data } = await fake.supabaseAdmin
+      .from("contact_group_members")
+      .select("contact_id, contacts:contacts(id, company)")
+      .eq("group_id", "g1");
+    expect(data?.map((r) => (r.contacts as { company: string }).company)).toEqual([
+      "Acme",
+      "Globex",
+    ]);
+  });
+
+  it("leaves an unregistered embed alone rather than inventing rows", async () => {
+    const fake = makeSupabaseFake();
+    fake.seedRaw("contact_group_members", [{ group_id: "g1", contact_id: "c1" }]);
+    const { data } = await fake.supabaseAdmin
+      .from("contact_group_members")
+      .select("contact_id, contacts:contacts(id)");
+    expect(data?.[0]).not.toHaveProperty("contacts");
+  });
+});
+
+describe("filter-string quirks", () => {
+  it("treats * as the LIKE wildcard inside an or() term (PostgREST string form)", async () => {
+    const fake = makeSupabaseFake();
+    fake.seedRaw("emails", [
+      { id: "1", from_addr: "a@acme.com" },
+      { id: "2", from_addr: "b@other.com" },
+    ]);
+    const { data } = await fake.supabaseAdmin
+      .from("emails")
+      .select("id")
+      .or("from_addr.ilike.*@acme.com");
+    expect(data?.map((r) => r.id)).toEqual(["1"]);
+  });
+
+  it("records the options object passed to insert/update/delete", async () => {
+    const fake = makeSupabaseFake();
+    await fake.supabaseAdmin
+      .from("emails")
+      .update({ is_read: true }, { count: "exact" })
+      .eq("id", "1");
+    expect(fake.calls.updates[0]!.options).toEqual({ count: "exact" });
+  });
+});

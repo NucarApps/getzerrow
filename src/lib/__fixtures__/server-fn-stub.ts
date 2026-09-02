@@ -30,13 +30,17 @@ export const TEST_USER = "test-user-1";
 /** Call a stubbed server fn as a different user (impersonation for IDOR
  * tests). Exists because the REAL createServerFn's call signature has no
  * `context` option — only the stub honors it — so a plain call site fails
- * typecheck. Usage: `impersonate(deleteContact, ATTACKER)({ data: {...} })`. */
-export function impersonate(fn: unknown, userId: string) {
+ * typecheck. Usage: `impersonate(deleteContact, ATTACKER)({ data: {...} })`.
+ *
+ * Handlers that destructure `context.supabase` (the RLS-scoped client) need
+ * it alongside the user id; pass the rest of the context as the third
+ * argument: `impersonate(fn, ATTACKER, { supabase: fake.client })`. */
+export function impersonate(fn: unknown, userId: string, context: Record<string, unknown> = {}) {
   const stubbed = fn as (args?: {
     data?: unknown;
     context?: Record<string, unknown>;
   }) => Promise<unknown>;
-  return (args?: { data?: unknown }) => stubbed({ ...args, context: { userId } });
+  return (args?: { data?: unknown }) => stubbed({ ...args, context: { ...context, userId } });
 }
 
 type HandlerCtx = { data: unknown; context: { userId: string } & Record<string, unknown> };
