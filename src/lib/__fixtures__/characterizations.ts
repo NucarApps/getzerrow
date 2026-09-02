@@ -94,6 +94,15 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     fixIn:
       "src/lib/rules/replay.ts — run the label mirror during replay, or mark label-filed mail locked.",
   },
+  "rfc2047-headers-not-decoded": {
+    what: "parseMessage stores From display names and Subjects exactly as Gmail returns them, so an RFC 2047 encoded-word header reaches the inbox list and the classifier's `from`/`subject` fields as raw =?UTF-8?B?…?= text. Any sender or subject with a non-ASCII character is unreadable in the UI and unmatchable by a rule written against the real name.",
+    fixIn: "src/lib/gmail.server.ts — decode encoded words in parseMessage's header reader.",
+  },
+  "has-attachment-counts-inline-images": {
+    what: "parseMessage's has_attachment is a bare filename walk over payload.parts, so an inline logo under multipart/related — which nearly every marketing email carries — sets it. The paperclip in the message list is showing the sender's logo, not a document, and a `has_attachment` folder rule fires on newsletters.",
+    fixIn:
+      "src/lib/gmail.server.ts — skip parts whose Content-Disposition is inline, or that are referenced by a cid: in the HTML.",
+  },
   "backoff-nan-below-table-floor": {
     what: "computeBackoffSeconds' terminal branch indexes BACKOFF_SECONDS with nextAttempt - 1 and clamps only the top of the range, so nextAttempt 0 reads table[-1] === undefined and jitter returns NaN. run-jobs writes `Date.now() + seconds * 1000` into next_run_at, so a NaN there becomes an invalid timestamp on the queue row.",
     fixIn: "src/lib/sync/backoff.ts — clamp the index to 0 as well as to the table length.",
