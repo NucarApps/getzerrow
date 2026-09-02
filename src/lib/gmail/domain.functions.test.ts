@@ -301,7 +301,9 @@ describe("reassignDomainToFolder", () => {
     expect(fake.calls.inserts).toHaveLength(0);
   });
 
-  it("CHARACTERIZATION: a failing bulk update throws AFTER the domain rule was inserted (partial bookkeeping remains)", async () => {
+  // CHARACTERIZATION(domain-reassign-not-transactional): the destination
+  // rule is written before the moves, so a failed update leaves it behind.
+  it("a failing bulk update throws AFTER the domain rule was inserted (partial bookkeeping remains)", async () => {
     seedFolders();
     seedMatchingEmails();
     fake.onUpdate("emails", () => ({ message: "db unavailable" }));

@@ -7,7 +7,9 @@ import tseslint from "typescript-eslint";
 import vitest from "@vitest/eslint-plugin";
 
 export default tseslint.config(
-  { ignores: ["dist", ".output", ".vinxi"] },
+  // .claude holds local agent state and git worktrees — linting a worktree
+  // means linting a second copy of the whole repo.
+  { ignores: ["dist", ".output", ".vinxi", ".claude", "coverage"] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],

@@ -517,7 +517,7 @@ describe("reclassifyEmails (audit path 7 — decision-derived rewrite)", () => {
     });
     expect(updates[0]!.filters).toEqual([{ op: "eq", col: "id", value: EMAIL_1 }]);
 
-    // [BUG-1] pinned as-is: the DB now says folder B, but Gmail is never
+    // CHARACTERIZATION(reclassify-skips-gmail-labels): the DB now says folder B, but Gmail is never
     // told — no label swap happens on this branch (reanalyzeEmail DOES swap
     // labels for the same decision). DB and Gmail drift until the next sync
     // path happens to touch the message.
@@ -672,7 +672,7 @@ describe("createFolderAndAssign (audit path 7 — assembles its own patch)", () 
       classification_reason: 'Moved into new folder "Vendors"',
     });
 
-    // [BUG-2] pinned as-is: the assignment is a hand-rolled patch, NOT
+    // CHARACTERIZATION(create-folder-assign-hand-rolled-patch): the assignment is a hand-rolled patch, NOT
     // performMove — Gmail labels are untouched (the old folder's label
     // stays on the message) and matched_filter_ids is left stale.
     const updates = emailUpdates();

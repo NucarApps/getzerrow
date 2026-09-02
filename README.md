@@ -44,7 +44,7 @@ Test conventions (see `docs/test-suite-plan.md` for the backlog):
 - **Placement / naming.** `<module>.test.ts` beside the module. Two suffix
   classes only: `<module>.<topic>.test.ts` for a split of a long file, and
   `<module>.<kind>.test.ts` with kind ∈ `snapshot | regression | security |
-  edge | property`. `tests/` holds `*.integration.test.ts` (Postgres) and
+edge | property`. `tests/` holds `*.integration.test.ts` (Postgres) and
   `*.live.test.ts` (deployed URL).
 - **Fixtures.** `src/lib/__fixtures__/`: `supabase-fake` (typed against the
   generated `Database`; real `ilike`/`contains`/`or`; `applyWrites` for
@@ -61,8 +61,11 @@ Test conventions (see `docs/test-suite-plan.md` for the backlog):
   module factories should `satisfies Partial<typeof import("./x")>`; no
   per-test `mockClear` — `clearMocks: true` does it.
 - **Known bugs.** Pin current behaviour with a
-  `// CHARACTERIZATION(<slug>): …` comment above the `it`; flip the test
-  with the fix.
+  `// CHARACTERIZATION(<slug>): …` comment above the `it`, and register the
+  slug in `src/lib/__fixtures__/characterizations.ts` saying what is wrong
+  and where the fix belongs. `characterization-registry.test.ts` fails on a
+  marker with no entry and on an entry nothing pins, so fixing a bug means
+  flipping the test and deleting its entry in the same commit.
 - **Ownership.** Every server fn that takes a client id gets an
   `expectDeniedCrossUser` case. Every writer of `emails.folder_id` is
   registered in `AUDIT_FOLDER_WRITE_PATHS` and held to the oracle by

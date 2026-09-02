@@ -90,7 +90,10 @@ const G1 = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
 // Recent timestamps — the sync-collection horizon rejects tokens older than
 // 90 days, so fixtures must stay inside the window regardless of "today".
-const NOW = Date.now();
+// Floored to the second: the sync token embeds this as epoch millis, and
+// assertions that look for digits in the response body should not depend on
+// which millisecond the suite happened to start.
+const NOW = Math.floor(Date.now() / 1000) * 1000;
 const DAY = 24 * 60 * 60 * 1000;
 const T1 = new Date(NOW - 3 * DAY).toISOString();
 const T2 = new Date(NOW - 2 * DAY).toISOString();
@@ -249,7 +252,8 @@ describe("PROPFIND edge branches", () => {
     expect(body).toContain("<C:addressbook-home-set>");
   });
 
-  it("CHARACTERIZATION: requested-prop subsets are ignored — fixed prop set, no 404 propstat", async () => {
+  // CHARACTERIZATION(carddav-prop-subset-ignored)
+  it("requested-prop subsets are ignored — fixed prop set, no 404 propstat", async () => {
     // RFC 4918 wants un-requested props omitted and unknown props reported in
     // a 404 propstat. This server always returns its fixed prop set with a
     // single 200 propstat. Benign for iOS (it tolerates extra props), but a
@@ -272,11 +276,17 @@ describe("PROPFIND edge branches", () => {
 });
 
 describe("REPORT addressbook-query", () => {
-  it("enumerates every owned contact and group with inline vCards", async () => {
+  // CHARACTERIZATION(carddav-addressbook-query-filter-ignored): the
+  // <C:filter> element is never parsed — every owned contact comes back
+  // whatever the client asked to match.
+  it("enumerates every owned contact and group with inline vCards, ignoring the filter", async () => {
     const body =
       '<?xml version="1.0"?>' +
       '<C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">' +
-      "<D:prop><D:getetag/><C:address-data/></D:prop><C:filter/>" +
+      "<D:prop><D:getetag/><C:address-data/></D:prop>" +
+      // A filter that should match nothing: both contacts still return.
+      '<C:filter><C:prop-filter name="FN"><C:text-match>zzzz-no-such-name</C:text-match>' +
+      "</C:prop-filter></C:filter>" +
       "</C:addressbook-query>";
     const res = await report(body);
     expect(res.status).toBe(207);
@@ -323,7 +333,8 @@ describe("REPORT addressbook-multiget: groups and unresolvable hrefs", () => {
     expect(text).not.toContain("bogus.vcf");
   });
 
-  it("CHARACTERIZATION: a href for a contact that never existed is silently omitted, not 404'd", async () => {
+  // CHARACTERIZATION(carddav-multiget-missing-href-omitted)
+  it("a href for a contact that never existed is silently omitted, not 404'd", async () => {
     // RFC 6352 §8.7 says unresolvable multiget hrefs SHOULD come back as
     // 404 response blocks. This server filters by ownership first, so a
     // never-existed (or foreign) contact simply vanishes from the response.
@@ -378,7 +389,8 @@ describe("REPORT sync-collection edge branches", () => {
     expect(text).toContain(xmlEscape(syncToken(USER, new Date(TG).getTime(), 3)));
   });
 
-  it("CHARACTERIZATION: nresults truncates the change list but the token still covers the full snapshot", async () => {
+  // CHARACTERIZATION(carddav-nresults-token-covers-full-snapshot)
+  it("nresults truncates the change list but the token still covers the full snapshot", async () => {
     // With <D:limit><D:nresults>1</D:nresults></D:limit>, only the oldest
     // changed contact is returned — but the sync-token is minted from the
     // CURRENT snapshot (newest updated_at overall). A client that honors the
@@ -393,7 +405,10 @@ describe("REPORT sync-collection edge branches", () => {
     const text = await res.text();
     expect(text).toContain(contactHref(C1)); // oldest change, within limit
     expect(text).not.toContain(contactHref(C2)); // truncated away
-    expect(text).not.toContain("507"); // no insufficient-storage marker
+    // No insufficient-storage marker. Matched as a status line rather than
+    // a bare "507", which used to fail whenever the sync token's epoch
+    // millis happened to contain those digits.
+    expect(text).not.toMatch(/HTTP\/1\.1 507/);
     // Token claims the FULL snapshot (TG > C2's T2), skipping C2 forever.
     expect(text).toContain(xmlEscape(syncToken(USER, new Date(TG).getTime(), 0)));
   });

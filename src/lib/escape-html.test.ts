@@ -20,6 +20,9 @@ describe("escapeHtml", () => {
     expect(escapeHtml("")).toBe("");
   });
 
+  // CHARACTERIZATION(escape-html-quote-and-idempotence): ' is left alone
+  // (unsafe inside single-quoted attributes) and escaping twice
+  // double-escapes — see the next test.
   it("does not touch single quotes (pinning current behavior, not a guarantee of safety)", () => {
     // Only & < > " are escaped. A single quote passes through untouched, so
     // this helper is only safe inside a double-quoted attribute, not a

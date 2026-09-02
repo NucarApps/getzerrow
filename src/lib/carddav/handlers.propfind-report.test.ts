@@ -88,7 +88,10 @@ const G1 = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
 // Recent timestamps — the sync-collection horizon rejects tokens older than
 // 90 days, so fixtures must stay inside the window regardless of "today".
-const NOW = Date.now();
+// Floored to the second: the sync token embeds this as epoch millis, and
+// assertions that look for digits in the response body should not depend on
+// which millisecond the suite happened to start.
+const NOW = Math.floor(Date.now() / 1000) * 1000;
 const DAY = 24 * 60 * 60 * 1000;
 const T1 = new Date(NOW - 3 * DAY).toISOString();
 const T2 = new Date(NOW - 2 * DAY).toISOString();
