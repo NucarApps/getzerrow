@@ -309,21 +309,29 @@ export const AUDIT_FOLDER_WRITE_PATHS: Array<{
   name: string;
   /** Repo-relative test files holding this path to its suite. */
   coveredBy: string[];
+  /** Repo-relative source files that actually write `emails.folder_id` for
+   * this path. folder-write-agreement.test.ts scans src/ for write sites
+   * and fails when one appears in a file listed by no path — that is how a
+   * new decider gets noticed instead of quietly filing mail on its own. */
+  writers: string[];
 }> = [
   {
     path: 1,
     name: "arrival (process-message)",
     coveredBy: ["src/lib/sync/folder-write-agreement.pipeline.test.ts"],
+    writers: ["src/lib/sync/process-message.ts", "src/lib/sync/apply-decision.ts"],
   },
   {
     path: 2,
     name: "AI second pass (classify)",
     coveredBy: ["src/lib/sync/folder-write-agreement.pipeline.test.ts"],
+    writers: ["src/lib/sync/run-jobs.ts"],
   },
   {
     path: 3,
     name: "Gmail label mirror (history label_change)",
     coveredBy: ["src/lib/sync/folder-write-agreement.pipeline.test.ts"],
+    writers: ["src/lib/sync/folder-learn.ts"],
   },
   {
     path: 4,
@@ -334,11 +342,13 @@ export const AUDIT_FOLDER_WRITE_PATHS: Array<{
       "src/lib/sync/folder-write-agreement.test.ts",
       "src/lib/sync/folder-write-agreement.pipeline.test.ts",
     ],
+    writers: ["src/lib/sync/catchup.ts"],
   },
   {
     path: 5,
     name: "rescue pass",
     coveredBy: ["src/lib/sync/folder-write-agreement.pipeline.test.ts"],
+    writers: ["src/lib/sync/rescue.ts"],
   },
   {
     path: 6,
@@ -347,16 +357,19 @@ export const AUDIT_FOLDER_WRITE_PATHS: Array<{
       "src/lib/sync/folder-write-agreement.test.ts",
       "src/lib/gmail/reprocess.functions.test.ts",
     ],
+    writers: ["src/lib/gmail/reprocess.functions.ts", "src/lib/gmail/move.functions.ts"],
   },
   {
     path: 7,
     name: "rule actions / apply rule now (rules.functions)",
     coveredBy: ["src/lib/gmail/rules.functions.test.ts"],
+    writers: ["src/lib/gmail/rules.functions.ts"],
   },
   {
     path: 8,
     name: "domain move tooling",
     coveredBy: ["src/lib/gmail/domain.functions.test.ts"],
+    writers: ["src/lib/gmail/domain.functions.ts"],
   },
   {
     path: 9,
@@ -365,20 +378,42 @@ export const AUDIT_FOLDER_WRITE_PATHS: Array<{
       "src/lib/sync/folder-write-contracts.test.ts",
       "src/lib/gmail/move.functions.test.ts",
     ],
+    writers: [
+      "src/lib/move-email.server.ts",
+      "src/lib/gmail-helpers.server.ts",
+      "src/lib/gmail/folder-mgmt.functions.ts",
+    ],
   },
   {
     path: 10,
     name: "scheduled actions",
     coveredBy: ["src/lib/sync/folder-write-contracts.test.ts"],
+    writers: ["src/lib/sync/scheduled-actions.ts"],
   },
   {
     path: 11,
     name: "reconcile",
     coveredBy: ["src/lib/sync/reconcile.test.ts"],
+    writers: ["src/lib/sync/reconcile.ts"],
   },
   {
     path: 12,
     name: "classification feedback",
     coveredBy: ["src/lib/sync/folder-write-contracts.test.ts"],
+    writers: ["src/lib/sync/classification-feedback.functions.ts"],
+  },
+  {
+    // Not in the original audit: found by the write-site scan below. The
+    // rule-change planner applies its preview through performMove, but it
+    // owns the refusal rules (foreign row, placed_by_user, unchanged) and
+    // the restore-to-Inbox branch, so it gets its own contract.
+    path: 13,
+    name: "rule-change planner apply",
+    coveredBy: ["src/lib/rules/planner-apply.server.test.ts"],
+    writers: ["src/lib/rules/planner-apply.server.ts"],
   },
 ];
+
+/** Source files that legitimately mention a folder_id write but are not a
+ * filing path: the shared encrypted writer itself, and test-only data. */
+export const FOLDER_WRITE_SCAN_EXEMPT = ["src/lib/sync/encrypted-writer.ts"];

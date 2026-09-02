@@ -27,7 +27,7 @@
 // User-directed paths (manual move, domain reassign, scheduled actions,
 // reconcile, classification feedback) are deliberate overrides of the
 // ladder — they are not "deciders" and are covered by their own suites.
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { compareDecisions } from "../rules/compare";
@@ -36,6 +36,7 @@ import { classifyIngestedMessage } from "../gmail/ingest-classify";
 import { buildCatchupRow } from "./catchup";
 import {
   AUDIT_FOLDER_WRITE_PATHS,
+  FOLDER_WRITE_SCAN_EXEMPT,
   oracleDecision,
   scenarioContext,
   scenarioParsed,
@@ -43,10 +44,50 @@ import {
   type FolderScenario,
 } from "./__fixtures__/folder-scenarios";
 
+/** Every non-test source file under src/. */
+function sourceFiles(dir: string, out: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) {
+      if (name === "__fixtures__" || name === "node_modules") continue;
+      sourceFiles(full, out);
+      continue;
+    }
+    if (!/\.tsx?$/.test(name) || /\.test\.tsx?$/.test(name)) continue;
+    out.push(full);
+  }
+  return out;
+}
+
+/**
+ * Files that write `emails.folder_id`: a call to the encrypted writer, or a
+ * `.from("emails")` update/upsert, whose payload names folder_id. Deliberately
+ * a shallow textual scan — it must be simple enough that a new filing path
+ * cannot slip past it by being written slightly differently.
+ */
+function folderIdWriteSites(): string[] {
+  const root = process.cwd();
+  const hits = new Set<string>();
+  for (const file of sourceFiles(join(root, "src"))) {
+    const lines = readFileSync(file, "utf8").split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!;
+      const isWriterCall = /\b(updateEmailEncrypted|upsertEmailEncrypted)\s*\(/.test(line);
+      const isEmailsTable = /\.from\(\s*"emails"\s*\)/.test(line);
+      if (!isWriterCall && !isEmailsTable) continue;
+      const window = lines.slice(i, i + 30).join("\n");
+      if (isEmailsTable && !/\.update\(|\.upsert\(/.test(window)) continue;
+      if (!/\bfolder_id\s*:/.test(window)) continue;
+      hits.add(file.slice(root.length + 1));
+    }
+  }
+  return [...hits].sort();
+}
+
 describe("audit-path registry (docs/rules-engine-audit.md §1)", () => {
-  it("covers all twelve folder-write paths, each by a suite that exists on disk", () => {
+  it("covers every folder-write path, each by a suite that exists on disk", () => {
     const paths = AUDIT_FOLDER_WRITE_PATHS.map((p) => p.path).sort((a, b) => a - b);
-    expect(paths).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(paths).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
     for (const entry of AUDIT_FOLDER_WRITE_PATHS) {
       expect(entry.coveredBy.length, `path ${entry.path} (${entry.name})`).toBeGreaterThan(0);
       for (const file of entry.coveredBy) {
@@ -56,7 +97,48 @@ describe("audit-path registry (docs/rules-engine-audit.md §1)", () => {
             "renamed or deleted without updating AUDIT_FOLDER_WRITE_PATHS",
         ).toBe(true);
       }
+      for (const file of entry.writers) {
+        expect(
+          existsSync(join(process.cwd(), file)),
+          `path ${entry.path} (${entry.name}): writer ${file} is missing`,
+        ).toBe(true);
+      }
     }
+  });
+
+  it("no source file writes emails.folder_id without being registered as a path", () => {
+    const registered = new Set([
+      ...AUDIT_FOLDER_WRITE_PATHS.flatMap((p) => p.writers),
+      ...FOLDER_WRITE_SCAN_EXEMPT,
+    ]);
+    const unregistered = folderIdWriteSites().filter((f) => !registered.has(f));
+    expect(
+      unregistered,
+      "these files write emails.folder_id but belong to no audit path — add them to " +
+        "AUDIT_FOLDER_WRITE_PATHS (with a suite holding them to the oracle or an " +
+        "explicit contract) rather than letting a new decider file mail unchecked",
+    ).toEqual([]);
+  });
+
+  it("every registered writer still contains a folder_id write (no stale entries)", () => {
+    const found = new Set(folderIdWriteSites());
+    // catchup builds its payload in buildCatchupRow, so the shallow scan
+    // cannot see it; it is covered by the agreement suite below instead.
+    // These file through a helper (buildCatchupRow payload, performMove,
+    // restoreEmailToInbox, the strip in history.ts) rather than naming
+    // folder_id at the write site, so the shallow scan cannot see them.
+    // Each is held to its own contract suite instead.
+    const notScannable = new Set([
+      "src/lib/sync/catchup.ts",
+      "src/lib/sync/scheduled-actions.ts",
+      "src/lib/sync/reconcile.ts",
+      "src/lib/sync/classification-feedback.functions.ts",
+      "src/lib/rules/planner-apply.server.ts",
+    ]);
+    const stale = AUDIT_FOLDER_WRITE_PATHS.flatMap((p) => p.writers).filter(
+      (f) => !found.has(f) && !notScannable.has(f),
+    );
+    expect(stale, "registered writers that no longer write folder_id").toEqual([]);
   });
 });
 
