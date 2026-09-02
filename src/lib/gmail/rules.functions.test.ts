@@ -89,8 +89,55 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 }));
 
 // -- Gmail API surface ------------------------------------------------------
+type ListPage = { messages?: Array<{ id: string; threadId: string }>; nextPageToken?: string };
+/** The parseMessage fields scanGmailForFolder actually reads. */
+type ParsedMessage = {
+  gmail_message_id: string;
+  thread_id: string | null;
+  from_addr: string | null;
+  from_name: string | null;
+  to_addrs: string | null;
+  subject: string | null;
+  snippet: string | null;
+  body_text: string | null;
+  body_html: string | null;
+  received_at: string | null;
+  is_read: boolean;
+  has_attachment: boolean;
+  raw_labels: string[] | null;
+};
+function parsed(over: Partial<ParsedMessage> = {}): ParsedMessage {
+  return {
+    gmail_message_id: "m-1",
+    thread_id: "t-1",
+    from_addr: "a@acme.com",
+    from_name: "A",
+    to_addrs: "me@x.com",
+    subject: "s",
+    snippet: "",
+    body_text: "b",
+    body_html: "",
+    received_at: "2026-01-01T00:00:00Z",
+    is_read: false,
+    has_attachment: false,
+    raw_labels: ["INBOX"],
+    ...over,
+  };
+}
+
 const modifyMessage = vi.fn(async (..._args: unknown[]) => ({}));
 const batchModifyMessages = vi.fn(async (..._args: unknown[]) => ({}));
+const listMessages = vi.fn(
+  async (_accountId: string, _opts: Record<string, unknown>): Promise<ListPage> => ({
+    messages: [],
+  }),
+);
+const getMessage = vi.fn(async (_accountId: string, id: string): Promise<{ id: string }> => ({
+  id,
+}));
+const parseMessage = vi.fn((raw: unknown): ParsedMessage =>
+  parsed({ gmail_message_id: (raw as { id: string }).id }),
+);
 vi.mock("../gmail.server", () => ({
   listLabels: vi.fn(),
   createLabel: vi.fn(),
@@ -100,12 +147,12 @@ vi.mock("../gmail.server", () => ({
   sendMessage: vi.fn(),
   ensureWatch: vi.fn(),
   stopWatch: vi.fn(),
-  listMessages: vi.fn(async () => ({ messages: [] })),
-  getMessage: vi.fn(),
+  listMessages: (accountId: string, opts: Record<string, unknown>) => listMessages(accountId, opts),
+  getMessage: (accountId: string, id: string) => getMessage(accountId, id),
   getMessageMetadata: vi.fn(),
   getMessageLabels: vi.fn(),
   getThread: vi.fn(),
-  parseMessage: vi.fn(() => ({})),
+  parseMessage: (raw: unknown) => parseMessage(raw),
 }));
 
 const classifyParsedEmail = vi.fn(
@@ -117,6 +164,14 @@ const classifyParsedEmail = vi.fn(
   ): Promise<Record<string, unknown>> => ({ folder_id: null, classified_by: "none" }),
 );
 const invalidateAccountContext = vi.fn((_accountId: string) => undefined);
+const runMessageJobs = vi.fn(async (..._args: unknown[]): Promise<Record<string, number>> => ({
+  processed: 0,
+  ok: 0,
+  failed: 0,
+  dlq: 0,
+  retryable: 0,
+}));
+const retryMessageJob = vi.fn(async (_jobId: string) => undefined);
 vi.mock("../sync.server", () => ({
   backfillRecent: vi.fn(),
   backfillWindow: vi.fn(),
@@ -124,8 +179,8 @@ vi.mock("../sync.server", () => ({
   learnFromLinkedLabel: vi.fn(),
   reconcileLocalInbox: vi.fn(),
   loadOlderFromLabel: vi.fn(),
-  runMessageJobs: vi.fn(),
-  retryMessageJob: vi.fn(),
+  runMessageJobs: (...args: unknown[]) => runMessageJobs(...args),
+  retryMessageJob: (jobId: string) => retryMessageJob(jobId),
   enqueueMessageJob: vi.fn(),
   startBackfillJob: vi.fn(),
   cancelBackfillJob: vi.fn(),
@@ -154,8 +209,11 @@ vi.mock("../move-email.server", () => ({
     performMove(userId, emailId, toFolderId, reason),
 }));
 
+const suggestFolderFromEmails = vi.fn(
+  async (_emails: unknown[]): Promise<Record<string, unknown>> => ({ name: "Suggested" }),
+);
 vi.mock("../ai.server", () => ({
-  suggestFolderFromEmails: vi.fn(async () => ({ name: "Suggested" })),
+  suggestFolderFromEmails: (emails: unknown[]) => suggestFolderFromEmails(emails),
 }));
 
 vi.mock("../log.server", () => ({
@@ -165,7 +223,7 @@ vi.mock("../log.server", () => ({
 }));
 
 const upsertEmailEncrypted = vi.fn(async (_input: unknown) => ({
-  id: "db-x",
+  id: "db-x" as string | null,
   error: null as string | null,
 }));
 const updateEmailEncrypted = vi.fn(async (_input: unknown) => ({ error: null as string | null }));
@@ -190,8 +248,13 @@ import {
   addFolderRule,
   applyFilterRuleToPast,
   applyFolderBehaviorRetroactive,
+  countMatchingForRule,
   createFolderAndAssign,
   reclassifyEmails,
+  retryJob,
+  runJobsNow,
+  scanGmailForFolder,
+  suggestFolderFromSelection,
 } from "./rules.functions";
 
 const ACC = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -248,9 +311,15 @@ beforeEach(() => {
   for (const fn of [
     modifyMessage,
     batchModifyMessages,
+    listMessages,
+    getMessage,
+    parseMessage,
     classifyParsedEmail,
     invalidateAccountContext,
+    runMessageJobs,
+    retryMessageJob,
     performMove,
+    suggestFolderFromEmails,
     upsertEmailEncrypted,
     updateEmailEncrypted,
     getEmailsDecrypted,
@@ -258,8 +327,16 @@ beforeEach(() => {
     fn.mockClear();
   modifyMessage.mockResolvedValue({});
   batchModifyMessages.mockResolvedValue({});
+  listMessages.mockResolvedValue({ messages: [] });
+  getMessage.mockImplementation(async (_accountId: string, id: string) => ({ id }));
+  parseMessage.mockImplementation((raw: unknown) =>
+    parsed({ gmail_message_id: (raw as { id: string }).id }),
+  );
   classifyParsedEmail.mockResolvedValue({ folder_id: null, classified_by: "none" });
+  runMessageJobs.mockResolvedValue({ processed: 0, ok: 0, failed: 0, dlq: 0, retryable: 0 });
   performMove.mockResolvedValue({ ok: true });
+  suggestFolderFromEmails.mockResolvedValue({ name: "Suggested" });
+  upsertEmailEncrypted.mockResolvedValue({ id: "db-x", error: null });
   updateEmailEncrypted.mockResolvedValue({ error: null });
   getEmailsDecrypted.mockResolvedValue({ rows: [], error: null });
 });
@@ -838,5 +915,463 @@ describe("applyFolderBehaviorRetroactive (characterization — behavior flags on
       rejects: "Not authorized",
     });
     expect(batchModifyMessages).not.toHaveBeenCalled();
+  });
+});
+
+describe("countMatchingForRule (live preview count)", () => {
+  it("counts only the caller's rows on the named account, using the shared rule predicate", async () => {
+    fake.seed("emails", [
+      emailRow(EMAIL_1),
+      emailRow(EMAIL_2, { from_addr: "b@other.test" }),
+      emailRow(EMAIL_3, { user_id: "someone-else" }),
+    ]);
+
+    const res = await countMatchingForRule({
+      data: { account_id: ACC, field: "domain", op: "contains", value: " @Acme.COM " },
+    });
+    expect(res).toEqual({ count: 1 });
+
+    // Same normalization and same predicate module as addFolderRule /
+    // applyFilterRuleToPast, so the number shown in the drawer is the number
+    // of emails the rule will actually claim.
+    const sel = fake.calls.selects.find((s) => s.table === "emails")!;
+    expect(sel.filters).toContainEqual({ op: "eq", col: "user_id", value: TEST_USER });
+    expect(sel.filters).toContainEqual({ op: "eq", col: "gmail_account_id", value: ACC });
+    expect(sel.filters).toContainEqual({ op: "ilike", col: "from_addr", value: "%@acme.com%" });
+  });
+
+  it("short-circuits a whitespace-only value to zero without querying the DB", async () => {
+    const res = await countMatchingForRule({
+      data: { account_id: ACC, field: "from", op: "contains", value: "   " },
+    });
+    expect(res).toEqual({ count: 0 });
+    expect(fake.calls.selects).toHaveLength(0);
+  });
+
+  it("surfaces a failed count as an error rather than reporting zero matches", async () => {
+    fake.onSelect("emails", () => ({ message: "statement timeout" }));
+    await expect(
+      countMatchingForRule({
+        data: { account_id: ACC, field: "from", op: "contains", value: "a@acme.com" },
+      }),
+    ).rejects.toThrow("statement timeout");
+  });
+});
+
+describe("retryJob / runJobsNow (queue controls)", () => {
+  it("re-queues a job the caller owns through the shared retry writer", async () => {
+    fake.seed("message_jobs", [{ id: EMAIL_1, user_id: TEST_USER }]);
+    const res = await retryJob({ data: { id: EMAIL_1 } });
+    expect(res).toEqual({ ok: true });
+    expect(retryMessageJob).toHaveBeenCalledWith(EMAIL_1);
+  });
+
+  it("refuses to re-queue another user's job", async () => {
+    fake.seed("message_jobs", [{ id: EMAIL_1, user_id: "victim" }]);
+    await expectDeniedCrossUser({
+      fake,
+      call: () => retryJob({ data: { id: EMAIL_1 } }),
+      rejects: "Not found",
+    });
+    expect(retryMessageJob).not.toHaveBeenCalled();
+  });
+
+  it("reports Not found for a job id that does not exist", async () => {
+    await expect(retryJob({ data: { id: EMAIL_1 } })).rejects.toThrow("Not found");
+    expect(retryMessageJob).not.toHaveBeenCalled();
+  });
+
+  // CHARACTERIZATION(run-jobs-now-drains-global-queue): runJobsNow hands a
+  // client-chosen limit straight to the cross-tenant worker — nothing scopes
+  // the drain to the caller — flip when fixed.
+  it("drains the shared queue with the caller's limit and no tenant scope at all", async () => {
+    runMessageJobs.mockResolvedValue({ processed: 3, ok: 2, failed: 1, dlq: 0, retryable: 1 });
+    const res = await runJobsNow({ data: { limit: 100 } });
+    expect(res).toEqual({ processed: 3, ok: 2, failed: 1, dlq: 0, retryable: 1 });
+    // The ONLY argument is the limit: the worker claims by priority across
+    // every tenant, so this drains (and reports counts for) other users' jobs.
+    expect(runMessageJobs).toHaveBeenCalledWith(100);
+  });
+
+  it("defaults the drain size to 25 when the caller names no limit", async () => {
+    await runJobsNow({ data: {} });
+    expect(runMessageJobs).toHaveBeenCalledWith(25);
+  });
+});
+
+describe("suggestFolderFromSelection (AI folder proposal from a selection)", () => {
+  it("sends only the caller's rows to the AI and returns its suggestion verbatim", async () => {
+    fake.seed("emails", [
+      emailRow(EMAIL_1, { from_addr: "billing@acme.com" }),
+      emailRow(EMAIL_2, { from_addr: "intruder@evil.test", user_id: "someone-else" }),
+    ]);
+    suggestFolderFromEmails.mockResolvedValue({ name: "Billing", color: "#f59e0b" });
+
+    const res = await suggestFolderFromSelection({ data: { email_ids: [EMAIL_1, EMAIL_2] } });
+    expect(res).toEqual({ name: "Billing", color: "#f59e0b" });
+    expect(suggestFolderFromEmails).toHaveBeenCalledWith([
+      { from_addr: "billing@acme.com", from_name: null, subject: null, snippet: null },
+    ]);
+  });
+
+  it("throws without calling the AI when none of the ids belong to the caller", async () => {
+    fake.seed("emails", [emailRow(EMAIL_1, { user_id: "victim" })]);
+    await expect(suggestFolderFromSelection({ data: { email_ids: [EMAIL_1] } })).rejects.toThrow(
+      "No emails found",
+    );
+    expect(suggestFolderFromEmails).not.toHaveBeenCalled();
+  });
+});
+
+// scanGmailForFolder is audit path 6/7's Gmail-side ingest: it translates a
+// folder's own rules into Gmail queries, pulls the matching mail into the
+// local corpus, and files each message with the SHARED ingest classifier
+// (gmail/ingest-classify.ts, real here) rather than a private precedence.
+// What is pinned below is the boundary the classifier does not own: which
+// Gmail queries get run, which messages are fetched at all, and the exact
+// decision write that lands on an ingested row.
+describe("scanGmailForFolder (audit path 6/7 — scan Gmail for a folder's rules)", () => {
+  /** Seed the folder under scan plus the account-wide rule context the
+   * handler reloads (`folders` "*" + every folder_filters row). */
+  function seedScanFolder(over: Record<string, unknown> = {}) {
+    fake.seed("folders", [
+      {
+        id: FOLDER_A,
+        user_id: TEST_USER,
+        gmail_account_id: ACC,
+        name: "Vendors",
+        filter_tree: null,
+        ...over,
+      },
+    ]);
+  }
+
+  it("a folder whose only rules are untranslatable runs no Gmail query at all", async () => {
+    // A regex leaf has no Gmail search equivalent. The flat rule below is
+    // translatable but MUST be ignored: filter_tree is authoritative.
+    seedScanFolder({
+      filter_tree: {
+        type: "group",
+        op: "and",
+        children: [{ type: "cond", field: "body", op: "regex", value: "inv[0-9]+" }],
+      },
+    });
+    fake.seed("folder_filters", [
+      { id: "ff-1", folder_id: FOLDER_A, field: "from", op: "contains", value: "acme" },
+    ]);
+
+    const res = await scanGmailForFolder({ data: { folder_id: FOLDER_A } });
+    expect(res).toEqual({
+      ok: false,
+      ingested: 0,
+      found: 0,
+      queries_run: 0,
+      skipped_regex: 1,
+      truncated: false,
+      reason: "no_translatable_rules",
+    });
+    expect(listMessages).not.toHaveBeenCalled();
+    expect(upsertEmailEncrypted).not.toHaveBeenCalled();
+  });
+
+  it("pages a query 5×100 and stops at the page cap even when Gmail offers more", async () => {
+    seedScanFolder();
+    fake.seed("folder_filters", [
+      { id: "ff-1", folder_id: FOLDER_A, field: "from", op: "contains", value: "acme" },
+    ]);
+    let page = 0;
+    listMessages.mockImplementation(async () => {
+      page++;
+      return {
+        messages: [
+          { id: `m-${page}a`, threadId: "t" },
+          { id: `m-${page}b`, threadId: "t" },
+        ],
+        // Always offers another page: only MAX_PAGES stops the loop.
+        nextPageToken: `p${page}`,
+      };
+    });
+
+    const res = await scanGmailForFolder({ data: { folder_id: FOLDER_A, months: 12 } });
+    expect(res).toEqual({
+      ok: true,
+      ingested: 10,
+      found: 10,
+      queries_run: 1,
+      skipped_regex: 0,
+      truncated: false,
+    });
+
+    expect(listMessages).toHaveBeenCalledTimes(5);
+    // The rule is translated once and the window comes from `months`.
+    expect(listMessages).toHaveBeenNthCalledWith(1, ACC, {
+      q: "from:acme newer_than:12m",
+      maxResults: 100,
+      pageToken: undefined,
+    });
+    // Each page carries the previous page's token forward.
+    expect(listMessages).toHaveBeenNthCalledWith(5, ACC, {
+      q: "from:acme newer_than:12m",
+      maxResults: 100,
+      pageToken: "p4",
+    });
+  });
+
+  it("defaults the scan window to six months", async () => {
+    seedScanFolder();
+    fake.seed("folder_filters", [
+      { id: "ff-1", folder_id: FOLDER_A, field: "domain", op: "contains", value: "acme.com" },
+    ]);
+    await scanGmailForFolder({ data: { folder_id: FOLDER_A } });
+    expect(listMessages).toHaveBeenCalledWith(ACC, {
+      q: "from:acme.com newer_than:6m",
+      maxResults: 100,
+      pageToken: undefined,
+    });
+  });
+
+  it("stops at the hard ingest cap mid-run and reports the result as truncated", async () => {
+    seedScanFolder();
+    fake.seed("folder_filters", [
+      { id: "ff-1", folder_id: FOLDER_A, field: "from", op: "contains", value: "acme" },
+      { id: "ff-2", folder_id: FOLDER_A, field: "from", op: "contains", value: "beta" },
+      { id: "ff-3", folder_id: FOLDER_A, field: "from", op: "contains", value: "gamma" },
+    ]);
+    // Every query yields a full 5×100 page run of distinct ids: 1500 messages
+    // are reachable, the cap is 1000.
+    listMessages.mockImplementation(async (_accountId, opts) => {
+      const q = String(opts.q);
+      const page = opts.pageToken ? Number(opts.pageToken) : 0;
+      return {
+        messages: Array.from({ length: 100 }, (_, i) => ({
+          id: `${q}#${page}#${i}`,
+          threadId: "t",
+        })),
+        nextPageToken: String(page + 1),
+      };
+    });
+
+    const res = await scanGmailForFolder({ data: { folder_id: FOLDER_A } });
+    expect(res).toEqual({
+      ok: true,
+      ingested: 1000,
+      found: 1000,
+      queries_run: 2, // the third query is never issued
+      skipped_regex: 0,
+      truncated: true,
+    });
+    expect(upsertEmailEncrypted).toHaveBeenCalledTimes(1000);
+  });
+
+  it("skips message ids already stored for this user, but not ones stored for someone else", async () => {
+    seedScanFolder();
+    fake.seed("folder_filters", [
+      { id: "ff-1", folder_id: FOLDER_A, field: "from", op: "contains", value: "acme" },
+    ]);
+    fake.seed("emails", [
+      emailRow(EMAIL_1, { gmail_message_id: "m-1" }),
+      // Another tenant's copy of m-2 must not make this user's scan skip it.
+      emailRow(EMAIL_2, { gmail_message_id: "m-2", user_id: "someone-else" }),
+    ]);
+    listMessages.mockResolvedValue({
+      messages: [
+        { id: "m-1", threadId: "t" },
+        { id: "m-2", threadId: "t" },
+        { id: "m-3", threadId: "t" },
+      ],
+    });
+
+    const res = await scanGmailForFolder({ data: { folder_id: FOLDER_A } });
+    expect(res).toEqual({
+      ok: true,
+      ingested: 2,
+      found: 3,
+      queries_run: 1,
+      skipped_regex: 0,
+      truncated: false,
+    });
+    // The known message is never even fetched — the skip happens before getMessage.
+    expect(getMessage.mock.calls.map((c) => c[1]).sort()).toEqual(["m-2", "m-3"]);
+  });
+
+  it("writes the ingest decision with full confidence and the rule ids that produced it", async () => {
+    seedScanFolder();
+    fake.seed("folder_filters", [
+      { id: "ff-1", folder_id: FOLDER_A, field: "from", op: "contains", value: "acme" },
+    ]);
+    listMessages.mockResolvedValue({ messages: [{ id: "m-1", threadId: "t" }] });
+
+    const res = await scanGmailForFolder({ data: { folder_id: FOLDER_A } });
+    expect(res).toEqual({
+      ok: true,
+      ingested: 1,
+      found: 1,
+      queries_run: 1,
+      skipped_regex: 0,
+      truncated: false,
+    });
+
+    // The row lands first with the decision's classified_by…
+    expect(upsertEmailEncrypted).toHaveBeenCalledTimes(1);
+    expect(upsertEmailEncrypted.mock.calls[0]![0]).toMatchObject({
+      user_id: TEST_USER,
+      gmail_account_id: ACC,
+      gmail_message_id: "m-1",
+      classified_by: "filter",
+      is_archived: false,
+    });
+    // …then the folder decision itself, stamped as a deterministic rule
+    // match: confidence 1 and the exact folder_filters ids that fired.
+    expect(updateEmailEncrypted).toHaveBeenCalledWith({
+      email_id: "db-x",
+      folder_id: FOLDER_A,
+      ai_confidence: 1,
+      classification_reason: "Folder rule: from acme",
+      matched_filter_ids: ["ff-1"],
+    });
+  });
+
+  it("a failed insert is neither counted as ingested nor followed by a decision write", async () => {
+    seedScanFolder();
+    fake.seed("folder_filters", [
+      { id: "ff-1", folder_id: FOLDER_A, field: "from", op: "contains", value: "acme" },
+    ]);
+    listMessages.mockResolvedValue({ messages: [{ id: "m-1", threadId: "t" }] });
+    upsertEmailEncrypted.mockResolvedValue({ id: null, error: "duplicate key" });
+
+    const res = await scanGmailForFolder({ data: { folder_id: FOLDER_A } });
+    expect(res).toMatchObject({ ok: true, ingested: 0, found: 1 });
+    expect(updateEmailEncrypted).not.toHaveBeenCalled();
+  });
+
+  it("a paused folder's Gmail label does not claim scanned mail", async () => {
+    fake.seed("folders", [
+      {
+        id: FOLDER_A,
+        user_id: TEST_USER,
+        gmail_account_id: ACC,
+        name: "Vendors",
+        filter_tree: null,
+      },
+      {
+        id: FOLDER_B,
+        user_id: TEST_USER,
+        gmail_account_id: ACC,
+        name: "Paused",
+        gmail_label_id: "L-P",
+        processing_enabled: false,
+        filter_tree: null,
+      },
+    ]);
+    fake.seed("folder_filters", [
+      { id: "ff-1", folder_id: FOLDER_A, field: "from", op: "contains", value: "acme" },
+    ]);
+    listMessages.mockResolvedValue({ messages: [{ id: "m-1", threadId: "t" }] });
+    // Carries the paused folder's label and matches no rule.
+    parseMessage.mockReturnValue(
+      parsed({ gmail_message_id: "m-1", from_addr: "z@nomatch.test", raw_labels: ["L-P"] }),
+    );
+
+    const res = await scanGmailForFolder({ data: { folder_id: FOLDER_A } });
+    expect(res).toMatchObject({ ok: true, ingested: 1 });
+    expect(upsertEmailEncrypted.mock.calls[0]![0]).toMatchObject({
+      classified_by: "gmail_search_ingest",
+    });
+    expect(updateEmailEncrypted).not.toHaveBeenCalled();
+  });
+
+  it("an active folder's Gmail label still claims scanned mail ahead of any rule", async () => {
+    fake.seed("folders", [
+      {
+        id: FOLDER_A,
+        user_id: TEST_USER,
+        gmail_account_id: ACC,
+        name: "Vendors",
+        filter_tree: null,
+      },
+      {
+        id: FOLDER_B,
+        user_id: TEST_USER,
+        gmail_account_id: ACC,
+        name: "Filed",
+        gmail_label_id: "L-B",
+        processing_enabled: true,
+        filter_tree: null,
+      },
+    ]);
+    fake.seed("folder_filters", [
+      { id: "ff-1", folder_id: FOLDER_A, field: "from", op: "contains", value: "acme" },
+    ]);
+    listMessages.mockResolvedValue({ messages: [{ id: "m-1", threadId: "t" }] });
+    // Matches the SCANNED folder's rule, but the user already filed it under
+    // another folder's label — the label wins.
+    parseMessage.mockReturnValue(
+      parsed({ gmail_message_id: "m-1", from_addr: "a@acme.com", raw_labels: ["L-B"] }),
+    );
+
+    await scanGmailForFolder({ data: { folder_id: FOLDER_A } });
+    expect(updateEmailEncrypted).toHaveBeenCalledWith({
+      email_id: "db-x",
+      folder_id: FOLDER_B,
+      ai_confidence: 1,
+      classification_reason: "Matched Gmail label",
+      matched_filter_ids: [],
+    });
+  });
+
+  it("a revoked Gmail grant with nothing ingested asks for re-auth and abandons the remaining queries", async () => {
+    seedScanFolder();
+    fake.seed("folder_filters", [
+      { id: "ff-1", folder_id: FOLDER_A, field: "from", op: "contains", value: "acme" },
+      { id: "ff-2", folder_id: FOLDER_A, field: "from", op: "contains", value: "beta" },
+    ]);
+    listMessages.mockRejectedValue(new Error("invalid_grant: token has been expired or revoked"));
+
+    const res = await scanGmailForFolder({ data: { folder_id: FOLDER_A } });
+    expect(res).toEqual({
+      ok: false,
+      ingested: 0,
+      found: 0,
+      queries_run: 1, // broke out instead of burning the second query
+      skipped_regex: 0,
+      truncated: false,
+      reason: "reauth_required",
+    });
+    expect(listMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it("one failing query does not abandon the scan", async () => {
+    seedScanFolder();
+    fake.seed("folder_filters", [
+      { id: "ff-1", folder_id: FOLDER_A, field: "from", op: "contains", value: "acme" },
+      { id: "ff-2", folder_id: FOLDER_A, field: "from", op: "contains", value: "beta" },
+    ]);
+    listMessages
+      .mockRejectedValueOnce(new Error("rate limit exceeded"))
+      .mockResolvedValueOnce({ messages: [{ id: "m-1", threadId: "t" }] });
+
+    const res = await scanGmailForFolder({ data: { folder_id: FOLDER_A } });
+    expect(res).toMatchObject({ ok: true, ingested: 1, found: 1, queries_run: 2 });
+  });
+
+  it("denies a caller who does not own the folder before touching Gmail", async () => {
+    seedScanFolder();
+    fake.seed("folder_filters", [
+      { id: "ff-1", folder_id: FOLDER_A, field: "from", op: "contains", value: "acme" },
+    ]);
+    await expectDeniedCrossUser({
+      fake,
+      call: () => impersonate(scanGmailForFolder, "intruder")({ data: { folder_id: FOLDER_A } }),
+      rejects: "Not authorized for this folder",
+    });
+    expect(listMessages).not.toHaveBeenCalled();
+    expect(upsertEmailEncrypted).not.toHaveBeenCalled();
+  });
+
+  it("reports a missing folder rather than scanning the account", async () => {
+    await expect(scanGmailForFolder({ data: { folder_id: FOLDER_A } })).rejects.toThrow(
+      "Folder not found",
+    );
+    expect(listMessages).not.toHaveBeenCalled();
   });
 });
