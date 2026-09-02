@@ -209,6 +209,42 @@ describe("runRulesEngine", () => {
     });
   });
 
+  // threadEmails enter the engine through the bridge; run_on_threads is a
+  // per-folder opt-in that must survive toEngineFolder, or every folder
+  // silently matches on its neighbours' mail.
+  describe("thread scope survives the bridge", () => {
+    const contractFilter = (id: string) => filter(id, "subject", "contains", "contract");
+    const incoming = parsed({ subject: "Re: following up", from_addr: "them@partner.test" });
+    const priorMessage = {
+      from_addr: "them@partner.test",
+      from_name: "Them",
+      to_addrs: "me@example.com",
+      subject: "The contract draft",
+      body_text: "",
+      has_attachment: false,
+    };
+
+    it("an opted-in folder matches on an earlier message of the thread", () => {
+      const folders = [folder({ id: "deals", name: "Deals", run_on_threads: true })];
+      const result = runRulesEngine(
+        incoming,
+        context({ folders, filters: [contractFilter("deals")] }),
+        { trigger: "arrival", aiEnabled: false, threadEmails: [priorMessage] },
+      );
+      expect(result.folder_id).toBe("deals");
+    });
+
+    it("a folder that did not opt in stays message-scoped", () => {
+      const folders = [folder({ id: "deals", name: "Deals" })];
+      const result = runRulesEngine(
+        incoming,
+        context({ folders, filters: [contractFilter("deals")] }),
+        { trigger: "arrival", aiEnabled: false, threadEmails: [priorMessage] },
+      );
+      expect(result.folder_id).toBeNull();
+    });
+  });
+
   it("defers to AI only when a folder is described and the stage is enabled", () => {
     const folders = [folder({ id: "misc", name: "Misc", ai_rule: "anything odd" })];
     const ctx = context({ folders });

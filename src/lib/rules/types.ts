@@ -28,6 +28,11 @@ export type EngineFolder = {
   /** Confidence floor for the AI stage. */
   min_ai_confidence?: number;
   skip_ai?: boolean;
+  /** When true, this folder's rules evaluate across the thread (incoming
+   * message + recent prior messages) instead of the single message.
+   * Absent/false = message-scoped, which is what every folder does unless
+   * the user opted in. */
+  run_on_threads?: boolean;
 };
 
 export type Condition = { field: string; op: string; value: string };

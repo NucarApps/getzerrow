@@ -86,6 +86,7 @@ export function resolveRules(
   const vetoed = new Set(opts.vetoedFolderIds ?? []);
   const nameOf = (id: string) => folders.find((f) => f.id === id)?.name ?? "folder";
   const paused = (id: string) => folders.find((f) => f.id === id)?.processing_enabled === false;
+  const runsOnThreads = (id: string) => folders.find((f) => f.id === id)?.run_on_threads === true;
 
   const matched: RuleEvaluation[] = [];
   const failed: RuleEvaluation[] = [];
@@ -97,7 +98,12 @@ export function resolveRules(
     // not even evaluated — they cannot win and cannot collide.
     if (paused(rule.folder_id) || vetoed.has(rule.folder_id)) continue;
 
-    const { matched: hit, checks } = evaluateRule(rule, m, opts.threadMessages);
+    // Thread scope is a per-folder opt-in, exactly as it is in the legacy
+    // engine (filter-engine.ts matchByFiltersExplained): handing every
+    // rule the thread would let a folder nobody opted in match on a
+    // message that is not the one being routed.
+    const threadMessages = runsOnThreads(rule.folder_id) ? opts.threadMessages : undefined;
+    const { matched: hit, checks } = evaluateRule(rule, m, threadMessages);
     const evaluation: RuleEvaluation = {
       rule_id: rule.id,
       folder_id: rule.folder_id,

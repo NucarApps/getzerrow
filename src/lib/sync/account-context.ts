@@ -131,7 +131,9 @@ export async function loadAccountContext(
     const [{ data: filters }, { data: markRead }] = await Promise.all([
       supabaseAdmin
         .from("folder_filters")
-        .select("id, folder_id, field, op, value")
+        // created_at is a FILING input, not metadata: the engine's ladder
+        // breaks a same-level, same-condition-count tie by "older rule wins".
+        .select("id, folder_id, field, op, value, created_at")
         .in("folder_id", folderIds),
       supabaseAdmin
         .from("folder_mark_read_rules")

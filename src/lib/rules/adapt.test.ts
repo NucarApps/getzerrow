@@ -69,6 +69,76 @@ describe("toRules", () => {
     );
     expect(rules).toHaveLength(0);
   });
+
+  // The ladder's last-resort tiebreak is "the older rule wins", so a rule
+  // that reaches the resolver stamped with the epoch has no age at all and
+  // ties fall through to lexicographic rule-id order.
+  describe("rule age", () => {
+    it("carries each folder_filters row's own created_at", () => {
+      const rules = toRules(
+        [folder({ id: "f1", name: "Receipts" })],
+        [
+          filter({ id: "a", folder_id: "f1", created_at: "2026-03-01T00:00:00.000Z" }),
+          filter({
+            id: "b",
+            folder_id: "f1",
+            field: "from",
+            value: "billing@amazon.com",
+            created_at: "2025-11-02T00:00:00.000Z",
+          }),
+        ],
+      );
+      expect(rules.map((r) => [r.id, r.created_at])).toEqual([
+        ["a", "2026-03-01T00:00:00.000Z"],
+        ["b", "2025-11-02T00:00:00.000Z"],
+      ]);
+    });
+
+    it('an "all" folder is as old as its OLDEST condition', () => {
+      const rules = toRules(
+        [folder({ id: "f1", name: "Receipts", filter_logic: "all" })],
+        [
+          filter({ id: "a", folder_id: "f1", created_at: "2026-03-01T00:00:00.000Z" }),
+          filter({
+            id: "b",
+            folder_id: "f1",
+            field: "subject",
+            value: "receipt",
+            created_at: "2025-11-02T00:00:00.000Z",
+          }),
+        ],
+      );
+      expect(rules[0]!.created_at).toBe("2025-11-02T00:00:00.000Z");
+    });
+
+    it("falls back to the epoch for a row with no timestamp, or an unparseable one", () => {
+      const rules = toRules(
+        [folder({ id: "f1", name: "Receipts", filter_logic: "all" })],
+        [
+          filter({ id: "a", folder_id: "f1" }),
+          filter({ id: "b", folder_id: "f1", field: "subject", created_at: "not a date" }),
+        ],
+      );
+      expect(rules[0]!.created_at).toBe("1970-01-01T00:00:00.000Z");
+    });
+
+    // CHARACTERIZATION(engine-tree-rule-has-no-age): folders.filter_tree is a
+    // JSON column with no authoring timestamp, so a tree rule is stamped with
+    // the epoch and wins every same-level tie against a real, older rule.
+    it("a filter_tree rule is stamped with the epoch, so it out-ages every real rule", () => {
+      const rules = toRules(
+        [
+          folder({
+            id: "f1",
+            name: "Receipts",
+            filter_tree: { type: "cond", field: "domain", op: "contains", value: "amazon.com" },
+          }),
+        ],
+        [],
+      );
+      expect(rules[0]!.created_at).toBe("1970-01-01T00:00:00.000Z");
+    });
+  });
 });
 
 describe("toGuardrails", () => {
@@ -132,5 +202,38 @@ describe("treeToGroups", () => {
 
   it("returns nothing for a null tree", () => {
     expect(treeToGroups(null)).toEqual([]);
+  });
+
+  // Declared narrowing, not a bug: cross-producting AND(a, OR(b,c)) into
+  // [[a,b],[a,c]] is exponential in the nesting depth, so an AND node
+  // concatenates its children's leaves into one conjunction instead. The
+  // engine therefore matches STRICTLY LESS than the legacy tree walker
+  // (which evaluates a && (b || c)) — a folder can never over-match under
+  // the engine, only under-match. The cost is asserted end-to-end as an
+  // engineDelta in sync/__fixtures__/folder-scenarios.ts.
+  it("flattens AND(a, OR(b, c)) into one AND(a, b, c) group rather than cross-producting", () => {
+    expect(
+      treeToGroups({
+        type: "group",
+        op: "and",
+        children: [
+          { type: "cond", field: "from", op: "contains", value: "boss@acme.com" },
+          {
+            type: "group",
+            op: "or",
+            children: [
+              { type: "cond", field: "subject", op: "contains", value: "invoice" },
+              { type: "cond", field: "subject", op: "contains", value: "receipt" },
+            ],
+          },
+        ],
+      }),
+    ).toEqual([
+      [
+        { field: "from", op: "contains", value: "boss@acme.com" },
+        { field: "subject", op: "contains", value: "invoice" },
+        { field: "subject", op: "contains", value: "receipt" },
+      ],
+    ]);
   });
 });

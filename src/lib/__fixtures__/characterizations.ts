@@ -89,6 +89,16 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "assertAdmin matches the JWT `email` claim against ADMIN_EMAILS without ever consulting `email_verified`, so an unverified identity that merely asserts an allowlisted address is granted the cross-tenant admin dashboard.",
     fixIn: "src/lib/admin.functions.ts — require claims.email_verified === true.",
   },
+  "replay-ignores-gmail-label-placement": {
+    what: "buildChangeSet evaluates every historical message with skipGmailLabelMatch:true, so the Gmail label mirror (stage 3) never runs. Mail the user filed by applying a label in Gmail — which the live pipeline files by label on every pass — reads as unexplained, is proposed for a move to the Inbox, and is not even flagged requires_review, so Apply All (planner-apply applyMoves) would carry it out.",
+    fixIn:
+      "src/lib/rules/replay.ts — run the label mirror during replay, or mark label-filed mail locked.",
+  },
+  "engine-tree-rule-has-no-age": {
+    what: "folders.filter_tree is a JSON column with no authoring timestamp, so adapt.toRules stamps a tree rule with the epoch. The v2 ladder's last-resort tiebreak is 'the older rule wins', so a tree rule silently out-ages every real folder_filters rule at the same level.",
+    fixIn:
+      "src/lib/rules/adapt.ts — carry a real created_at once Phase D moves trees into the rules table.",
+  },
   "ingest-drops-non-header-filter-fields": {
     what: "classifyIngestedMessage builds its EmailForFilter without cc, list_id or in_reply_to, so a folder rule on cc / list_id / is_reply fires on the arrival path but silently never fires on either Gmail ingest path (searchGmailAndIngest, scanGmailForFolder).",
     fixIn: "src/lib/gmail/ingest-classify.ts — carry the fields through IngestCandidate.",

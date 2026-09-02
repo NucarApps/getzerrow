@@ -239,3 +239,44 @@ describe("resolveRules — specificity ladder", () => {
     expect(res.winner).toBeNull();
   });
 });
+
+// Thread scope is a per-folder opt-in (folders.run_on_threads), and the
+// legacy engine gates on it (filter-engine.ts matchByFiltersExplained).
+// The resolver used to hand threadMessages to EVERY rule, so a folder
+// nobody opted in could match on a message that is not the one being
+// routed — and the routed message would then be filed on the strength of
+// its neighbour's subject.
+describe("resolveRules — thread scope is opt-in", () => {
+  const threadFolders: EngineFolder[] = [
+    { id: "scoped", name: "Message scoped" },
+    { id: "threaded", name: "Thread scoped", run_on_threads: true },
+  ];
+  const incoming = msg({ subject: "Re: following up", from_addr: "someone@partner.test" });
+  const prior = [msg({ subject: "The contract draft", from_addr: "someone@partner.test" })];
+  const contractRule = (folder_id: string) =>
+    rule({
+      id: `r-${folder_id}`,
+      folder_id,
+      groups: [[{ field: "subject", op: "contains", value: "contract" }]],
+    });
+
+  it("a folder that opted in matches on a prior message of the thread", () => {
+    const res = resolveRules(incoming, [contractRule("threaded")], threadFolders, {
+      threadMessages: prior,
+    });
+    expect(res.winner?.rule.folder_id).toBe("threaded");
+  });
+
+  it("a folder that did NOT opt in stays message-scoped", () => {
+    const res = resolveRules(incoming, [contractRule("scoped")], threadFolders, {
+      threadMessages: prior,
+    });
+    expect(res.winner).toBeNull();
+    expect(res.matched).toEqual([]);
+  });
+
+  it("the opted-in folder still needs its own rule to match the incoming message when no thread is supplied", () => {
+    const res = resolveRules(incoming, [contractRule("threaded")], threadFolders);
+    expect(res.winner).toBeNull();
+  });
+});

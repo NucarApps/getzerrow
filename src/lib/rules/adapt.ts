@@ -30,6 +30,7 @@ export function toEngineFolder(f: Folder): EngineFolder {
     learned_profile: f.learned_profile,
     min_ai_confidence: f.min_ai_confidence,
     skip_ai: f.skip_ai,
+    run_on_threads: f.run_on_threads,
   };
 }
 
@@ -57,6 +58,10 @@ export function toRules(folders: Folder[], filters: Filter[]): Rule[] {
     if (folder.filter_tree) {
       const groups = treeToGroups(folder.filter_tree).filter((g) => g.length > 0);
       if (groups.length) {
+        // A filter_tree is a JSON column on `folders` with no authoring
+        // timestamp of its own, so a tree rule is the oldest thing there
+        // is and wins every same-level tie. Phase D's `rules` table gives
+        // it a real created_at.
         rules.push(
           withLevel({ id: `tree:${folder.id}`, folder_id: folder.id, created_at: EPOCH, groups }),
         );
@@ -66,12 +71,13 @@ export function toRules(folders: Folder[], filters: Filter[]): Rule[] {
     if (own.length === 0) continue;
 
     if (folder.filter_logic === "all") {
-      // One rule: every condition must hold.
+      // One rule: every condition must hold. It is as old as its oldest
+      // condition — that is when the user first expressed this intent.
       rules.push(
         withLevel({
           id: `all:${folder.id}`,
           folder_id: folder.id,
-          created_at: EPOCH,
+          created_at: oldestOf(own),
           groups: [own.map(toCondition)],
         }),
       );
@@ -83,7 +89,7 @@ export function toRules(folders: Folder[], filters: Filter[]): Rule[] {
           withLevel({
             id: f.id,
             folder_id: folder.id,
-            created_at: EPOCH,
+            created_at: f.created_at ?? EPOCH,
             groups: [[toCondition(f)]],
           }),
         );
@@ -96,6 +102,15 @@ export function toRules(folders: Folder[], filters: Filter[]): Rule[] {
 
 function toCondition(f: Filter): Condition {
   return { field: f.field, op: f.op, value: f.value };
+}
+
+/** The earliest authored condition, as an ISO string. */
+function oldestOf(filters: Filter[]): string {
+  const stamps = filters
+    .map((f) => f.created_at)
+    .filter((c): c is string => typeof c === "string" && !Number.isNaN(Date.parse(c)));
+  if (stamps.length === 0) return EPOCH;
+  return stamps.reduce((a, b) => (Date.parse(a) <= Date.parse(b) ? a : b));
 }
 
 function withLevel(rule: Rule): Rule {

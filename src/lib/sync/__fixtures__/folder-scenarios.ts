@@ -141,6 +141,43 @@ export const SCENARIOS: FolderScenario[] = [
     expect: { folder_id: "f-work", needs_ai: false },
   },
   {
+    name: "AND with a nested OR — only one branch satisfied",
+    email: { from_addr: "boss@acme.com", subject: "Invoice 42" },
+    folders: [
+      makeFolder({
+        id: "f-work",
+        name: "Work",
+        ai_rule: null,
+        filter_tree: {
+          type: "group",
+          op: "and",
+          children: [
+            { type: "cond", field: "from", op: "contains", value: "boss@acme.com" },
+            {
+              type: "group",
+              op: "or",
+              children: [
+                { type: "cond", field: "subject", op: "contains", value: "invoice" },
+                { type: "cond", field: "subject", op: "contains", value: "receipt" },
+              ],
+            },
+          ],
+        },
+      }),
+    ],
+    filters: [],
+    expect: { folder_id: "f-work", needs_ai: false },
+    engineDelta: {
+      folder_id: null,
+      why:
+        "adapt.treeToGroups flattens AND(a, OR(b,c)) into ONE AND(a,b,c) " +
+        "group instead of cross-producting into [[a,b],[a,c]] — the " +
+        "cross-product is exponential in nesting depth. The engine " +
+        "therefore matches strictly less than the legacy tree walker: it " +
+        "can under-match a nested tree, never over-match one",
+    },
+  },
+  {
     name: "two folders match — priority resolves the tie",
     email: { from_addr: "sales@vendor.com" },
     folders: [work(), news()],
