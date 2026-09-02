@@ -202,10 +202,15 @@ export async function bulkCatchupClaim(
     logError("catchup.claim_failed", { account_id: accountId, user_id: userId }, claimErr);
     return { scanned: 0, inserted: 0, ai_pending: 0, fetch_failed: 0, overflowed: false };
   }
-  let jobs = (claimedRows ?? []) as ClaimedJob[];
+  const claimed = (claimedRows ?? []) as ClaimedJob[];
   // Scope strictly to this account — claim_message_jobs returns across
-  // all accounts but the caller is opening one mailbox.
-  jobs = jobs.filter((j) => j.gmail_account_id === accountId && j.user_id === userId);
+  // all accounts but the caller is opening one mailbox. Anything claimed
+  // for another account MUST be released: the RPC already locked those
+  // rows, so dropping them on the floor left them locked until the
+  // stuck-job reclaim (35s) noticed, stalling the other mailbox.
+  const jobs = claimed.filter((j) => j.gmail_account_id === accountId && j.user_id === userId);
+  const foreign = claimed.filter((j) => !jobs.includes(j));
+  if (foreign.length > 0) await releaseClaimed(foreign);
   if (jobs.length === 0) {
     return { scanned: 0, inserted: 0, ai_pending: 0, fetch_failed: 0, overflowed: false };
   }
