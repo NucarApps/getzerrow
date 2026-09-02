@@ -13,8 +13,20 @@
 //   * label ops for messages in seenAdded are skipped (row not inserted yet),
 //   * recordManualMove fires only for existing local rows and the path
 //     never calls getMessageMetadata (quota-spiral guard),
-//   * the 25-page pagination cap, bootstrap anchoring/dedupe, the
-//     bump_history_id_if_greater JS fallback, and last_push_at stamping.
+//   * the 25-page pagination cap — and that a CAPPED walk leaves the
+//     cursor on the last record it processed rather than the mailbox head,
+//     since the head would declare the unwalked backlog done,
+//   * a mid-walk enqueue failure returning {error} with the cursor still
+//     behind that page,
+//   * the watch response's historyId never becoming the cursor (it is the
+//     mailbox head; only its expiration is ours to keep),
+//   * bootstrap anchoring/dedupe and bootstrap FAILURE leaving history_id
+//     null so the next tick retries,
+//   * the bump_history_id_if_greater JS fallback and last_push_at stamping.
+//
+// collectAddedMessages — the walk's "is this new mail?" predicate — is at
+// the bottom of this file rather than in its own, because the walk skipping
+// label ops for anything it answers yes to is the whole reason it exists.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
@@ -40,6 +52,8 @@ const listMessagesCalls: Array<Record<string, unknown>> = [];
 const listMessagesQueue: Array<{ messages?: Array<{ id: string }>; nextPageToken?: string }> = [];
 const getMessageMetadataCalls: string[] = [];
 let messageMetadata: { historyId?: string } = {};
+/** When set, every listMessages call rejects with it (bootstrap failure). */
+let listMessagesFails: Error | null = null;
 
 vi.mock("../gmail.server", () => {
   class GmailApiError extends Error {
@@ -66,6 +80,7 @@ vi.mock("../gmail.server", () => {
     },
     async listMessages(_accountId: string, opts: Record<string, unknown> = {}) {
       listMessagesCalls.push(opts);
+      if (listMessagesFails) throw listMessagesFails;
       return listMessagesQueue.shift() ?? { messages: [] };
     },
     async getMessageMetadata(_accountId: string, id: string) {
@@ -73,16 +88,23 @@ vi.mock("../gmail.server", () => {
       return messageMetadata;
     },
     async ensureWatch() {
-      return null; // no watch renewal — bumps go through the plain path
+      return watchResponse; // null = no renewal; bumps go through the plain path
     },
   };
 });
 
+/** users.watch reply. Its historyId is the mailbox HEAD and must never
+ * become the cursor; only its expiration is ours to keep. */
+let watchResponse: { expiration: string; historyId?: string } | null = null;
+
 const enqueueCalls: Array<{ accountId: string; userId: string; ids: string[]; priority: number }> =
   [];
+/** ids whose enqueue call should throw, to simulate a mid-walk failure. */
+const enqueueFailsFor = new Set<string>();
 vi.mock("./enqueue", () => ({
   async enqueueMessageJobs(accountId: string, userId: string, ids: string[], priority = 0) {
     enqueueCalls.push({ accountId, userId, ids: [...ids], priority });
+    if (ids.some((id) => enqueueFailsFor.has(id))) throw new Error("queue write failed");
   },
 }));
 
@@ -112,6 +134,7 @@ vi.mock("../log.server", () => ({
 }));
 
 import { GmailApiError } from "../gmail.server";
+import { collectAddedMessages, type GmailHistoryRecord } from "./history-events";
 import { syncSinceHistory } from "./history";
 
 const ACC = "acc-1";
@@ -149,12 +172,22 @@ beforeEach(() => {
   listHistoryQueue.length = 0;
   listMessagesCalls.length = 0;
   listMessagesQueue.length = 0;
+  listMessagesFails = null;
   getMessageMetadataCalls.length = 0;
   messageMetadata = {};
   enqueueCalls.length = 0;
+  enqueueFailsFor.clear();
+  watchResponse = null;
   backfillRecentCalls.length = 0;
   recordManualMoveCalls.length = 0;
 });
+
+/** Every history id handed to the monotonic bump RPC, in call order. */
+function bumpedHistoryIds(): string[] {
+  return fake.calls.rpcs
+    .filter((r) => r.fn === "bump_history_id_if_greater")
+    .map((r) => String((r.args as { p_new_history_id: unknown }).p_new_history_id));
+}
 
 describe("error taxonomy", () => {
   it("404 (history expired) nulls history_id and reports rebootstrapped", async () => {
@@ -344,6 +377,161 @@ describe("history event handling", () => {
     expect(listHistoryCalls).toHaveLength(25);
   });
 
+  it("a capped walk leaves the cursor on the last record it processed, never on the head", async () => {
+    // The cap means the backlog is UNFINISHED. Stamping the mailbox head
+    // here would declare every unwalked page processed and lose that mail
+    // permanently, which is the failure the per-page bump exists to prevent.
+    seedAccount({ history_id: "1000" });
+    for (let i = 0; i < 30; i++) {
+      listHistoryQueue.push({
+        historyId: "9999", // mailbox head, repeated on every page
+        history: [
+          { id: String(1010 + i), messagesAdded: [{ message: { id: `m${i}`, labelIds: [] } }] },
+        ],
+        nextPageToken: "MORE",
+      });
+    }
+
+    await syncSinceHistory(ACC);
+
+    const bumps = bumpedHistoryIds();
+    expect(bumps).not.toContain("9999");
+    // The cursor sits on the highest record id the walk actually processed.
+    expect(bumps.at(-1)).toBe(String(1010 + 24));
+  });
+
+  it("a mid-walk enqueue failure returns the error and leaves the cursor behind that page", async () => {
+    // Enqueue is what makes a page's mail durable. If it throws, the cursor
+    // must NOT advance past that page — the next push has to replay it.
+    seedAccount({ history_id: "1000" });
+    enqueueFailsFor.add("m2");
+    listHistoryQueue.push({
+      historyId: "1100",
+      history: [{ id: "1010", messagesAdded: [{ message: { id: "m1", labelIds: [] } }] }],
+      nextPageToken: "P2",
+    });
+    listHistoryQueue.push({
+      historyId: "1100",
+      history: [{ id: "1020", messagesAdded: [{ message: { id: "m2", labelIds: [] } }] }],
+    });
+
+    const res = await syncSinceHistory(ACC);
+    expect(res).toEqual({ error: "queue write failed" });
+
+    const bumps = bumpedHistoryIds();
+    // Page 1 was durable, so its record id is a legitimate cursor.
+    expect(bumps).toEqual(["1010"]);
+    // Neither page 2's record id nor the head was stamped.
+    expect(bumps).not.toContain("1020");
+    expect(bumps).not.toContain("1100");
+    // A transient queue failure must not look like an expired history id.
+    expect(accountUpdates().every((u) => !("history_id" in (u.payload as object)))).toBe(true);
+  });
+
+  it("the watch response's historyId never becomes the cursor — only its expiration is kept", async () => {
+    // users.watch returns the mailbox's CURRENT head. Stamping that would
+    // skip every event between the position we actually processed and now.
+    seedAccount({ history_id: "1000" });
+    watchResponse = { expiration: "1790000000000", historyId: "9999" };
+    listHistoryQueue.push({
+      historyId: "1100",
+      history: [{ id: "1010", messagesAdded: [{ message: { id: "m1", labelIds: [] } }] }],
+    });
+
+    await syncSinceHistory(ACC);
+
+    const bumps = bumpedHistoryIds();
+    expect(bumps).not.toContain("9999");
+    expect(bumps.at(-1)).toBe("1100");
+    // The refreshed expiration rides along with the end-of-walk bump.
+    const headBump = fake.calls.rpcs.filter((r) => r.fn === "bump_history_id_if_greater").at(-1);
+    expect(headBump?.args).toMatchObject({
+      p_new_history_id: "1100",
+      p_watch_expiration: new Date(1790000000000).toISOString(),
+    });
+  });
+
+  it("a SPAM label add deletes the local row, exactly as TRASH does", async () => {
+    seedAccount();
+    listHistoryQueue.push({
+      historyId: "1100",
+      history: [
+        { labelsAdded: [{ message: { id: "m-spam", labelIds: ["SPAM"] }, labelIds: ["SPAM"] }] },
+      ],
+    });
+    await syncSinceHistory(ACC);
+    const deletes = fake.calls.deletes.filter((d) => d.table === "emails");
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0]!.filters).toEqual([
+      { op: "eq", col: "gmail_account_id", value: ACC },
+      { op: "eq", col: "gmail_message_id", value: "m-spam" },
+    ]);
+    expect(emailUpdates()).toHaveLength(0);
+  });
+
+  it("two folder labels added in one event: the row takes the first, and BOTH folders learn", async () => {
+    // Gmail can apply several labels at once (a filter with two labels, or
+    // a multi-select in the UI). folder_id can only hold one, so the first
+    // linked label wins — but the example must be recorded for every folder
+    // the user labelled, or the second folder never learns the sender.
+    seedAccount();
+    fake.seed("folders", [
+      { id: "folder-A", gmail_account_id: ACC, gmail_label_id: "L-A", name: "A" },
+      { id: "folder-B", gmail_account_id: ACC, gmail_label_id: "L-B", name: "B" },
+    ]);
+    fake.seed("emails", [
+      { id: "row-1", gmail_account_id: ACC, gmail_message_id: "m-multi", folder_id: null },
+    ]);
+    listHistoryQueue.push({
+      historyId: "1100",
+      history: [
+        {
+          labelsAdded: [
+            { message: { id: "m-multi", labelIds: ["L-A", "L-B"] }, labelIds: ["L-A", "L-B"] },
+          ],
+        },
+      ],
+    });
+
+    await syncSinceHistory(ACC);
+
+    expect(recordManualMoveCalls).toEqual([
+      { folderId: "folder-A", gmailMessageId: "m-multi" },
+      { folderId: "folder-B", gmailMessageId: "m-multi" },
+    ]);
+    expect(emailUpdates()).toHaveLength(1);
+    expect(emailUpdates()[0]!.payload).toMatchObject({
+      folder_id: "folder-A",
+      classified_by: "gmail_labeled",
+    });
+  });
+
+  it("a paused folder's label is still mirrored onto the row but the folder does not learn", async () => {
+    seedAccount();
+    fake.seed("folders", [
+      {
+        id: "folder-P",
+        gmail_account_id: ACC,
+        gmail_label_id: "L-P",
+        name: "Paused",
+        processing_enabled: false,
+      },
+    ]);
+    fake.seed("emails", [
+      { id: "row-1", gmail_account_id: ACC, gmail_message_id: "m-p", folder_id: null },
+    ]);
+    listHistoryQueue.push({
+      historyId: "1100",
+      history: [
+        { labelsAdded: [{ message: { id: "m-p", labelIds: ["L-P"] }, labelIds: ["L-P"] }] },
+      ],
+    });
+
+    await syncSinceHistory(ACC);
+    expect(recordManualMoveCalls).toEqual([]);
+    expect(emailUpdates()[0]!.payload).toMatchObject({ folder_id: "folder-P" });
+  });
+
   it("enqueues each page's new mail and advances the cursor to the per-record id before moving on", async () => {
     // The email-loss-race fix: a page's adds are made durable (enqueued) and
     // the cursor is bumped to that page's highest history RECORD id BEFORE the
@@ -434,6 +622,32 @@ describe("bootstrap (history_id null)", () => {
     expect(backfillRecentCalls).toEqual([[ACC, USER, 100]]);
     expect(enqueueCalls).toHaveLength(0);
   });
+
+  it("a failed bootstrap reports the error and leaves history_id null so the next tick retries", async () => {
+    seedAccount({ history_id: null });
+    listMessagesFails = new Error("gmail 429");
+
+    const res = await syncSinceHistory(ACC);
+    expect(res).toEqual({ bootstrapped: false, error: "gmail 429" });
+    // No cursor was invented, so the next push/poll bootstraps again rather
+    // than resuming from a position nothing was actually ingested for.
+    expect(bumpedHistoryIds()).toEqual([]);
+    expect(accountUpdates().every((u) => !("history_id" in (u.payload as object)))).toBe(true);
+  });
+
+  it("a push-initiated bootstrap still stamps last_push_at, so the poll cron sees the account as live", async () => {
+    seedAccount({ history_id: null });
+    listMessagesQueue.push({ messages: [] });
+    await syncSinceHistory(ACC, { publishedAtMs: 1_780_000_000_000 });
+    expect(accountUpdates().some((u) => "last_push_at" in (u.payload as object))).toBe(true);
+  });
+
+  it("a poll-initiated bootstrap never stamps last_push_at", async () => {
+    seedAccount({ history_id: null });
+    listMessagesQueue.push({ messages: [] });
+    await syncSinceHistory(ACC);
+    expect(accountUpdates().every((u) => !("last_push_at" in (u.payload as object)))).toBe(true);
+  });
 });
 
 describe("history_id bump fallback and stamping", () => {
@@ -481,5 +695,65 @@ describe("history_id bump fallback and stamping", () => {
     // Stamping last_push_at on polls would defeat the poll cron's
     // "push has gone silent" detection.
     expect("last_push_at" in (stamp!.payload as object)).toBe(false);
+  });
+});
+
+// collectAddedMessages is the walk's "is this new mail?" predicate, and the
+// walk skips label ops for anything it answers yes to — so a false positive
+// here silently drops the archive/un-archive signal. It lives beside the
+// walk that consumes it rather than in a separate top-level file.
+describe("collectAddedMessages — what counts as new mail", () => {
+  it("does NOT treat an archive event (labelsRemoved-only record) as new mail", () => {
+    const record: GmailHistoryRecord = {
+      messages: [{ id: "m1" }],
+      labelsRemoved: [{ message: { id: "m1", labelIds: ["UNREAD"] }, labelIds: ["INBOX"] }],
+    };
+    expect(collectAddedMessages(record)).toEqual([]);
+  });
+
+  it("does NOT treat an un-archive event (labelsAdded-only record) as new mail", () => {
+    const record: GmailHistoryRecord = {
+      messages: [{ id: "m2" }],
+      labelsAdded: [{ message: { id: "m2", labelIds: ["INBOX"] }, labelIds: ["INBOX"] }],
+    };
+    expect(collectAddedMessages(record)).toEqual([]);
+  });
+
+  it("does NOT treat a delete event as new mail", () => {
+    const record: GmailHistoryRecord = {
+      messages: [{ id: "m3" }],
+      messagesDeleted: [{ message: { id: "m3" } }],
+    };
+    expect(collectAddedMessages(record)).toEqual([]);
+  });
+
+  it("returns messagesAdded when present", () => {
+    const record: GmailHistoryRecord = {
+      messages: [{ id: "m4" }],
+      messagesAdded: [{ message: { id: "m4", labelIds: ["INBOX", "UNREAD"] } }],
+    };
+    expect(collectAddedMessages(record).map((m) => m.id)).toEqual(["m4"]);
+  });
+
+  it("still returns messagesAdded when the same record also has label events", () => {
+    // New mail that was immediately labeled — messagesAdded stays
+    // authoritative; the label state comes from parseMessage when the
+    // queued job runs.
+    const record: GmailHistoryRecord = {
+      messages: [{ id: "m5" }],
+      messagesAdded: [{ message: { id: "m5" } }],
+      labelsAdded: [{ message: { id: "m5" }, labelIds: ["Label_1"] }],
+    };
+    expect(collectAddedMessages(record).map((m) => m.id)).toEqual(["m5"]);
+  });
+
+  it("falls back to the generic messages list ONLY for records with no typed arrays", () => {
+    // Defensive: unexpected record shape — better to ingest than drop.
+    const record: GmailHistoryRecord = { messages: [{ id: "m6" }] };
+    expect(collectAddedMessages(record).map((m) => m.id)).toEqual(["m6"]);
+  });
+
+  it("returns [] for an empty record", () => {
+    expect(collectAddedMessages({})).toEqual([]);
   });
 });
