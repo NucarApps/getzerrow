@@ -85,17 +85,27 @@ beforeEach(() => {
 });
 
 describe("AddContactsDialog — manual tab", () => {
+  it("every manual field is reachable by its visible label", async () => {
+    // Regression: Field rendered its caption as a sibling <Label> with no
+    // htmlFor, so six of these had no accessible name — a screen reader
+    // announced bare edit boxes and clicking a caption focused nothing.
+    open();
+    for (const label of ["Email *", "Name", "Title", "Company", "Phone", "Website"]) {
+      expect(screen.getByLabelText(label), `no control named "${label}"`).toBeInTheDocument();
+    }
+  });
+
   it("keeps the submit button out of reach until an email is typed", async () => {
     open();
     expect(screen.getByRole("button", { name: "Add contact" })).toBeDisabled();
 
-    await userEvent.type(screen.getByPlaceholderText("person@example.com"), "jane@example.com");
+    await userEvent.type(screen.getByLabelText("Email *"), "jane@example.com");
     expect(screen.getByRole("button", { name: "Add contact" })).toBeEnabled();
   });
 
   it("refuses an email with no domain dot and says so instead of calling the server", async () => {
     open();
-    await userEvent.type(screen.getByPlaceholderText("person@example.com"), "jane@example");
+    await userEvent.type(screen.getByLabelText("Email *"), "jane@example");
     await userEvent.click(screen.getByRole("button", { name: "Add contact" }));
 
     expect(toastError).toHaveBeenCalledWith("Enter a valid email");
@@ -105,8 +115,8 @@ describe("AddContactsDialog — manual tab", () => {
 
   it("sends blank optional fields as null and closes on success", async () => {
     open();
-    await userEvent.type(screen.getByPlaceholderText("person@example.com"), "jane@example.com");
-    await userEvent.type(screen.getByPlaceholderText("Jane Doe"), "Jane Doe");
+    await userEvent.type(screen.getByLabelText("Email *"), "jane@example.com");
+    await userEvent.type(screen.getByLabelText("Name"), "Jane Doe");
     await userEvent.click(screen.getByRole("button", { name: "Add contact" }));
 
     await waitFor(() =>
@@ -131,7 +141,7 @@ describe("AddContactsDialog — manual tab", () => {
   it("surfaces the server's message and stays open when the create fails", async () => {
     createContactManual.mockRejectedValueOnce(new Error("Contact already exists"));
     open();
-    await userEvent.type(screen.getByPlaceholderText("person@example.com"), "jane@example.com");
+    await userEvent.type(screen.getByLabelText("Email *"), "jane@example.com");
     await userEvent.click(screen.getByRole("button", { name: "Add contact" }));
 
     await waitFor(() => expect(toastError).toHaveBeenCalledWith("Contact already exists"));
