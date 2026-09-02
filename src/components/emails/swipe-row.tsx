@@ -48,6 +48,13 @@ export function SwipeRow({
       setDx(0);
     }
   }
+  // touchcancel means the system took the gesture away — an incoming call, an
+  // edge swipe, the browser claiming the scroll. The user never released, so
+  // the row snaps back without archiving, however far it had travelled.
+  function onTouchCancel() {
+    startRef.current = null;
+    setDx(0);
+  }
 
   return (
     <div className="relative overflow-hidden border-b border-border">
@@ -58,7 +65,7 @@ export function SwipeRow({
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
-        onTouchCancel={onTouchEnd}
+        onTouchCancel={onTouchCancel}
         style={{
           transform: `translateX(${dx}px)`,
           transition: dx === 0 ? "transform 120ms ease-out" : "none",

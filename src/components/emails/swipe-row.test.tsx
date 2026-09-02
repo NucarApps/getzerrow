@@ -178,15 +178,42 @@ describe("SwipeRow", () => {
     expect(onArchive).not.toHaveBeenCalled();
   });
 
-  // CHARACTERIZATION(swipe-row-archives-on-touchcancel): an aborted gesture
-  // still archives the message — flip when fixed
-  it("archives on touchcancel, treating an aborted gesture as a committed one", () => {
+  it("does not archive when the system aborts a swipe that was already past the threshold", () => {
     const onArchive = vi.fn();
     const panel = setup(onArchive);
 
     fireEvent.touchStart(panel, point(300, 100));
     fireEvent.touchMove(panel, point(300 - PAST_THRESHOLD, 100));
     fireEvent.touchCancel(panel);
+
+    expect(onArchive).not.toHaveBeenCalled();
+    expect(offset(panel)).toBe(0);
+  });
+
+  it("forgets the aborted gesture, so a later release cannot archive on its offset", () => {
+    const onArchive = vi.fn();
+    const panel = setup(onArchive);
+
+    fireEvent.touchStart(panel, point(300, 100));
+    fireEvent.touchMove(panel, point(300 - PAST_THRESHOLD, 100));
+    fireEvent.touchCancel(panel);
+    fireEvent.touchEnd(panel);
+
+    expect(onArchive).not.toHaveBeenCalled();
+    expect(offset(panel)).toBe(0);
+  });
+
+  it("archives normally on the next swipe after an aborted one", () => {
+    const onArchive = vi.fn();
+    const panel = setup(onArchive);
+
+    fireEvent.touchStart(panel, point(300, 100));
+    fireEvent.touchMove(panel, point(300 - PAST_THRESHOLD, 100));
+    fireEvent.touchCancel(panel);
+
+    fireEvent.touchStart(panel, point(300, 100));
+    fireEvent.touchMove(panel, point(300 - PAST_THRESHOLD, 100));
+    fireEvent.touchEnd(panel);
 
     expect(onArchive).toHaveBeenCalledTimes(1);
     expect(offset(panel)).toBe(0);
