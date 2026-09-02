@@ -81,6 +81,11 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "The folder chat prompt builder interpolates email text without sanitizeUntrustedText, the same gap as the inbox assistant.",
     fixIn: "src/lib/folder-chat.server.ts — wrap untrusted fields the way ai.server.ts does.",
   },
+  "carddav-quoted-printable-not-decoded": {
+    what: 'parseVCard ignores ENCODING=QUOTED-PRINTABLE, which vCard 2.1 exporters (Android\'s contact share, several Windows address books) use for every non-ASCII value. "Jürgen Müller" is stored, displayed and pushed to Google as "J=C3=BCrgen M=C3=BCller".',
+    fixIn:
+      'src/lib/carddav/vcard.ts — decode quoted-printable values, including the soft "=" line continuations, before unescaping.',
+  },
   "carddav-basic-auth-utf8-mangled": {
     what: 'verifyCardDavAuth decodes Basic credentials with atob, which yields a Latin-1 byte string. A UTF-8 email or password comes through as mojibake ("é" becomes "Ã©"), so an account with a non-ASCII address can never pair a phone and the failure is indistinguishable from a wrong password.',
     fixIn:

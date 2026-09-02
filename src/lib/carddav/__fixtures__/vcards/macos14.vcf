@@ -1,0 +1,23 @@
+BEGIN:VCARD
+VERSION:3.0
+PRODID:-//Apple Inc.//macOS 14.5//EN
+N:Okonkwo;Ada Marie;;;
+FN:Ada Marie Okonkwo
+ORG:Helios Labs;Research
+TITLE:Principal Scientist
+X-ABShowAs:COMPANY
+EMAIL;type=INTERNET;type=WORK;type=pref:ada@helios.example
+TEL;type=IPHONE;type=CELL;type=VOICE;type=pref:+1 (555) 010-4242
+TEL;type=WORK;type=FAX:+1 (555) 010-4299
+item1.ADR;type=HOME;type=pref:;;77 Vine St;Berkeley;CA;94704;USA
+item1.X-ABADR:us
+item2.URL;type=pref:https://helios.example
+item2.X-ABLabel:_$!<HomePage>!$_
+item3.URL:https://www.linkedin.com/in/adaokonkwo
+item3.X-ABLabel:LinkedIn
+item4.URL:https://x.com/adaokonkwo
+item4.X-ABLabel:Twitter
+NOTE:Runs the Tuesday reading group.
+UID:2b6c9d0e-3f4a-4b5c-8d9e-1f2a3b4c5d6e
+REV:2026-07-02T08:15:00Z
+END:VCARD
