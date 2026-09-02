@@ -96,4 +96,9 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "getInboxReport never selects a sender display name, so parseSender's name branch is dead and topSenders can only ever show an address. There is no plaintext from_name column — only from_name_enc — so the fix is a decrypt pass over the window, not a wider select.",
     fixIn: "src/lib/reports.functions.ts — resolve display names via the decrypt reader.",
   },
+  "inbox-day-heading-repeats-after-placeholder": {
+    what: "dayGroupHeadings compares each row's day against the row immediately above it, and a placeholder row (rebuilt from the metadata cache) reports no day at all. A placeholder sitting between two rows of the same day therefore breaks the run and the day heading is drawn a second time mid-list.",
+    fixIn:
+      "src/lib/ui/inbox-list.ts — compare against the last row that had a day, not the previous row.",
+  },
 };

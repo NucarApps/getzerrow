@@ -74,18 +74,23 @@ export function classifiedChip(
  * Non-alphanumeric leading characters are dropped so a display name like
  * `"<no-reply>"` or `"(Acme) Billing"` yields letters rather than punctuation,
  * and the address is the fallback when there is no display name at all.
+ *
+ * The "?" is applied AFTER that filter, not before it: as a pre-filter
+ * fallback the question mark was itself non-alphanumeric and got dropped, so
+ * an unidentifiable sender drew an empty avatar circle instead of a "?".
  */
 export function senderInitials(
   fromName: string | null | undefined,
   fromAddr: string | null | undefined,
 ): string {
-  return (fromName || fromAddr || "?")
+  const initials = (fromName || fromAddr || "")
     .split(/\s+/)
     .map((w) => w.charAt(0))
     .filter((c) => /[a-z0-9]/i.test(c))
     .slice(0, 2)
     .join("")
     .toUpperCase();
+  return initials || "?";
 }
 
 /**
