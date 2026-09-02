@@ -13,6 +13,9 @@ export const SKIP_REASON_LABEL: Record<string, string> = {
   no_link: "No video link",
   auto_record_off: "Auto-record off",
   declined: "Declined",
+  // The user turned this event colour off under Event types & colors, which
+  // hides its events from the upcoming list and never records them.
+  color: "Event color turned off",
   off: "Turned off",
   in_person: "Recording in person",
   blocked: "Blocked contact",

@@ -124,10 +124,6 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     fixIn:
       "src/lib/sync/filter-engine.ts — match `from` on the address only, or add a searchable name column.",
   },
-  "meeting-skip-reason-color-has-no-label": {
-    what: "resolveRecordingPlan emits a `color` skipReason for a meeting skipped because of its calendar colour, but SKIP_REASON_LABEL has no copy for it, so the meetings list shows a bare 'Not recorded' with no explanation. Every other reason the ladder can produce has its own label.",
-    fixIn: "src/lib/ui/meeting-skip-reason.ts — add copy for `color`.",
-  },
   "format-unparseable-date-echoed-raw": {
     what: "formatDateTime and formatEventTime return the raw input string when it will not parse, while formatRelativeTime, formatShortDate and formatShortDateTime return the caller's fallback. An unparseable timestamp therefore renders as garbage text in two places and as an em dash in three, and the caller's fallback argument is silently ignored on the first two.",
     fixIn: "src/lib/format.ts — return the fallback from every formatter on NaN input.",

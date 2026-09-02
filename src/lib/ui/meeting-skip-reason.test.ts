@@ -21,6 +21,7 @@ describe("skipReasonLabel", () => {
     ["no_link", "No video link"],
     ["auto_record_off", "Auto-record off"],
     ["declined", "Declined"],
+    ["color", "Event color turned off"],
     ["off", "Turned off"],
     ["in_person", "Recording in person"],
     ["blocked", "Blocked contact"],
@@ -46,15 +47,12 @@ describe("skipReasonLabel", () => {
     expect(skipReasonLabel("constructor")).toBe("Not recorded");
   });
 
-  // CHARACTERIZATION(meeting-skip-reason-color-has-no-label): the server emits
-  // a `color` skip reason that the label map has no copy for — flip when fixed
-  it("shows no explanation for a meeting skipped by its calendar colour", () => {
-    expect(skipReasonLabel("color")).toBe("Not recorded");
-    expect(SKIP_REASON_LABEL).not.toHaveProperty("color");
-
-    // Every other reason the server can emit does have copy of its own.
+  it("has copy for every reason the server can emit, so none reads as a bare fallback", () => {
     const unlabelled = SERVER_REASONS.filter((r) => SKIP_REASON_LABEL[r] === undefined);
-    expect(unlabelled).toStrictEqual(["color"]);
+    expect(unlabelled).toStrictEqual([]);
+    for (const reason of SERVER_REASONS) {
+      expect(skipReasonLabel(reason)).not.toBe("Not recorded");
+    }
   });
 
   it("has no label copy that no server reason can produce", () => {
