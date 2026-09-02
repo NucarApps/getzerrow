@@ -84,20 +84,29 @@ vi.mock("@/lib/contacts/group-rules.functions", () => ({
 }));
 
 const resolveCompanyLogoDomainForContact = vi.fn(async () => "acme.com");
+const getKnownCompanyLogoHashes = vi.fn(async (..._a: unknown[]) => new Set<string>());
+const fetchChosenCompanyLogoBytes = vi.fn(
+  async (..._a: unknown[]): Promise<{ bytes: Uint8Array } | null> => null,
+);
+const recordCompanyLogoHash = vi.fn(async (..._a: unknown[]) => {});
+const findMatchingCompanyLogoSha = vi.fn(async (..._a: unknown[]): Promise<string | null> => null);
 vi.mock("@/lib/contacts/logo-photo.server", () => ({
   resolveCompanyLogoDomainForContact: (...a: unknown[]) =>
     resolveCompanyLogoDomainForContact(...(a as [])),
-  getKnownCompanyLogoHashes: async () => new Set<string>(),
-  fetchChosenCompanyLogoBytes: async () => null,
-  recordCompanyLogoHash: async () => {},
-  findMatchingCompanyLogoSha: async () => null,
+  getKnownCompanyLogoHashes: (...a: unknown[]) => getKnownCompanyLogoHashes(...a),
+  fetchChosenCompanyLogoBytes: (...a: unknown[]) => fetchChosenCompanyLogoBytes(...a),
+  recordCompanyLogoHash: (...a: unknown[]) => recordCompanyLogoHash(...a),
+  findMatchingCompanyLogoSha: (...a: unknown[]) => findMatchingCompanyLogoSha(...a),
 }));
-// avatar_url is null in every getContact fixture, so the self-heal branch
-// never runs; these keep an accidental entry into it inert.
+const loadContactPhotoBytes = vi.fn(
+  async (..._a: unknown[]): Promise<{ bytes: Uint8Array } | null> => null,
+);
+const sha256Hex = vi.fn(async (..._a: unknown[]) => "sha-portrait");
+const deleteContactPhoto = vi.fn(async (..._a: unknown[]) => {});
 vi.mock("@/lib/contacts/photos.server", () => ({
-  loadContactPhotoBytes: async () => null,
-  sha256Hex: async () => "sha",
-  deleteContactPhoto: async () => {},
+  loadContactPhotoBytes: (...a: unknown[]) => loadContactPhotoBytes(...a),
+  sha256Hex: (...a: unknown[]) => sha256Hex(...a),
+  deleteContactPhoto: (...a: unknown[]) => deleteContactPhoto(...a),
 }));
 const getEffectivePhotoPriority = vi.fn(async () => ({
   priority: ["user_upload", "google", "company_logo"],
@@ -173,9 +182,21 @@ beforeEach(() => {
     applyRulesForContact,
     resolveCompanyLogoDomainForContact,
     getEffectivePhotoPriority,
+    getKnownCompanyLogoHashes,
+    fetchChosenCompanyLogoBytes,
+    recordCompanyLogoHash,
+    findMatchingCompanyLogoSha,
+    loadContactPhotoBytes,
+    sha256Hex,
+    deleteContactPhoto,
   ]) {
     m.mockClear();
   }
+  loadContactPhotoBytes.mockResolvedValue(null);
+  getKnownCompanyLogoHashes.mockResolvedValue(new Set<string>());
+  fetchChosenCompanyLogoBytes.mockResolvedValue(null);
+  findMatchingCompanyLogoSha.mockResolvedValue(null);
+  sha256Hex.mockResolvedValue("sha-portrait");
   getContactDecrypted.mockImplementation(async () => ({ row: decryptedRow(), error: null }));
   resolveContactCompany.mockImplementation(async (_ctx: unknown, name: unknown) =>
     name
@@ -274,6 +295,138 @@ describe("getContact", () => {
     await expect(call(getContact, { data: { id: CONTACT_ID }, context: asUser })).rejects.toThrow(
       "Contact not found",
     );
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* getContact self-heal                                                        */
+/* -------------------------------------------------------------------------- */
+
+describe("getContact self-heal (a stored photo that is really a company logo)", () => {
+  // An iOS echo of a pushed logo used to be saved as if the user had chosen
+  // it, freezing an old logo on the contact forever. getContact detects that
+  // by hashing the stored photo and DELETES it — the only path that removes
+  // a user's photo, so what matters is that it fires on a logo snapshot and
+  // never on a real portrait.
+  const LOGO_SHA = "sha-logo";
+  // The miss cache is keyed by (user, contact, avatar_url) and lives at
+  // module scope, so each test needs its own URL or it inherits the previous
+  // test's negative entry and the branch never runs.
+  let photoUrl = "";
+  let photoSeq = 0;
+
+  function seedContactWithPhoto(over: Record<string, unknown> = {}) {
+    photoUrl = `https://cdn.example/photo-${++photoSeq}.png`;
+    rls.seed("contacts", [
+      {
+        id: CONTACT_ID,
+        user_id: TEST_USER,
+        company_id: COMPANY_ID,
+        company_logo_photo_sha: null,
+        avatar_source: null,
+        photo_priority: null,
+        ...over,
+      },
+    ]);
+    rls.seed("companies", [{ id: COMPANY_ID, user_id: TEST_USER, logo_url: null }]);
+    getContactDecrypted.mockImplementation(async () => ({
+      row: decryptedRow({ avatar_url: photoUrl, company_id: COMPANY_ID }),
+      error: null,
+    }));
+    loadContactPhotoBytes.mockResolvedValue({ bytes: new Uint8Array([1, 2, 3]) });
+  }
+
+  function contactUpdates() {
+    return fake.calls.updates.filter((u) => u.table === "contacts");
+  }
+
+  it("deletes the photo and fingerprints the contact when the stored SHA already matches", async () => {
+    seedContactWithPhoto({ company_logo_photo_sha: LOGO_SHA });
+    sha256Hex.mockResolvedValue(LOGO_SHA);
+
+    const res = await call(getContact, { data: { id: CONTACT_ID }, context: asUser });
+
+    expect(deleteContactPhoto).toHaveBeenCalledWith(TEST_USER, CONTACT_ID);
+    expect(contactUpdates()[0]!.payload).toEqual({ company_logo_photo_sha: LOGO_SHA });
+    // The caller must not be handed the URL of a photo that was just removed.
+    expect((res as { contact: { avatar_url: string | null } }).contact.avatar_url).toBeNull();
+    // Cheapest tier hit: no provider walk.
+    expect(findMatchingCompanyLogoSha).not.toHaveBeenCalled();
+  });
+
+  it("falls through the tiers in cost order and stops at the first match", async () => {
+    seedContactWithPhoto();
+    sha256Hex.mockResolvedValue(LOGO_SHA);
+    getKnownCompanyLogoHashes.mockResolvedValue(new Set([LOGO_SHA]));
+
+    await call(getContact, { data: { id: CONTACT_ID }, context: asUser });
+
+    expect(deleteContactPhoto).toHaveBeenCalledTimes(1);
+    // Matched on the known-hashes tier, so neither of the fetching tiers ran.
+    expect(fetchChosenCompanyLogoBytes).not.toHaveBeenCalled();
+    expect(findMatchingCompanyLogoSha).not.toHaveBeenCalled();
+  });
+
+  it("records the hash when the match only comes from fetching the chosen logo", async () => {
+    seedContactWithPhoto();
+    sha256Hex.mockResolvedValue(LOGO_SHA);
+    fetchChosenCompanyLogoBytes.mockResolvedValue({ bytes: new Uint8Array([9]) });
+
+    await call(getContact, { data: { id: CONTACT_ID }, context: asUser });
+
+    expect(recordCompanyLogoHash).toHaveBeenCalledWith({
+      userId: TEST_USER,
+      companyId: COMPANY_ID,
+      domain: "acme.com",
+      sha256: LOGO_SHA,
+      source: "detail_view",
+    });
+    expect(deleteContactPhoto).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a real portrait alone: no delete, no write, URL preserved", async () => {
+    seedContactWithPhoto();
+    // Every tier misses (the defaults), so this is a genuine photo.
+    const res = await call(getContact, { data: { id: CONTACT_ID }, context: asUser });
+
+    expect(deleteContactPhoto).not.toHaveBeenCalled();
+    expect(contactUpdates()).toHaveLength(0);
+    expect((res as { contact: { avatar_url: string | null } }).contact.avatar_url).toBe(photoUrl);
+    expect(findMatchingCompanyLogoSha).toHaveBeenCalled();
+  });
+
+  it("remembers a miss so reopening the contact does not re-run the walk", async () => {
+    seedContactWithPhoto();
+    await call(getContact, { data: { id: CONTACT_ID }, context: asUser });
+    expect(loadContactPhotoBytes).toHaveBeenCalledTimes(1);
+
+    // Second open within the TTL: the negative cache short-circuits before
+    // any download or provider fetch.
+    await call(getContact, { data: { id: CONTACT_ID }, context: asUser });
+    expect(loadContactPhotoBytes).toHaveBeenCalledTimes(1);
+    expect(findMatchingCompanyLogoSha).toHaveBeenCalledTimes(1);
+  });
+
+  it("nulls the column directly when the storage object is already gone", async () => {
+    seedContactWithPhoto({ company_logo_photo_sha: LOGO_SHA });
+    sha256Hex.mockResolvedValue(LOGO_SHA);
+    deleteContactPhoto.mockRejectedValueOnce(new Error("object missing"));
+
+    await call(getContact, { data: { id: CONTACT_ID }, context: asUser });
+
+    const payloads = contactUpdates().map((u) => u.payload as Record<string, unknown>);
+    expect(payloads[0]).toMatchObject({ avatar_url: null, avatar_source: "unknown" });
+    expect(payloads[1]).toEqual({ company_logo_photo_sha: LOGO_SHA });
+  });
+
+  it("does not run at all for a contact with no photo or no linked company", async () => {
+    seedContactWithPhoto();
+    getContactDecrypted.mockImplementation(async () => ({
+      row: decryptedRow({ avatar_url: null, company_id: COMPANY_ID }),
+      error: null,
+    }));
+    await call(getContact, { data: { id: CONTACT_ID }, context: asUser });
+    expect(loadContactPhotoBytes).not.toHaveBeenCalled();
   });
 });
 
