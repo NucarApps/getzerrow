@@ -282,14 +282,11 @@ export const SCENARIOS: FolderScenario[] = [
     filters: [makeRule("f-cold", "domain", "contains", "calendar.test")],
     calendarGuardEnabled: true,
     calendarContacts: ["met@calendar.test"],
+    // The engine agrees on the destination but gets there differently: the
+    // guard is a stage-1 folder guardrail there (Amendment 1) rather than a
+    // post-filter check on the winning folder, so the cold folder is out of
+    // play before any stage — including AI — can reach it.
     expect: { folder_id: null, needs_ai: false },
-    engineDelta: {
-      folder_id: "f-cold",
-      why:
-        "the v2 engine has NO calendar-guard stage (Amendment 1 places it " +
-        "in stage 1, but bridge/evaluate never read is_cold_email or " +
-        "calendarContacts) — with RULES_ENGINE_V2=on the guard is lost",
-    },
     ingestDelta: {
       folder_id: "f-cold",
       why: "ingest classifier has no calendar-guard rung — files anyway",

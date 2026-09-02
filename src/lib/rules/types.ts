@@ -69,6 +69,11 @@ export type Guardrail = {
   condition?: Condition;
   folder_id?: string | null;
   label?: string;
+  /** Lowercased sender addresses this guardrail fires for — a set too big
+   * to express as one Condition. `cold_email_contact` carries the account's
+   * calendar contacts here: people you have actually met must never be
+   * filed as cold outreach. */
+  senders?: string[];
 };
 
 /** What an earlier message in the same thread resolved to. Continuity only

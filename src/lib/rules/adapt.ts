@@ -115,6 +115,34 @@ export function toGuardrails(filters: Filter[]): Guardrail[] {
     }));
 }
 
+/**
+ * The calendar cold-email guard becomes a folder-scoped guardrail.
+ *
+ * The legacy ladder expresses this as a post-filter check on the WINNING
+ * folder (decide-folder.ts rung 6), so it can only rescue mail the cold
+ * folder actually won — and a stage that runs after filing cannot veto.
+ * Amendment 1 moves it to stage 1, where it disqualifies the cold-email
+ * folder for every later stage (rules AND the AI fallback) while leaving
+ * every other folder free to take the message.
+ */
+export function toCalendarGuardrails(
+  folders: Folder[],
+  ctx: { calendarGuardEnabled: boolean; calendarContacts: Set<string> },
+): Guardrail[] {
+  if (!ctx.calendarGuardEnabled || ctx.calendarContacts.size === 0) return [];
+  const senders = Array.from(ctx.calendarContacts, (c) => c.toLowerCase());
+  return folders
+    .filter((f) => f.is_cold_email)
+    .map((f) => ({
+      id: `cold-email-contact:${f.id}`,
+      scope: "folder" as const,
+      kind: "cold_email_contact" as const,
+      folder_id: f.id,
+      senders,
+      label: `Known calendar contact — kept out of "${f.name}"`,
+    }));
+}
+
 /** Always-inbox overrides become inbox pins. */
 export function toPins(overrides: Array<{ id: string; match_type: string; value: string }>): Pin[] {
   return overrides.map((o) => ({
