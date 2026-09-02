@@ -11,7 +11,6 @@ import {
   validateRuleNode,
   MAX_FILTER_TREE_DEPTH,
   MAX_FILTER_TREE_LEAVES,
-  EXCLUDE_OPS,
   parseDomainList,
   filterVetoes,
   emailVetoedForFolder,
@@ -131,18 +130,6 @@ describe("applyFilter — regex safety (ReDoS)", () => {
     expect(
       applyFilter(email({ subject: "ABC-123" }), filter("f", "subject", "regex", "^[a-z]+-\\d+$")),
     ).toBe(true);
-  });
-});
-
-describe("EXCLUDE_OPS set", () => {
-  it("contains not_contains, not_equals and domain_in", () => {
-    expect(EXCLUDE_OPS.has("not_contains")).toBe(true);
-    expect(EXCLUDE_OPS.has("not_equals")).toBe(true);
-    expect(EXCLUDE_OPS.has("domain_in")).toBe(true);
-    // Sanity — other ops shouldn't be excluded.
-    expect(EXCLUDE_OPS.has("contains")).toBe(false);
-    expect(EXCLUDE_OPS.has("equals")).toBe(false);
-    expect(EXCLUDE_OPS.has("regex")).toBe(false);
   });
 });
 

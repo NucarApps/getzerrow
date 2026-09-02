@@ -84,19 +84,10 @@ describe("computeInsertReadFlag", () => {
 // Guardrail: every place an ActionFolder is built from a cached account
 // context must carry processing_enabled through. Dropping the field makes the
 // pause guard read "flag absent" and silently re-applies side effects for a
-// paused folder, which is exactly the bug this suite exists to prevent.
-describe("ActionFolder mappers propagate the pause flag", () => {
-  const mapperFiles = ["process-message.ts", "run-jobs.ts"] as const;
-
-  for (const file of mapperFiles) {
-    it(`${file} passes processing_enabled from the cached folder`, async () => {
-      const { readFile } = await import("node:fs/promises");
-      const src = await readFile(new URL(file, import.meta.url), "utf8");
-      expect(src).toContain("processing_enabled: cached.processing_enabled");
-    });
-  }
-});
-
+// paused folder, which is exactly the bug this suite exists to prevent. The
+// process-message mapper is held to that below; run-jobs' own mapper is held
+// to it through runMessageJobs in run-jobs.test.ts ("carries
+// processing_enabled through to the ActionFolder").
 describe("resolveFolderFromContext", () => {
   it("keeps a paused folder inert end-to-end (mirror only, no effects)", async () => {
     const { resolveFolderFromContext } = await import("./process-message");

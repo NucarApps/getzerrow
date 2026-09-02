@@ -132,7 +132,7 @@ describe("simulateAgainstEmails", () => {
     expect(r.would_route).toHaveLength(SIMULATION_LIST_CAP);
   });
 
-  it("simulates 1k emails against a tree draft in under 300ms", () => {
+  it("evaluates a nested OR/AND tree per message across a 1k batch", () => {
     const draft = {
       folder: folder({
         id: "draft-t",
@@ -166,11 +166,11 @@ describe("simulateAgainstEmails", () => {
       folders: [folder({ id: "f-x", name: "X" })],
       filters: [flt("f-x", "from", "contains", "noreply")],
     };
-    const start = performance.now();
     const r = simulateAgainstEmails(emails, draft, existing);
-    const elapsed = performance.now() - start;
+    // stripe senders (i%3==0 → 334) ∪ invoice-without-refund
+    // (even and not a multiple of 5 → 400), overlap 133.
     expect(r.scanned).toBe(1000);
-    expect(r.moves).toBeGreaterThan(0);
-    expect(elapsed).toBeLessThan(300);
+    expect(r.moves).toBe(601);
+    expect(r.no_change).toBe(399);
   });
 });

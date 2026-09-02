@@ -89,6 +89,25 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "assertAdmin matches the JWT `email` claim against ADMIN_EMAILS without ever consulting `email_verified`, so an unverified identity that merely asserts an allowlisted address is granted the cross-tenant admin dashboard.",
     fixIn: "src/lib/admin.functions.ts — require claims.email_verified === true.",
   },
+  "ingest-drops-non-header-filter-fields": {
+    what: "classifyIngestedMessage builds its EmailForFilter without cc, list_id or in_reply_to, so a folder rule on cc / list_id / is_reply fires on the arrival path but silently never fires on either Gmail ingest path (searchGmailAndIngest, scanGmailForFolder).",
+    fixIn: "src/lib/gmail/ingest-classify.ts — carry the fields through IngestCandidate.",
+  },
+  "rule-preview-domain-ignores-op": {
+    what: "applySimpleRulePredicate's domain/origin_domain branch drops the operator and always builds `%@value%`. `equals` therefore counts any address whose text contains `@value` (including a relayed header whose real sender is a different domain), and `contains` misses a subdomain sender that the engine's emailDomain() match finds. The preview count and the mail that actually gets filed disagree.",
+    fixIn:
+      "src/lib/gmail/rule-query.ts — honour the op for domain fields the way the subject branch does.",
+  },
+  "rule-preview-from-equals-is-substring": {
+    what: "The preview's `from` branch has no `equals` arm, so an 'is exactly' rule previews as a substring match. The engine is wrong the other way: applyFilter's `from` field is `from_addr + ' ' + from_name`, so `equals` compares against a string with a trailing space and can never match a bare address.",
+    fixIn:
+      "src/lib/gmail/rule-query.ts and src/lib/sync/filter-engine.ts — give `from` an equals arm on the address alone.",
+  },
+  "rule-preview-from-ignores-display-name": {
+    what: "applyFilter's `from` field concatenates the display name, so `from contains acme` fires on 'Acme Support <noreply@vendor.test>'. The preview only ILIKEs from_addr and cannot reproduce it — from_name is stored encrypted, so there is no column to search.",
+    fixIn:
+      "src/lib/sync/filter-engine.ts — match `from` on the address only, or add a searchable name column.",
+  },
   "reports-topsenders-address-only": {
     what: "getInboxReport never selects a sender display name, so parseSender's name branch is dead and topSenders can only ever show an address. There is no plaintext from_name column — only from_name_enc — so the fix is a decrypt pass over the window, not a wider select.",
     fixIn: "src/lib/reports.functions.ts — resolve display names via the decrypt reader.",
