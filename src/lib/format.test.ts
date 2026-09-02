@@ -313,17 +313,26 @@ describe("formatDateTime / formatEventTime", () => {
   });
 });
 
-// CHARACTERIZATION(format-unparseable-date-echoed-raw): the five date
-// formatters disagree on unparseable input — three fall back, two echo the
-// raw string into the UI — flip when fixed
 describe("unparseable-input handling across the formatters", () => {
-  it("echoes the raw string from formatDateTime/formatEventTime but falls back elsewhere", () => {
-    expect(formatDateTime("not-a-date")).toBe("not-a-date");
-    expect(formatEventTime("not-a-date")).toBe("not-a-date");
-    expect(formatDateTime("not-a-date", "n/a")).toBe("not-a-date");
-
+  it("uses the default fallback rather than leaking the raw string into the UI", () => {
+    expect(formatDateTime("not-a-date")).toBe("—");
+    expect(formatEventTime("not-a-date")).toBe("—");
     expect(formatRelativeTime("not-a-date")).toBe("—");
     expect(formatShortDate("not-a-date")).toBe("—");
     expect(formatShortDateTime("not-a-date")).toBe("—");
+  });
+
+  it("honours the caller's own fallback on every formatter", () => {
+    expect(formatDateTime("not-a-date", "n/a")).toBe("n/a");
+    expect(formatEventTime("not-a-date", { fallback: "No start time" })).toBe("No start time");
+    expect(formatRelativeTime("not-a-date", { fallback: "never" })).toBe("never");
+    expect(formatShortDate("not-a-date", "n/a")).toBe("n/a");
+    expect(formatShortDateTime("not-a-date", "n/a")).toBe("n/a");
+  });
+
+  it("treats a plausible-looking but invalid date the same as obvious garbage", () => {
+    // "2026-02-30" parses to Invalid Date, and previously reached the UI verbatim.
+    expect(formatDateTime("2026-02-30T99:99:99Z", "n/a")).toBe("n/a");
+    expect(formatEventTime("2026-02-30T99:99:99Z", { fallback: "n/a" })).toBe("n/a");
   });
 });

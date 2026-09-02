@@ -124,10 +124,6 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     fixIn:
       "src/lib/sync/filter-engine.ts — match `from` on the address only, or add a searchable name column.",
   },
-  "format-unparseable-date-echoed-raw": {
-    what: "formatDateTime and formatEventTime return the raw input string when it will not parse, while formatRelativeTime, formatShortDate and formatShortDateTime return the caller's fallback. An unparseable timestamp therefore renders as garbage text in two places and as an em dash in three, and the caller's fallback argument is silently ignored on the first two.",
-    fixIn: "src/lib/format.ts — return the fallback from every formatter on NaN input.",
-  },
   "inbox-override-duplicate-unguarded": {
     what: "Adding an always-inbox entry does not look at the entries already on the list, so a repeat is only caught by inbox_overrides' UNIQUE (user_id, match_type, value). That key predates the gmail_account_id column and still ignores it, so the same domain cannot be listed on two Gmail accounts at all — and either way the user is shown the raw Postgres unique-violation text instead of a sentence.",
     fixIn:
