@@ -28,6 +28,16 @@ import {
   bulkCreateContactsFromEmails,
 } from "@/lib/contacts.functions";
 import { listMeetingPeople } from "@/lib/calendar.functions";
+import {
+  EMPTY_MANUAL_CONTACT,
+  allVisibleSelected,
+  isValidContactEmail,
+  manualContactPayload,
+  pickedPeople,
+  selectAllVisible as computeSelectAllVisible,
+  toggleFolder as computeToggleFolder,
+  togglePerson as computeTogglePerson,
+} from "@/lib/ui/add-contacts";
 import { Field } from "./Field";
 
 type PickerPerson = {
@@ -71,7 +81,7 @@ function PeoplePicker({
   onCancel: () => void;
   onSubmit: () => void;
 }) {
-  const allVisibleSelected = items.length > 0 && items.every((s) => selected.has(s.email));
+  const allSelected = allVisibleSelected(items, selected);
   return (
     <>
       <div className="relative">
@@ -90,7 +100,7 @@ function PeoplePicker({
           disabled={items.length === 0}
           className="underline-offset-2 hover:underline disabled:opacity-50"
         >
-          {allVisibleSelected ? "Unselect all" : "Select all visible"}
+          {allSelected ? "Unselect all" : "Select all visible"}
         </button>
         <span>{selected.size} selected</span>
       </div>
@@ -168,16 +178,7 @@ export function AddContactsDialog({
   const [tab, setTab] = useState<"manual" | "inbox" | "meetings">("manual");
 
   // Manual form state
-  const [m, setM] = useState({
-    email: "",
-    name: "",
-    title: "",
-    company: "",
-    phone: "",
-    website: "",
-    linkedin: "",
-    twitter: "",
-  });
+  const [m, setM] = useState(EMPTY_MANUAL_CONTACT);
   const [saving, setSaving] = useState(false);
 
   // Picker state (shared by the inbox + meetings tabs)
@@ -195,16 +196,7 @@ export function AddContactsDialog({
 
   useEffect(() => {
     if (!open) {
-      setM({
-        email: "",
-        name: "",
-        title: "",
-        company: "",
-        phone: "",
-        website: "",
-        linkedin: "",
-        twitter: "",
-      });
+      setM(EMPTY_MANUAL_CONTACT);
       setFolderIds([]);
       setSearch("");
       setDebounced("");
@@ -239,24 +231,13 @@ export function AddContactsDialog({
   });
 
   async function submitManual() {
-    if (!/.+@.+\..+/.test(m.email)) {
+    if (!isValidContactEmail(m.email)) {
       toast.error("Enter a valid email");
       return;
     }
     setSaving(true);
     try {
-      await createManual({
-        data: {
-          email: m.email,
-          name: m.name || null,
-          title: m.title || null,
-          company: m.company || null,
-          phone: m.phone || null,
-          website: m.website || null,
-          linkedin: m.linkedin || null,
-          twitter: m.twitter || null,
-        },
-      });
+      await createManual({ data: manualContactPayload(m) });
       toast.success("Contact added");
       onAdded();
       onOpenChange(false);
@@ -268,16 +249,11 @@ export function AddContactsDialog({
   }
 
   function toggleFolder(id: string) {
-    setFolderIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setFolderIds((prev) => computeToggleFolder(prev, id));
   }
 
   function togglePerson(email: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(email)) next.delete(email);
-      else next.add(email);
-      return next;
-    });
+    setSelected((prev) => computeTogglePerson(prev, email));
   }
 
   const senders = sendersQ.data?.senders ?? [];
@@ -303,23 +279,13 @@ export function AddContactsDialog({
         }));
 
   function selectAllVisible() {
-    const allSelected = pickerItems.length > 0 && pickerItems.every((s) => selected.has(s.email));
-    setSelected((prev) => {
-      const next = new Set(prev);
-      for (const s of pickerItems) {
-        if (allSelected) next.delete(s.email);
-        else next.add(s.email);
-      }
-      return next;
-    });
+    setSelected((prev) => computeSelectAllVisible(prev, pickerItems));
   }
 
   async function submitBulk() {
     if (selected.size === 0) return;
     const source = tab === "meetings" ? meetingPeople : senders;
-    const items = source
-      .filter((s) => selected.has(s.email))
-      .map((s) => ({ email: s.email, name: s.name }));
+    const items = pickedPeople(source, selected);
     if (items.length === 0) return;
     setAdding(true);
     try {

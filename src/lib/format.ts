@@ -92,3 +92,131 @@ export function formatEventTime(
     minute: "2-digit",
   });
 }
+
+/** Short calendar date, no time (e.g. "Jan 23, 2026"). */
+export function formatShortDate(
+  iso: string | null | undefined,
+  fallback: string = DEFAULT_FALLBACK,
+): string {
+  if (!iso) return fallback;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return fallback;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+/**
+ * Short date + zero-padded time (e.g. "Jan 23, 04:05 PM").
+ *
+ * Differs from `formatEventTime` in two ways that are deliberate rather than
+ * accidental: the hour is zero-padded (dense admin tables line up) and an
+ * unparseable timestamp reads as the fallback instead of the raw ISO string.
+ */
+export function formatShortDateTime(
+  iso: string | null | undefined,
+  fallback: string = DEFAULT_FALLBACK,
+): string {
+  if (!iso) return fallback;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return fallback;
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * Compact message-row timestamp: HH:MM for today, the weekday name within a
+ * week, then "Mon D". Returns "" (not a dash) for a missing or unparseable
+ * timestamp because it renders inside a dense list row where a placeholder
+ * would be noise.
+ *
+ * `now` is a parameter so the today/this-week boundaries are testable.
+ */
+export function shortRowTime(iso: string | null | undefined, now: Date): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  }
+  const days = (now.getTime() - d.getTime()) / 86_400_000;
+  if (days < 7) return d.toLocaleDateString([], { weekday: "short" });
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+/** Start-of-day (local) epoch millis for a date. */
+function startOfDay(x: Date): number {
+  return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+}
+
+/**
+ * Day-group header for a message list: Today / Yesterday / This week /
+ * This month / Earlier. Compares calendar days, not elapsed hours, so a
+ * message from 23:59 last night is "Yesterday" rather than "Today".
+ *
+ * A future timestamp groups under "Today" (diffDays <= 0).
+ */
+export function dayGroupLabel(iso: string | null | undefined, now: Date): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const diffDays = Math.floor((startOfDay(now) - startOfDay(d)) / 86_400_000);
+  if (diffDays <= 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return "This week";
+  if (diffDays < 31) return "This month";
+  return "Earlier";
+}
+
+/**
+ * Fractional hours between `iso` and `now`; null when there is no usable
+ * timestamp. Negative for a future timestamp — callers compare it against a
+ * staleness threshold, and a future stamp is by definition not stale.
+ */
+export function hoursSince(iso: string | null | undefined, now: Date): number | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return null;
+  return (now.getTime() - t) / 36e5;
+}
+
+/**
+ * A duration in seconds as the largest single unit: "45s", "7m", "2.5h".
+ * Hours keep one decimal; minutes and seconds are whole.
+ */
+export function formatDuration(
+  seconds: number | null | undefined,
+  fallback: string = DEFAULT_FALLBACK,
+): string {
+  if (seconds === null || seconds === undefined) return fallback;
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  return `${Math.round(seconds / 360) / 10}h`;
+}
+
+/** A latency in milliseconds: "850ms" under a second, else "1.4s". */
+export function formatMs(
+  ms: number | null | undefined,
+  fallback: string = DEFAULT_FALLBACK,
+): string {
+  if (ms === null || ms === undefined) return fallback;
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+/**
+ * Stopwatch readout for a live recording: zero-padded MM:SS. Minutes are not
+ * carried into hours — a 90-minute meeting reads "90:00", which is what the
+ * recorder UI wants.
+ */
+export function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+    .toString()
+    .padStart(2, "0");
+  const s = Math.floor(seconds % 60)
+    .toString()
+    .padStart(2, "0");
+  return `${m}:${s}`;
+}

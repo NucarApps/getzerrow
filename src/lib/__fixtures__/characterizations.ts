@@ -141,6 +141,19 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     fixIn:
       "src/lib/sync/filter-engine.ts — match `from` on the address only, or add a searchable name column.",
   },
+  "meeting-skip-reason-color-has-no-label": {
+    what: "resolveRecordingPlan emits a `color` skipReason for a meeting skipped because of its calendar colour, but SKIP_REASON_LABEL has no copy for it, so the meetings list shows a bare 'Not recorded' with no explanation. Every other reason the ladder can produce has its own label.",
+    fixIn: "src/lib/ui/meeting-skip-reason.ts — add copy for `color`.",
+  },
+  "swipe-row-archives-on-touchcancel": {
+    what: "SwipeRow binds touchcancel to the same handler as touchend, so a gesture the system aborts — an incoming call, an edge swipe, the browser taking over the scroll — archives the message as if the user had released past the threshold. touchcancel means the gesture did not happen.",
+    fixIn:
+      "src/components/emails/swipe-row.tsx — give touchcancel its own handler that resets without calling onArchive.",
+  },
+  "format-unparseable-date-echoed-raw": {
+    what: "formatDateTime and formatEventTime return the raw input string when it will not parse, while formatRelativeTime, formatShortDate and formatShortDateTime return the caller's fallback. An unparseable timestamp therefore renders as garbage text in two places and as an em dash in three, and the caller's fallback argument is silently ignored on the first two.",
+    fixIn: "src/lib/format.ts — return the fallback from every formatter on NaN input.",
+  },
   "reports-topsenders-address-only": {
     what: "getInboxReport never selects a sender display name, so parseSender's name branch is dead and topSenders can only ever show an address. There is no plaintext from_name column — only from_name_enc — so the fix is a decrypt pass over the window, not a wider select.",
     fixIn: "src/lib/reports.functions.ts — resolve display names via the decrypt reader.",

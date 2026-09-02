@@ -22,7 +22,9 @@ import {
   listRecentUnrecordedEvents,
   resendMeetingBot,
 } from "@/lib/meetings.functions";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatElapsed } from "@/lib/format";
+import { PLATFORM_LABEL, pickMime, platformOf } from "@/lib/ui/meeting-media";
+import { skipReasonLabel } from "@/lib/ui/meeting-skip-reason";
 import { encodeWav } from "@/lib/wav-encoder";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -132,16 +134,6 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 const formatWhen = (iso: string | null) => formatDateTime(iso);
-
-// Short, friendly reason a recent calendar meeting wasn't recorded.
-const SKIP_REASON_LABEL: Record<string, string> = {
-  no_link: "No video link",
-  auto_record_off: "Auto-record off",
-  declined: "Declined",
-  off: "Turned off",
-  in_person: "Recording in person",
-  blocked: "Blocked contact",
-};
 
 function MeetingsPage() {
   const qc = useQueryClient();
@@ -371,8 +363,7 @@ function MeetingsPage() {
                           </span>
                         </div>
                         <div className="mt-1 truncate text-xs text-muted-foreground">
-                          {SKIP_REASON_LABEL[row.event.skipReason ?? ""] ?? "Not recorded"} ·{" "}
-                          {formatWhen(row.event.start)}
+                          {skipReasonLabel(row.event.skipReason)} · {formatWhen(row.event.start)}
                         </div>
                       </div>
                     </div>
@@ -391,21 +382,6 @@ function MeetingsPage() {
       <MeetingDetail id={selectedId} onClose={() => setSelectedId(null)} />
     </div>
   );
-}
-
-const PLATFORM_LABEL: Record<string, string> = {
-  zoom: "Zoom",
-  google_meet: "Google Meet",
-  teams: "Microsoft Teams",
-  webex: "Webex",
-};
-
-function platformOf(url: string): string | null {
-  if (/zoom\.us/i.test(url)) return "zoom";
-  if (/meet\.google\.com/i.test(url)) return "google_meet";
-  if (/teams\.(microsoft|live)\.com/i.test(url)) return "teams";
-  if (/webex\.com/i.test(url)) return "webex";
-  return null;
 }
 
 function RecordDialog({ onRecorded }: { onRecorded: () => void }) {
@@ -494,16 +470,6 @@ function RecordDialog({ onRecorded }: { onRecorded: () => void }) {
       </DialogContent>
     </Dialog>
   );
-}
-
-function formatElapsed(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-    .toString()
-    .padStart(2, "0");
-  const s = Math.floor(seconds % 60)
-    .toString()
-    .padStart(2, "0");
-  return `${m}:${s}`;
 }
 
 function InPersonRecordDialog({
@@ -824,14 +790,6 @@ function InPersonRecordDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-function pickMime(candidates: string[], fallback: string): string {
-  if (typeof MediaRecorder === "undefined") return fallback;
-  for (const c of candidates) {
-    if (MediaRecorder.isTypeSupported(c)) return c;
-  }
-  return fallback;
 }
 
 /**
