@@ -141,6 +141,11 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     fixIn:
       "src/lib/sync/filter-engine.ts — match `from` on the address only, or add a searchable name column.",
   },
+  "swipe-row-archives-on-touchcancel": {
+    what: "SwipeRow binds touchcancel to the same handler as touchend, so a gesture the system aborts — an incoming call, an edge swipe, the browser taking over the scroll — archives the message as if the user had released past the threshold. touchcancel means the gesture did not happen.",
+    fixIn:
+      "src/components/emails/swipe-row.tsx — give touchcancel its own handler that resets without calling onArchive.",
+  },
   "format-unparseable-date-echoed-raw": {
     what: "formatDateTime and formatEventTime return the raw input string when it will not parse, while formatRelativeTime, formatShortDate and formatShortDateTime return the caller's fallback. An unparseable timestamp therefore renders as garbage text in two places and as an em dash in three, and the caller's fallback argument is silently ignored on the first two.",
     fixIn: "src/lib/format.ts — return the fallback from every formatter on NaN input.",
