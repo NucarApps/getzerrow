@@ -37,6 +37,7 @@ bun run test:integration        # tests/*.integration.test.ts — DB-backed; ski
                                 # a migrated local Supabase Postgres.
 bun run test:live               # tests/*.live.test.ts — HTTP smokes against a
                                 # deployed PUBLIC_BASE_URL (manual dispatch in CI)
+bun run test:carddav            # the CardDAV area, for iterating on sync bugs
 ```
 
 Both lanes in `tests/` skip themselves when their environment is absent, so
