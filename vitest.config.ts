@@ -66,14 +66,18 @@ export default defineConfig({
       // routes/api 15.6 / 17.4 / 40.3 / 9.3 (the auth sweeps and route
       // tests move it); components+hooks 5.1 / 5.4 / 6.0 / 3.5 (the jsdom
       // *.test.tsx project moves it).
+      //
+      // Component logic is being pulled into src/lib/ui as it gets tested,
+      // so the components floor tracks what is left behind — rendering —
+      // rather than growing indefinitely.
       // Page routes (src/routes outside api/) are measured but have no floor
       // yet: their logic is being extracted into src/lib first.
       thresholds: {
         "src/lib/**": {
-          statements: 72,
-          branches: 62,
-          functions: 72,
-          lines: 74,
+          statements: 73,
+          branches: 64,
+          functions: 74,
+          lines: 76,
         },
         "src/routes/api/**": {
           statements: 19,
@@ -82,10 +86,10 @@ export default defineConfig({
           lines: 17,
         },
         "src/{components,hooks}/**": {
-          statements: 4,
-          branches: 2,
-          functions: 4,
-          lines: 4,
+          statements: 13,
+          branches: 9,
+          functions: 12,
+          lines: 13,
         },
       },
     },
