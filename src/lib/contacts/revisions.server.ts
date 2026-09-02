@@ -116,12 +116,14 @@ export async function restoreContactFromRevision(
     .eq("user_id", userId);
   if (upErr) return { ok: false, error: upErr.message };
 
+  // A restore replays the snapshot exactly: a field that was empty at the
+  // time must end up empty, so null (clear) rather than "leave alone".
   const encErr = await setContactEncryptedFields({
     contact_id: contactId,
-    notes: c.notes ?? "",
-    address_line1: c.address_line1 ?? "",
-    address_line2: c.address_line2 ?? "",
-    phone: c.phone ?? "",
+    notes: c.notes ?? null,
+    address_line1: c.address_line1 ?? null,
+    address_line2: c.address_line2 ?? null,
+    phone: c.phone ?? null,
   });
   if (encErr.error) return { ok: false, error: encErr.error };
 

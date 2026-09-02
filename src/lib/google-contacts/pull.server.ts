@@ -478,17 +478,22 @@ async function applyPersonChanges(
     if (!contactId) continue;
 
     // Encrypted fields (notes, address, primary phone).
+    // undefined, not null: a field Google did not send must be left alone
+    // (null now means "clear" — see setContactEncryptedFields).
     await setContactEncryptedFields({
       contact_id: contactId,
-      notes: parsed.patch.notes ?? null,
-      address_line1: parsed.patch.address_line1 ?? null,
-      address_line2: parsed.patch.address_line2 ?? null,
-      phone: parsed.patch.primary_phone ?? null,
+      notes: parsed.patch.notes ?? undefined,
+      address_line1: parsed.patch.address_line1 ?? undefined,
+      address_line2: parsed.patch.address_line2 ?? undefined,
+      phone: parsed.patch.primary_phone ?? undefined,
     });
 
-    // Replace phones.
-    await supabaseAdmin.from("contact_phones").delete().eq("contact_id", contactId);
+    // Replace phones — but only when Google actually sent some. An
+    // unconditional delete meant a Google contact with no phone numbers
+    // destroyed the numbers held locally (or synced from iPhone), which is
+    // exactly the guard the email branch below already has.
     if (parsed.phones.length) {
+      await supabaseAdmin.from("contact_phones").delete().eq("contact_id", contactId);
       const rows = parsed.phones.map((ph, idx) => ({
         user_id: ids.userId,
         contact_id: contactId!,

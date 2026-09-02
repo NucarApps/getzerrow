@@ -488,11 +488,13 @@ describe("pullFromGoogle create / merge for unlinked persons", () => {
         position: 0,
       },
     ]);
+    // Fields Google did not send are undefined ("leave alone"); null would
+    // now mean "clear", which would wipe locally-held notes and address.
     expect(setContactEncryptedFieldsMock).toHaveBeenCalledWith({
       contact_id: CT1,
-      notes: null,
-      address_line1: null,
-      address_line2: null,
+      notes: undefined,
+      address_line1: undefined,
+      address_line2: undefined,
       phone: "+15551234",
     });
     // The stamp comes from the contact row's actual updated_at, not now().
@@ -648,7 +650,7 @@ describe("pullFromGoogle merge policy for linked contacts", () => {
     });
   });
 
-  it("preserves the local email and email rows when Google has none — but still wipes phones", async () => {
+  it("preserves local emails AND phones when the Google person carries neither", async () => {
     seedContact(CT1);
     fake.seed("google_contact_links", [contactLink(CT1)]);
     fake.seed("contact_emails", [{ contact_id: CT1, address: "pat@example.com" }]);
@@ -666,14 +668,10 @@ describe("pullFromGoogle merge policy for linked contacts", () => {
     expect(updates[0]!.payload).not.toHaveProperty("email");
     expect(writesTo("deletes", "contact_emails")).toHaveLength(0);
     expect(writesTo("inserts", "contact_emails")).toHaveLength(0);
-    // Phones get no such courtesy: the delete is unconditional, so a Google
-    // person with zero phones wipes local phone rows (and nulls the encrypted
-    // primary phone).
-    expect(writesTo("deletes", "contact_phones")).toHaveLength(1);
+    // Same for phones: an unconditional delete used to destroy numbers held
+    // locally (or synced from an iPhone) whenever Google had none.
+    expect(writesTo("deletes", "contact_phones")).toHaveLength(0);
     expect(writesTo("inserts", "contact_phones")).toHaveLength(0);
-    expect(setContactEncryptedFieldsMock).toHaveBeenCalledWith(
-      expect.objectContaining({ contact_id: CT1, phone: null }),
-    );
   });
 
   it("dirty gating: a locally-edited contact is left untouched — only the remote etag is refreshed", async () => {

@@ -1160,9 +1160,10 @@ export async function handlePut(
     if (insErr) return new Response(insErr.message, { status: 500 });
   }
 
-  // Encrypted fields. The RPC treats NULL as "leave unchanged" and "" as
-  // "clear". Only send fields whose vCard property was actually present so
-  // an iOS edit that omits NOTE/ADR/TEL doesn't erase the stored value.
+  // Encrypted fields. A field left undefined is "leave unchanged"; an
+  // explicit null clears it. Only send fields whose vCard property was
+  // actually present so an iOS edit that omits NOTE/ADR/TEL doesn't erase
+  // the stored value.
   const encPatch: {
     contact_id: string;
     notes?: string | null;

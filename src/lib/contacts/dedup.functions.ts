@@ -718,8 +718,10 @@ export const mergeContactsManual = createServerFn({ method: "POST" })
       if (src.row) {
         const { setContactEncryptedFields } = await import("@/lib/sync/encrypted-writer");
         await setContactEncryptedFields({
+          // undefined leaves the survivor's own notes alone when the chosen
+          // source has none; null would clear them.
           contact_id: data.primaryId,
-          notes: src.row.notes ?? null,
+          notes: src.row.notes ?? undefined,
         });
       }
     }
