@@ -3,6 +3,8 @@ import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { Eye, MousePointerClick, Download, Share2 } from "lucide-react";
 import { getMyCardAnalytics, type CardAnalyticsSummary } from "@/lib/card-analytics.functions";
+import { buildSparkline } from "@/lib/ui/sparkline";
+import { cardEventLabel } from "@/lib/ui/card-analytics";
 
 const RANGES = [
   { label: "7 days", value: 7 },
@@ -99,7 +101,7 @@ export function CardAnalytics() {
                     className="flex items-center justify-between gap-3 text-xs text-muted-foreground"
                   >
                     <span className="truncate">
-                      <span className="text-foreground">{labelFor(e.event_type)}</span>
+                      <span className="text-foreground">{cardEventLabel(e.event_type)}</span>
                       {e.link_url && <span className="ml-2 truncate">→ {e.link_url}</span>}
                     </span>
                     <time className="shrink-0 font-mono">
@@ -139,49 +141,34 @@ function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; va
 }
 
 function Sparkline({ daily }: { daily: CardAnalyticsSummary["daily"] }) {
-  if (!daily.length) return null;
-  const max = Math.max(1, ...daily.map((d) => d.views + d.clicks + d.downloads + d.shares));
-  const W = 600;
-  const H = 80;
-  const step = W / daily.length;
+  const chart = buildSparkline(daily);
+  if (!chart) return null;
 
   return (
     <div className="mt-4 overflow-hidden rounded-md border border-border bg-background/30 p-2">
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-20 w-full">
-        {daily.map((d, i) => {
-          const total = d.views + d.clicks + d.downloads + d.shares;
-          const h = (total / max) * (H - 8);
-          return (
-            <rect
-              key={d.day}
-              x={i * step + 1}
-              y={H - h}
-              width={Math.max(1, step - 2)}
-              height={h}
-              className="fill-primary/70"
-              rx={1}
-            >
-              <title>{`${d.day}: ${total}`}</title>
-            </rect>
-          );
-        })}
+      <svg
+        viewBox={`0 0 ${chart.width} ${chart.height}`}
+        preserveAspectRatio="none"
+        className="h-20 w-full"
+      >
+        {chart.bars.map((bar) => (
+          <rect
+            key={bar.day}
+            x={bar.x}
+            y={bar.y}
+            width={bar.width}
+            height={bar.height}
+            className="fill-primary/70"
+            rx={1}
+          >
+            <title>{`${bar.day}: ${bar.total}`}</title>
+          </rect>
+        ))}
       </svg>
       <div className="flex justify-between px-1 pt-1 text-[10px] text-muted-foreground">
-        <span>{daily[0]?.day}</span>
-        <span>{daily[daily.length - 1]?.day}</span>
+        <span>{chart.firstDay}</span>
+        <span>{chart.lastDay}</span>
       </div>
     </div>
   );
-}
-
-function labelFor(t: string) {
-  return t === "view"
-    ? "Viewed"
-    : t === "link_click"
-      ? "Clicked link"
-      : t === "vcard_download"
-        ? "Saved vCard"
-        : t === "share"
-          ? "Shared"
-          : t;
 }
