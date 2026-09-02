@@ -177,12 +177,17 @@ export function contactToPerson(
     person.biographies = [{ value: mergedNote, contentType: "TEXT_PLAIN" }];
   }
 
-  const addrLine =
-    [contact.address_line1, contact.address_line2].filter(Boolean).join(", ").trim() || undefined;
-  if (addrLine || contact.city || contact.region || contact.postal_code || contact.country) {
+  // Keep the two street lines apart: folding them into streetAddress with
+  // a comma was lossy, because Google never populates extendedAddress on
+  // its own, so the next pull read the whole thing back as line 1 and
+  // nulled line 2.
+  const line1 = contact.address_line1?.trim() || undefined;
+  const line2 = contact.address_line2?.trim() || undefined;
+  if (line1 || line2 || contact.city || contact.region || contact.postal_code || contact.country) {
     person.addresses = [
       {
-        streetAddress: addrLine,
+        streetAddress: line1,
+        extendedAddress: line2,
         city: contact.city ?? undefined,
         region: contact.region ?? undefined,
         postalCode: contact.postal_code ?? undefined,
@@ -265,8 +270,14 @@ export function personToContact(person: Person): {
 
   const addr = person.addresses?.[0];
   if (addr) {
-    patch.address_line1 = addr.streetAddress?.trim() || null;
-    patch.address_line2 = addr.extendedAddress?.trim() || null;
+    // Google's own UI writes a multi-line street into streetAddress with
+    // newlines and leaves extendedAddress empty; split so line 2 survives
+    // whichever side last edited the contact.
+    const street = (addr.streetAddress ?? "").replace(/\r\n/g, "\n");
+    const [streetFirst, ...streetRest] = street.split("\n").map((l) => l.trim());
+    patch.address_line1 = streetFirst?.trim() || null;
+    patch.address_line2 =
+      addr.extendedAddress?.trim() || streetRest.filter(Boolean).join("\n") || null;
     patch.city = addr.city?.trim() || null;
     patch.region = addr.region?.trim() || null;
     patch.postal_code = addr.postalCode?.trim() || null;

@@ -190,3 +190,79 @@ describe("labelToGroupName", () => {
     expect(labelToGroupName({ name: "  VIPs  ", groupType: "USER_CONTACT_GROUP" })).toBe("VIPs");
   });
 });
+
+describe("push → pull round-trip", () => {
+  // The two mappers are each other's inverse in production: push writes the
+  // Person, and the next incremental pull reads it back. Anything the pair
+  // does not preserve is silently destroyed on the account — which is how
+  // the second address line used to disappear (folded into streetAddress
+  // with a comma on the way out, read back as line 1 on the way in).
+  const phones = [
+    { label: "mobile", number: "+1 415 555 0100", is_primary: true },
+    { label: "work", number: "+1 415 555 0200", is_primary: false },
+  ];
+  const emails = [
+    { label: "work", address: "jane@acme.com", is_primary: true },
+    { label: "home", address: "jane@home.example", is_primary: false },
+  ];
+
+  it("preserves every mapped contact field", () => {
+    const person = contactToPerson(baseContact, phones, [], undefined, emails);
+    const back = personToContact(person);
+
+    expect(back.patch).toMatchObject({
+      name: baseContact.name,
+      company: baseContact.company,
+      title: baseContact.title,
+      address_line1: baseContact.address_line1,
+      address_line2: baseContact.address_line2,
+      city: baseContact.city,
+      region: baseContact.region,
+      postal_code: baseContact.postal_code,
+      country: baseContact.country,
+      notes: baseContact.notes,
+      website: baseContact.website,
+      linkedin: baseContact.linkedin,
+    });
+    expect(back.phones.map((p) => p.number)).toEqual(phones.map((p) => p.number));
+    expect(back.emails.map((e) => e.address)).toEqual(emails.map((e) => e.address));
+    expect(back.emails.find((e) => e.is_primary)?.address).toBe("jane@acme.com");
+  });
+
+  it("keeps a single-line address on line 1 and leaves line 2 empty", () => {
+    const person = contactToPerson({ ...baseContact, address_line2: null }, [], []);
+    expect(personToContact(person).patch).toMatchObject({
+      address_line1: "123 Main St",
+      address_line2: null,
+    });
+  });
+
+  it("reads a multi-line streetAddress from Google's own UI into both lines", () => {
+    // Google writes newlines into streetAddress and leaves extendedAddress
+    // unset, so the pull has to split rather than trust extendedAddress.
+    const parsed = personToContact({
+      addresses: [{ streetAddress: "123 Main St\nSuite 4", city: "SF" }],
+    });
+    expect(parsed.patch).toMatchObject({ address_line1: "123 Main St", address_line2: "Suite 4" });
+  });
+
+  it("promotes the first email when the local set names no primary", () => {
+    const person = contactToPerson(baseContact, [], [], undefined, [
+      { label: "work", address: "a@x.com", is_primary: false },
+      { label: "home", address: "b@x.com", is_primary: false },
+    ]);
+    expect(person.emailAddresses?.[0]).toMatchObject({ value: "a@x.com" });
+    expect(personToContact(person).emails[0]).toMatchObject({
+      address: "a@x.com",
+      is_primary: true,
+    });
+  });
+
+  it("dedupes emails differing only in case", () => {
+    const person = contactToPerson(baseContact, [], [], undefined, [
+      { label: "work", address: "Jane@Acme.com", is_primary: true },
+      { label: "home", address: "jane@acme.com", is_primary: false },
+    ]);
+    expect(personToContact(person).emails).toHaveLength(1);
+  });
+});
