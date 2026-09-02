@@ -104,8 +104,16 @@ async function dispatch(request: Request, params: Params): Promise<Response> {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const anyHandler = async ({ request, params }: any) => dispatch(request, params as Params);
+/** Shape the router hands a server handler. Declared locally because the
+ * generated route types cover the standard verbs only, and CardDAV's whole
+ * traffic is PROPFIND / REPORT / MKCOL, which arrive through `ANY`. */
+export type CardDavHandler = (ctx: {
+  request: Request;
+  params: Record<string, string | undefined>;
+}) => Promise<Response>;
+
+const anyHandler: CardDavHandler = async ({ request, params }) =>
+  dispatch(request, params as Params);
 
 export const Route = createFileRoute("/api/public/carddav/$")({
   server: {
@@ -115,7 +123,6 @@ export const Route = createFileRoute("/api/public/carddav/$")({
       HEAD: anyHandler,
       OPTIONS: anyHandler,
       ANY: anyHandler,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any,
+    },
   },
 });
