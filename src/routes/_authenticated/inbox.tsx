@@ -2,7 +2,39 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, useMemo, useRef, memo, lazy, Suspense, Fragment } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { emailDomain } from "@/lib/company-domains";
-import { dayGroupLabel, shortRowTime } from "@/lib/format";
+import { shortRowTime } from "@/lib/format";
+import {
+  applyListFields,
+  dayGroupHeadings,
+  idsNeedingListFields,
+  inboxListScope,
+  labelForFolder,
+  mergeSearchRows,
+  resolveActiveAccount,
+  resolveFolderSelection,
+  type ListFields,
+} from "@/lib/ui/inbox-list";
+import {
+  advancePageCursors,
+  canGoNext as canGoNextFor,
+  canGoPrev,
+  cursorForPage,
+  hasMorePages,
+  nextPageAction,
+  nextPageHint,
+} from "@/lib/ui/inbox-paging";
+import {
+  bulkSummary,
+  classifiedChip,
+  emptyInboxHint,
+  reanalyzeOutcome,
+  searchEmptyState,
+  senderFirstName,
+  senderInitials,
+  syncSummary,
+  type ClassifiedChipKey,
+  type SearchEmptyState,
+} from "@/lib/ui/inbox-status";
 import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -574,10 +606,7 @@ function InboxPage() {
   const accountsQ = useQuery({ queryKey: ["gmail-accounts"], queryFn: () => listAccountsFn() });
   const accounts = useMemo(() => accountsQ.data?.accounts ?? [], [accountsQ.data?.accounts]);
   const hasConnectedAccounts = accounts.length > 0;
-  const accountId =
-    activeAccountId && accounts.some((account) => account.id === activeAccountId)
-      ? activeAccountId
-      : (accounts[0]?.id ?? null);
+  const accountId = resolveActiveAccount(activeAccountId, accounts);
 
   useEffect(() => {
     if (!accountId || accountId === activeAccountId) return;
@@ -605,13 +634,11 @@ function InboxPage() {
   // Once this account's folders load, if the selection is a folder id that
   // doesn't exist here (and isn't a special view), treat it as the Inbox view
   // for the query and clear the stale value.
-  const isSpecialView =
-    selectedFolder === "all" || selectedFolder === "all_mail" || selectedFolder === "no_rules";
-  const isStaleFolder =
-    !isSpecialView &&
-    foldersQ.isSuccess &&
-    !(foldersQ.data ?? []).some((f) => f.id === selectedFolder);
-  const effectiveFolder = isStaleFolder ? "all" : selectedFolder;
+  const { effective: effectiveFolder, isStale: isStaleFolder } = resolveFolderSelection({
+    selection: selectedFolder,
+    foldersLoaded: foldersQ.isSuccess,
+    folderIds: (foldersQ.data ?? []).map((f) => f.id),
+  });
   useEffect(() => {
     if (isStaleFolder) setSelectedFolder("all");
   }, [isStaleFolder, setSelectedFolder]);
@@ -656,7 +683,7 @@ function InboxPage() {
     setPage(1);
     setCursors([null]);
   }, [searchTerm]);
-  const cursor = cursors[page - 1] ?? null;
+  const cursor = cursorForPage(cursors, page);
 
   const reclassifyFn = useServerFn(reclassifyEmails);
   const listFolderEmailIdsFn = useServerFn(listFolderEmailIds);
@@ -719,8 +746,6 @@ function InboxPage() {
     refetchInterval: false,
     staleTime: 15_000,
     queryFn: async () => {
-      const isNoRules = effectiveFolder === "no_rules";
-      const isAllMail = effectiveFolder === "all_mail";
       if (isSearching) {
         // Single server-side path for both free-text and `from:` / `to:`
         // operator search. The server ranks over the GIN-indexed search index:
@@ -759,18 +784,12 @@ function InboxPage() {
       // applies the snoozed / INBOX / no-rules / folder filters and returns
       // sender + subject + AI fields already decrypted, so the list renders
       // in a single pass instead of a metadata fetch + separate decrypt call.
-      const scope: "all" | "all_mail" | "no_rules" | "folder" = isAllMail
-        ? "all_mail"
-        : isNoRules
-          ? "no_rules"
-          : effectiveFolder === "all"
-            ? "all"
-            : "folder";
+      const { scope, folder_id } = inboxListScope(effectiveFolder);
       const r = await fetchInboxList({
         data: {
           account_id: accountId!,
           scope,
-          folder_id: scope === "folder" ? effectiveFolder : null,
+          folder_id,
           cursor,
           limit: PAGE_SIZE + 1,
         },
@@ -998,21 +1017,20 @@ function InboxPage() {
   });
 
   const rawEmails = useMemo(() => emailsQ.data ?? [], [emailsQ.data]);
-  const hasMoreLocal = !isSearching && rawEmails.length > PAGE_SIZE;
+  const hasMoreLocal = !isSearching && hasMorePages(rawEmails.length, PAGE_SIZE);
   // The search query fetches PAGE_SIZE + 1 rows; a full extra row means there
   // is another page to offset into.
-  const hasMoreSearch = isSearching && rawEmails.length > PAGE_SIZE;
-  const baseRows = useMemo(() => {
-    // Always trim to the page window so we never render the +1 sentinel row.
-    const windowRows = rawEmails.slice(0, PAGE_SIZE);
-    if (!isSearching) return windowRows;
-    const extra = gmailHitRowsQ.data ?? [];
-    if (extra.length === 0) return windowRows;
-    const seen = new Set(windowRows.map((r) => r.id));
-    const merged = [...windowRows];
-    for (const r of extra) if (!seen.has(r.id)) merged.push(r);
-    return merged;
-  }, [isSearching, rawEmails, gmailHitRowsQ.data]);
+  const hasMoreSearch = isSearching && hasMorePages(rawEmails.length, PAGE_SIZE);
+  const baseRows = useMemo(
+    () =>
+      mergeSearchRows({
+        rows: rawEmails,
+        pageSize: PAGE_SIZE,
+        isSearching,
+        extraRows: gmailHitRowsQ.data ?? [],
+      }),
+    [isSearching, rawEmails, gmailHitRowsQ.data],
+  );
 
   // Decrypt only the rows that still lack plaintext fields. The non-search
   // list now arrives already-decrypted from getInboxList, so those rows are
@@ -1020,13 +1038,7 @@ function InboxPage() {
   // which come from a raw metadata query, and (b) rows spliced in by realtime
   // INSERTs, which carry only the encrypted columns. A row needs decryption
   // when its `subject` key is absent (raw rows expose `subject_enc` instead).
-  const visibleIds = useMemo(
-    () =>
-      baseRows
-        .filter((r) => (r as { subject?: string | null }).subject === undefined)
-        .map((r) => r.id),
-    [baseRows],
-  );
+  const visibleIds = useMemo(() => idsNeedingListFields(baseRows), [baseRows]);
   const visibleIdsKey = useMemo(() => visibleIds.join(","), [visibleIds]);
   const fetchListFields = useServerFn(getEmailListFields);
   const listFieldsQ = useQuery({
@@ -1035,18 +1047,7 @@ function InboxPage() {
     staleTime: 60_000,
     queryFn: async () => {
       const r = await fetchListFields({ data: { ids: visibleIds } });
-      const map = new Map<
-        string,
-        {
-          ai_summary: string | null;
-          classification_reason: string | null;
-          subject: string | null;
-          snippet: string | null;
-          from_name: string | null;
-          to_addrs: string | null;
-          cc: string | null;
-        }
-      >();
+      const map = new Map<string, ListFields>();
       for (const f of r.fields ?? []) {
         map.set(f.id, {
           ai_summary: f.ai_summary ?? null,
@@ -1061,25 +1062,10 @@ function InboxPage() {
       return map;
     },
   });
-  const pageRows = useMemo(() => {
-    const map = listFieldsQ.data;
-    if (!map || map.size === 0) return baseRows;
-    return baseRows.map((r) => {
-      const extra = map.get(r.id);
-      return extra
-        ? {
-            ...r,
-            ai_summary: extra.ai_summary,
-            classification_reason: extra.classification_reason,
-            subject: extra.subject,
-            snippet: extra.snippet,
-            from_name: extra.from_name,
-            to_addrs: extra.to_addrs,
-            cc: extra.cc,
-          }
-        : r;
-    });
-  }, [baseRows, listFieldsQ.data]);
+  const pageRows = useMemo(
+    () => applyListFields(baseRows, listFieldsQ.data),
+    [baseRows, listFieldsQ.data],
+  );
 
   const filtered = useMemo(() => {
     // Both free-text and `from:` / `to:` operator searches are now matched and
@@ -1177,39 +1163,39 @@ function InboxPage() {
       else toast.message("No older emails found in Gmail.");
       // Advance to next page using last row of CURRENT page as cursor.
       const lastReceived = pageRows[pageRows.length - 1]?.received_at ?? null;
-      setCursors((prev) => {
-        const next = prev.slice(0, page);
-        next.push(lastReceived);
-        return next;
-      });
+      setCursors((prev) => advancePageCursors(prev, page, lastReceived));
       setPage((p) => p + 1);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to pull from Gmail"),
   });
 
+  const pagingState = {
+    isSearching,
+    hasMoreSearch,
+    hasMoreLocal,
+    canPullFromGmail,
+    pullPending: pullOlderMut.isPending,
+  };
+
   function goNext() {
-    if (isSearching) {
-      // Offset-based paging: the query key includes `page`, so bumping it
-      // refetches the next PAGE_SIZE window from the search RPC.
-      if (hasMoreSearch) setPage((p) => p + 1);
+    const action = nextPageAction(pagingState);
+    if (action === "none") return;
+    if (action === "pull") {
+      pullOlderMut.mutate();
       return;
     }
-    if (hasMoreLocal) {
+    // Search pages by offset — the query key carries `page`, so bumping it
+    // refetches the next window from the search RPC and needs no cursor.
+    if (!isSearching) {
       const lastReceived = pageRows[pageRows.length - 1]?.received_at ?? null;
-      setCursors((prev) => {
-        const next = prev.slice(0, page);
-        next.push(lastReceived);
-        return next;
-      });
-      setPage((p) => p + 1);
-      return;
+      setCursors((prev) => advancePageCursors(prev, page, lastReceived));
     }
-    if (canPullFromGmail && !pullOlderMut.isPending) pullOlderMut.mutate();
+    setPage((p) => p + 1);
   }
   function goPrev() {
-    if (page > 1) setPage((p) => p - 1);
+    if (canGoPrev(page)) setPage((p) => p - 1);
   }
-  const canGoNext = isSearching ? hasMoreSearch : hasMoreLocal || canPullFromGmail;
+  const canGoNext = canGoNextFor(pagingState);
 
   const selectedListItem = filtered.find((e) => e.id === selectedId) ?? null;
 
@@ -1314,17 +1300,13 @@ function InboxPage() {
         if (selectedId && !fresh.some((e) => e.id === selectedId)) setSelectedId(null);
         return;
       }
-      const r = res?.reconciled;
-      const synced = res && "synced" in res ? res.synced : undefined;
-      const error = res && "error" in res ? res.error : undefined;
-      const parts: string[] = [];
-      if (typeof synced === "number" && synced > 0) parts.push(`${synced} new`);
-      if (r?.archived) parts.push(`${r.archived} archived`);
-      if (r?.deleted) parts.push(`${r.deleted} removed`);
-      if (r?.failed) parts.push(`${r.failed} failed`);
-      const msg = parts.length ? `Synced · ${parts.join(", ")}` : "Synced";
-      if (error) toast.error(`Sync error: ${error}`);
-      else toast.success(msg);
+      const summary = syncSummary({
+        reconciled: res.reconciled,
+        synced: "synced" in res ? res.synced : undefined,
+        error: "error" in res ? res.error : undefined,
+      });
+      if (summary.kind === "error") toast.error(summary.message);
+      else toast.success(summary.message);
       await qc.refetchQueries({ queryKey: ["emails"], type: "active" });
       const fresh =
         qc.getQueriesData<Email[]>({ queryKey: ["emails"] }).flatMap(([, d]) => d ?? []) ?? [];
@@ -1356,9 +1338,9 @@ function InboxPage() {
     try {
       const results = await Promise.allSettled(ids.map((id) => action(id)));
       const failed = results.filter((r) => r.status === "rejected").length;
-      const ok = ids.length - failed;
-      if (failed === 0) toast.success(`${verb} ${ok} email${ok === 1 ? "" : "s"}`);
-      else toast.warning(`${verb} ${ok}, ${failed} failed`);
+      const summary = bulkSummary(verb, ids.length, failed);
+      if (summary.kind === "warning") toast.warning(summary.message);
+      else toast.success(summary.message);
       setSelectedIds(new Set());
     } catch (err) {
       toast.error(err instanceof Error ? err.message : `Couldn't ${verb.toLowerCase()}`);
@@ -1376,6 +1358,10 @@ function InboxPage() {
     (accountsQ.isLoading && !accountId) || (emailsQ.isLoading && rawEmails.length === 0);
 
   const unreadCount = filtered.filter((e) => !e.is_read && !e.__placeholder).length;
+
+  // One heading per row position ("Today", "Yesterday", a date) or null where
+  // the row continues the previous row's day.
+  const headings = dayGroupHeadings(filtered, new Date());
 
   return (
     <div className="flex h-full min-h-0 flex-col md:grid md:grid-cols-[384px_1fr]">
@@ -1706,66 +1692,21 @@ function InboxPage() {
                 className="h-32 w-auto opacity-90"
               />
               {isSearching ? (
-                gmailSearching ? (
-                  <p className="text-sm">Checking Gmail for "{query.trim()}"…</p>
-                ) : lastGmailResult?.reason === "no_account" ? (
-                  <>
-                    <p className="text-sm">No matches found.</p>
-                    <p className="text-xs">
-                      Connect a Gmail account in Settings to search your full mailbox.
-                    </p>
-                  </>
-                ) : lastGmailResult?.reason === "reauth_required" ? (
-                  <>
-                    <p className="text-sm">Gmail needs to be reconnected.</p>
-                    <p className="text-xs">
-                      Open Settings → Gmail to reauthorize, then search again.
-                    </p>
-                  </>
-                ) : lastGmailResult?.reason === "rate_limited" ? (
-                  <>
-                    <p className="text-sm">Gmail is rate-limiting search right now.</p>
-                    <p className="text-xs">
-                      {lastGmailResult.found
-                        ? `Found ${lastGmailResult.found} match${lastGmailResult.found === 1 ? "" : "es"} in Gmail — wait ~1 minute and search again to pull them in.`
-                        : "Wait about a minute and try the search again."}
-                    </p>
-                  </>
-                ) : (lastGmailResult?.found ?? 0) > 0 &&
-                  (gmailHitRowsQ.isFetching || emailsQ.isFetching) ? (
-                  <>
-                    <p className="text-sm">
-                      Pulling {lastGmailResult!.found} match
-                      {lastGmailResult!.found === 1 ? "" : "es"} from Gmail…
-                    </p>
-                    <p className="text-xs">Results will appear in a moment.</p>
-                  </>
-                ) : (lastGmailResult?.found ?? 0) > 0 ? (
-                  <>
-                    <p className="text-sm">
-                      Found {lastGmailResult!.found} match
-                      {lastGmailResult!.found === 1 ? "" : "es"} in Gmail, but they couldn't be
-                      loaded.
-                    </p>
-                    <p className="text-xs">Try searching again in a moment.</p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm">
-                      No matches in your inbox or Gmail for "{query.trim()}".
-                    </p>
-                    <p className="text-xs">Try a different search term.</p>
-                  </>
-                )
+                <SearchEmpty
+                  state={searchEmptyState({
+                    gmailSearching,
+                    reason: lastGmailResult?.reason,
+                    found: lastGmailResult?.found ?? 0,
+                    fetching: gmailHitRowsQ.isFetching || emailsQ.isFetching,
+                  })}
+                  found={lastGmailResult?.found ?? 0}
+                  query={query.trim()}
+                />
               ) : (
                 <>
                   <p className="text-sm">Nothing here yet.</p>
                   <p className="text-xs">
-                    {hasConnectedAccounts
-                      ? "Hit refresh, or check All mail."
-                      : accountsQ.isError
-                        ? "Reload Gmail accounts, then refresh."
-                        : "Connect Gmail in Settings."}
+                    {emptyInboxHint(hasConnectedAccounts, accountsQ.isError)}
                   </p>
                 </>
               )}
@@ -1773,13 +1714,10 @@ function InboxPage() {
           )}
 
           {filtered.map((e, i) => {
-            const groupLabel = e.__placeholder ? null : dayGroupLabel(e.received_at, new Date());
-            const prev = i > 0 ? filtered[i - 1] : undefined;
-            const prevLabel =
-              prev && !prev.__placeholder ? dayGroupLabel(prev.received_at, new Date()) : null;
+            const groupLabel = headings[i];
             return (
               <Fragment key={e.id}>
-                {groupLabel && groupLabel !== prevLabel && (
+                {groupLabel && (
                   <div className="border-b border-border px-4 pb-1 pt-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                     {groupLabel}
                   </div>
@@ -1828,13 +1766,7 @@ function InboxPage() {
               className="h-7 px-2"
               onClick={goNext}
               disabled={!canGoNext || pullOlderMut.isPending}
-              title={
-                !canGoNext
-                  ? "No more results in this view"
-                  : !isSearching && !hasMoreLocal
-                    ? "Pull next 50 from Gmail"
-                    : ""
-              }
+              title={nextPageHint(pagingState)}
             >
               Next <ChevronLeft className="ml-1 h-3.5 w-3.5 rotate-180" />
             </Button>
@@ -2031,11 +1963,74 @@ function InboxPage() {
   );
 }
 
-function labelForFolder(sel: string | "all" | "all_mail" | "no_rules", folders: Folder[]) {
-  if (sel === "all") return "All inbox";
-  if (sel === "all_mail") return "All mail";
-  if (sel === "no_rules") return "No rules";
-  return folders.find((f) => f.id === sel)?.name ?? "Folder";
+// Copy for each rung of the search empty-state ladder. Which rung applies is
+// decided by `searchEmptyState` in lib/ui/inbox-status.ts.
+function SearchEmpty({
+  state,
+  found,
+  query,
+}: {
+  state: SearchEmptyState;
+  found: number;
+  query: string;
+}) {
+  const matches = `match${found === 1 ? "" : "es"}`;
+  switch (state) {
+    case "checking_gmail":
+      return <p className="text-sm">Checking Gmail for "{query}"…</p>;
+    case "no_account":
+      return (
+        <>
+          <p className="text-sm">No matches found.</p>
+          <p className="text-xs">
+            Connect a Gmail account in Settings to search your full mailbox.
+          </p>
+        </>
+      );
+    case "reauth_required":
+      return (
+        <>
+          <p className="text-sm">Gmail needs to be reconnected.</p>
+          <p className="text-xs">Open Settings → Gmail to reauthorize, then search again.</p>
+        </>
+      );
+    case "rate_limited":
+      return (
+        <>
+          <p className="text-sm">Gmail is rate-limiting search right now.</p>
+          <p className="text-xs">
+            {found
+              ? `Found ${found} ${matches} in Gmail — wait ~1 minute and search again to pull them in.`
+              : "Wait about a minute and try the search again."}
+          </p>
+        </>
+      );
+    case "pulling":
+      return (
+        <>
+          <p className="text-sm">
+            Pulling {found} {matches} from Gmail…
+          </p>
+          <p className="text-xs">Results will appear in a moment.</p>
+        </>
+      );
+    case "found_but_unloadable":
+      return (
+        <>
+          <p className="text-sm">
+            Found {found} {matches} in Gmail, but they couldn't be loaded.
+          </p>
+          <p className="text-xs">Try searching again in a moment.</p>
+        </>
+      );
+    case "no_matches":
+      return (
+        <>
+          <p className="text-sm">No matches in your inbox or Gmail for "{query}".</p>
+          <p className="text-xs">Try a different search term.</p>
+        </>
+      );
+  }
 }
 
 function Reader({
@@ -2158,20 +2153,10 @@ function Reader({
       const r = await reanalyzeFn({ data: { email_id: email.id } });
       qc.invalidateQueries({ queryKey: ["emails"] });
       qc.invalidateQueries({ queryKey: ["emails-summary"] });
-      if (r.classified_by === "ai_error") {
-        toast.error(r.classification_reason || "AI classifier failed");
-      } else if (r.classified_by === "kept") {
-        const name = folders.find((f) => f.id === r.folder_id)?.name;
-        toast.message(
-          name ? `No better folder — kept in ${name}.` : "No better folder — kept current.",
-        );
-      } else if (!r.changed) {
-        toast.success("Re-analyzed — no change");
-      } else if (r.folder_id && r.folder_name) {
-        toast.success(`Re-analyzed → ${r.folder_name}`);
-      } else {
-        toast.success("Re-analyzed → Inbox");
-      }
+      const outcome = reanalyzeOutcome(r, folders);
+      if (outcome.kind === "error") toast.error(outcome.message);
+      else if (outcome.kind === "message") toast.message(outcome.message);
+      else toast.success(outcome.message);
     } catch (e) {
       toast.error(errMsg(e));
     } finally {
@@ -2190,14 +2175,8 @@ function Reader({
     setGenerating(false);
   }
 
-  const senderInitials = (email.from_name || email.from_addr || "?")
-    .split(/\s+/)
-    .map((w) => w.charAt(0))
-    .filter((c) => /[a-z0-9]/i.test(c))
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-  const senderFirstName = (email.from_name || email.from_addr || "").split(/\s+/)[0] ?? "";
+  const initials = senderInitials(email.from_name, email.from_addr);
+  const firstName = senderFirstName(email.from_name, email.from_addr);
   const senderDomain = emailDomain(email.from_addr);
 
   return (
@@ -2398,7 +2377,7 @@ function Reader({
               className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-card font-mono text-[11px] font-semibold text-[#6bd1e0]"
               aria-hidden
             >
-              {senderInitials}
+              {initials}
             </span>
             <span>
               <strong className="text-foreground">
@@ -2528,7 +2507,7 @@ function Reader({
                 onClick={() => setReplyOpen(true)}
                 className="min-w-0 flex-1 truncate text-left text-sm text-muted-foreground hover:text-foreground"
               >
-                Reply to {senderFirstName || "sender"}…
+                Reply to {firstName || "sender"}…
               </button>
               <button
                 type="button"
@@ -2712,28 +2691,27 @@ function Reader({
   );
 }
 
+// Icon per chip key; the label, colour class and fallback live in
+// `lib/ui/inbox-status.ts` so they can be asserted without React.
+const CHIP_ICONS: Record<ClassifiedChipKey, typeof Bot> = {
+  ai: Bot,
+  filter: FilterIcon,
+  gmail_label: Tag,
+  domain_rule: FilterIcon,
+  manual_move: Hand,
+  excluded: HelpCircle,
+  global_exclude: HelpCircle,
+  none: HelpCircle,
+};
+
 function ClassifiedChip({ by, confidence }: { by: string | null; confidence?: number | null }) {
-  const noneChip = { label: "Unclassified", Icon: HelpCircle, cls: "text-muted-foreground" };
-  const map: Record<string, { label: string; Icon: typeof Bot; cls: string }> = {
-    ai: { label: "AI", Icon: Bot, cls: "text-primary" },
-    filter: { label: "Rule", Icon: FilterIcon, cls: "text-foreground" },
-    gmail_label: { label: "Gmail label", Icon: Tag, cls: "text-foreground" },
-    domain_rule: { label: "Rule", Icon: FilterIcon, cls: "text-foreground" },
-    manual_move: { label: "Manual", Icon: Hand, cls: "text-foreground" },
-    excluded: { label: "Excluded", Icon: HelpCircle, cls: "text-destructive" },
-    global_exclude: { label: "Inbox list", Icon: HelpCircle, cls: "text-destructive" },
-    none: noneChip,
-  };
-  const k = by ?? "none";
-  const v = map[k] ?? noneChip;
-  const { Icon } = v;
-  const label =
-    k === "ai" && confidence != null ? `${v.label} · ${Math.round(confidence * 100)}%` : v.label;
+  const chip = classifiedChip(by, confidence);
+  const Icon = CHIP_ICONS[chip.key];
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full border border-border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider ${v.cls}`}
+      className={`inline-flex items-center gap-1 rounded-full border border-border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider ${chip.cls}`}
     >
-      <Icon className="h-3 w-3" /> {label}
+      <Icon className="h-3 w-3" /> {chip.label}
     </span>
   );
 }
