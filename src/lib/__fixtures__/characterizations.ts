@@ -106,6 +106,7 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "getInboxReport never selects a sender display name, so parseSender's name branch is dead and topSenders can only ever show an address. There is no plaintext from_name column — only from_name_enc — so the fix is a decrypt pass over the window, not a wider select.",
     fixIn: "src/lib/reports.functions.ts — resolve display names via the decrypt reader.",
   },
+<<<<<<< HEAD
   "card-analytics-daily-adds-out-of-window-day": {
     what: "getMyCardAnalytics prefills one bucket per calendar day but filters the query at a timestamp exactly days*24h ago, so an event from earlier in the day at the far end of the window passes the filter, finds no prefilled bucket and creates one. `daily` then carries rangeDays + 1 entries, and the extra leading day is a partial count the chart draws as if it were a whole one.",
     fixIn:
@@ -119,6 +120,12 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
   "vcard-esc-leaves-carriage-return": {
     what: "cards.server's esc() folds \\ , ; and \\n but not \\r, while buildVCard joins its lines with CRLF. A card field containing a carriage return (nothing in the my_cards validators forbids one) is emitted raw into the vCard, so the file a recipient imports carries a stray CR mid-value. Its sibling escaper in carddav/vcard.ts folds the whole CRLF pair (/\\r?\\n/), which is what this one should do.",
     fixIn: "src/lib/cards.server.ts — drop or escape \\r in esc() alongside \\n.",
+=======
+  "webhook-duplicate-logs-spurious-push-empty": {
+    what: "The Gmail push webhook's duplicate-delivery short-circuit returns from inside the try block, so the finally block still runs and writes a second pubsub_events row — a `push_empty` summary with a null payload, null subscription and null counts. `push_empty` means 'the envelope carried no message.data', so every Pub/Sub redelivery inflates that count in the Settings activity panel and in any push-health query built on it.",
+    fixIn:
+      "src/routes/api/public/gmail-webhook.ts — take the duplicate path out of the try/finally, or flag it so the summary write is skipped.",
+>>>>>>> worktree-agent-adaeb1f2d3cef9c16
   },
   "inbox-day-heading-repeats-after-placeholder": {
     what: "dayGroupHeadings compares each row's day against the row immediately above it, and a placeholder row (rebuilt from the metadata cache) reports no day at all. A placeholder sitting between two rows of the same day therefore breaks the run and the day heading is drawn a second time mid-list.",

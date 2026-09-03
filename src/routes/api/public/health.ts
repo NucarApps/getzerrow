@@ -27,9 +27,9 @@ import { isAuthorizedCronRequest, unauthorizedResponse } from "@/lib/cron-auth.s
 //
 // No views: the emails_decrypted view was dropped (2026-05-28) when reads
 // moved to the get_emails_decrypted RPC under the encrypt-on-write design.
-const EXPECTED_VIEWS: string[] = [];
+export const EXPECTED_VIEWS: string[] = [];
 
-const EXPECTED_FUNCTIONS = [
+export const EXPECTED_FUNCTIONS = [
   // Core sync
   "claim_message_jobs",
   "bump_history_id_if_greater",
@@ -52,7 +52,7 @@ const EXPECTED_FUNCTIONS = [
   "increment_emails_since_learn",
 ];
 
-const EXPECTED_COLUMNS: Array<{ table: string; column: string }> = [
+export const EXPECTED_COLUMNS: Array<{ table: string; column: string }> = [
   // OAuth encryption
   { table: "gmail_accounts", column: "access_token_enc" },
   { table: "gmail_accounts", column: "refresh_token_enc" },
