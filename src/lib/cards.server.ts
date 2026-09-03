@@ -266,10 +266,13 @@ export function renderCardEmailHtml(opts: CardEmailInput): string {
   const { card } = opts;
   const theme = getEmailTheme(card.theme);
   const displayName = card.name || card.email || "Contact";
+  // Escaped like every other card field: this HTML is emailed to a third
+  // party, and title/company are attacker-controllable (a card's owner types
+  // them, and a shared contact's come from a scanned image).
   const subtitle =
     card.title && card.company
-      ? `${card.title} &middot; ${card.company}`
-      : card.title || card.company || "";
+      ? `${escapeHtml(card.title)} &middot; ${escapeHtml(card.company)}`
+      : escapeHtml(card.title || card.company || "");
 
   const avatar = card.avatar_url
     ? `<img src="${escapeHtml(card.avatar_url)}" width="88" height="88" alt="${escapeHtml(displayName)}" style="display:block;width:88px;height:88px;border-radius:50%;border:4px solid #ffffff;object-fit:cover" />`
