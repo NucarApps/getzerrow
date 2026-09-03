@@ -37,6 +37,11 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     fixIn:
       "src/lib/meetings-autojoin.server.ts — keep colour-skipped events in the window listing and let the skip ladder label them (the upcoming-list filter can stay).",
   },
+  "etag-conflict-ignores-google-reason": {
+    what: "PeopleApiError.isEtagConflict matches only against `message`, while its siblings isExpiredSyncToken and isMissingScope match against message + googleReason. `call()` builds the message from the response body truncated to 400 characters, so a long People API error pushes Google's FAILED_PRECONDITION out of the message even though parseReason still captured it — the push loop then treats a stale-etag rejection as a hard failure instead of pulling and retrying.",
+    fixIn:
+      "src/lib/google-contacts/people-client.server.ts — read googleReason in isEtagConflict like the other two predicates do.",
+  },
   "reclassify-skips-gmail-labels": {
     what: "reclassifyEmails writes emails.folder_id but never swaps the Gmail labels, so the DB and the mailbox drift apart. Its single-message sibling reanalyzeEmail does swap them.",
     fixIn: "src/lib/gmail/rules.functions.ts — route the bulk path through performMove.",
