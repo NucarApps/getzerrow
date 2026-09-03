@@ -29,10 +29,13 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 const ROUTES_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 /** Every route file under src/routes/api/public/, as posix-relative paths
- * (e.g. "hooks/send-digest.ts"), excluding test files like this one. */
+ * (e.g. "hooks/send-digest.ts"), excluding test files like this one and the
+ * shared test harnesses under __fixtures__/ (which are not routes). */
 const ALL_ROUTE_FILES = (readdirSync(ROUTES_DIR, { recursive: true }) as string[])
   .map((p) => p.split(path.sep).join("/"))
-  .filter((rel) => /\.tsx?$/.test(rel) && !/\.test\.tsx?$/.test(rel))
+  .filter(
+    (rel) => /\.tsx?$/.test(rel) && !/\.test\.tsx?$/.test(rel) && !rel.startsWith("__fixtures__/"),
+  )
   .sort();
 
 // Routes that are legitimately public or authenticate themselves by a

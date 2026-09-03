@@ -106,6 +106,11 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "getInboxReport never selects a sender display name, so parseSender's name branch is dead and topSenders can only ever show an address. There is no plaintext from_name column — only from_name_enc — so the fix is a decrypt pass over the window, not a wider select.",
     fixIn: "src/lib/reports.functions.ts — resolve display names via the decrypt reader.",
   },
+  "webhook-duplicate-logs-spurious-push-empty": {
+    what: "The Gmail push webhook's duplicate-delivery short-circuit returns from inside the try block, so the finally block still runs and writes a second pubsub_events row — a `push_empty` summary with a null payload, null subscription and null counts. `push_empty` means 'the envelope carried no message.data', so every Pub/Sub redelivery inflates that count in the Settings activity panel and in any push-health query built on it.",
+    fixIn:
+      "src/routes/api/public/gmail-webhook.ts — take the duplicate path out of the try/finally, or flag it so the summary write is skipped.",
+  },
   "inbox-day-heading-repeats-after-placeholder": {
     what: "dayGroupHeadings compares each row's day against the row immediately above it, and a placeholder row (rebuilt from the metadata cache) reports no day at all. A placeholder sitting between two rows of the same day therefore breaks the run and the day heading is drawn a second time mid-list.",
     fixIn:
