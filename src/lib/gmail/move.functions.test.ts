@@ -144,6 +144,7 @@ vi.mock("../sync/encrypted-reader", () => ({
 
 import {
   moveEmailToFolder,
+  findSimilarEmails,
   bulkMoveEmails,
   moveEmailToInbox,
   addInboxOverride,
@@ -280,6 +281,135 @@ describe("moveEmailToFolder", () => {
       from_addr: "Sender@Foo.COM",
       domain: "foo.com",
     });
+  });
+});
+
+describe("findSimilarEmails", () => {
+  const EMAIL_3 = "66666666-6666-4666-8666-666666666666";
+
+  function seedSenders() {
+    fake.seed("emails", [
+      {
+        id: EMAIL_1,
+        user_id: TEST_USER,
+        folder_id: FOLDER_OLD,
+        from_addr: "News@Acme.com",
+        received_at: "2026-03-01T00:00:00Z",
+      },
+      {
+        id: EMAIL_2,
+        user_id: TEST_USER,
+        folder_id: FOLDER_OLD,
+        from_addr: "News@Acme.com",
+        received_at: "2026-02-01T00:00:00Z",
+      },
+      {
+        id: EMAIL_3,
+        user_id: TEST_USER,
+        folder_id: FOLDER_OLD,
+        from_addr: "sales@acme.com",
+        received_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+  }
+
+  it("rejects an email owned by another user before running the search", async () => {
+    fake.seed("emails", [{ id: EMAIL_1, user_id: "someone-else", from_addr: "a@x.com" }]);
+
+    await expect(
+      findSimilarEmails({ data: { email_id: EMAIL_1, from_folder_id: null, mode: "sender" } }),
+    ).rejects.toThrow("Email not found");
+  });
+
+  it("matches the exact sender in the same folder, newest first, excluding the seed", async () => {
+    seedSenders();
+
+    const res = await findSimilarEmails({
+      data: { email_id: EMAIL_1, from_folder_id: FOLDER_OLD, mode: "sender" },
+    });
+
+    expect(res.domain).toBe("acme.com");
+    expect(res.matches).toStrictEqual([
+      {
+        id: EMAIL_2,
+        from_addr: "News@Acme.com",
+        received_at: "2026-02-01T00:00:00Z",
+        subject: null,
+        from_name: null,
+        snippet: null,
+      },
+    ]);
+    const read = fake.calls.selects.filter((s) => s.table === "emails")[1];
+    expect(read?.limit).toBe(50);
+    expect(read?.filters).toStrictEqual([
+      { op: "eq", col: "user_id", value: TEST_USER, extra: undefined },
+      { op: "neq", col: "id", value: EMAIL_1, extra: undefined },
+      { op: "eq", col: "folder_id", value: FOLDER_OLD, extra: undefined },
+      { op: "eq", col: "from_addr", value: "News@Acme.com", extra: undefined },
+    ]);
+  });
+
+  it("matches the whole domain in domain mode, escaping the pattern", async () => {
+    seedSenders();
+
+    const res = await findSimilarEmails({
+      data: { email_id: EMAIL_1, from_folder_id: FOLDER_OLD, mode: "domain" },
+    });
+
+    expect(res.matches.map((m) => m.id)).toStrictEqual([EMAIL_2, EMAIL_3]);
+    const read = fake.calls.selects.filter((s) => s.table === "emails")[1];
+    expect(read?.filters).toContainEqual({
+      op: "ilike",
+      col: "from_addr",
+      value: "%@acme.com%",
+      extra: undefined,
+    });
+  });
+
+  it("searches the unfiled inbox when the caller passes no folder", async () => {
+    fake.seed("emails", [
+      { id: EMAIL_1, user_id: TEST_USER, folder_id: null, from_addr: "news@acme.com" },
+      {
+        id: EMAIL_2,
+        user_id: TEST_USER,
+        folder_id: null,
+        from_addr: "news@acme.com",
+        received_at: "2026-02-01T00:00:00Z",
+      },
+      // Same sender, but already filed — must not come back.
+      { id: EMAIL_3, user_id: TEST_USER, folder_id: FOLDER_OLD, from_addr: "news@acme.com" },
+    ]);
+
+    const res = await findSimilarEmails({
+      data: { email_id: EMAIL_1, from_folder_id: null, mode: "sender" },
+    });
+
+    expect(res.matches.map((m) => m.id)).toStrictEqual([EMAIL_2]);
+    const read = fake.calls.selects.filter((s) => s.table === "emails")[1];
+    expect(read?.filters).toContainEqual({
+      op: "is",
+      col: "folder_id",
+      value: null,
+      extra: undefined,
+    });
+  });
+
+  it.each([
+    ["sender", "sender"],
+    ["domain", "domain"],
+  ] as const)("returns nothing for an email with no sender (%s mode)", async (_label, mode) => {
+    fake.seed("emails", [
+      { id: EMAIL_1, user_id: TEST_USER, folder_id: FOLDER_OLD, from_addr: null },
+    ]);
+
+    expect(
+      await findSimilarEmails({ data: { email_id: EMAIL_1, from_folder_id: FOLDER_OLD, mode } }),
+    ).toStrictEqual({ matches: [], domain: null });
+    // It bails before narrowing on the sender, so nothing is searched for.
+    const narrowing = fake.calls.selects
+      .flatMap((s) => s.filters)
+      .filter((f) => f.col === "from_addr");
+    expect(narrowing).toStrictEqual([]);
   });
 });
 

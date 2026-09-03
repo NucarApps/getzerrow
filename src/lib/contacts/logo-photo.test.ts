@@ -43,8 +43,10 @@ vi.mock("@/lib/companies/company-photo.server", () => ({
 
 import {
   fetchChosenCompanyLogoBytes,
+  fetchCompanyPhotoOrLogoBytes,
   recordCompanyLogoHash,
   getKnownCompanyLogoHashes,
+  getCompanyLogoVariantShas,
   findMatchingCompanyLogoSha,
   resolveEffectiveContactPhotoForSync,
 } from "./logo-photo.server";
@@ -130,6 +132,103 @@ describe("resolveCompanyLogoDomainForContact", () => {
     });
 
     expect(domain).toBe("nissanusa.com");
+  });
+});
+
+describe("fetchCompanyPhotoOrLogoBytes", () => {
+  beforeEach(() => {
+    fake.reset();
+    fetchLogoBytes.mockResolvedValue(null);
+    loadCompanyPhotoBytes.mockResolvedValue(png(COMPANY_BYTES));
+  });
+
+  it("serves the company's uploaded photo ahead of any brand logo", async () => {
+    fake.seed("companies", [
+      { id: "co-1", user_id: "user-a", logo_url: "https://storage.test/company-photos/c.png" },
+    ]);
+
+    expect(
+      await fetchCompanyPhotoOrLogoBytes("user-a", { companyId: "co-1", domain: "brand-i.com" }),
+    ).toStrictEqual(png(COMPANY_BYTES));
+    expect(fetchLogoBytes).not.toHaveBeenCalled();
+  });
+
+  it("ignores another user's company row and falls through to the domain walk", async () => {
+    fake.seed("companies", [
+      { id: "co-1", user_id: "user-b", logo_url: "https://storage.test/company-photos/c.png" },
+    ]);
+    serveLogos({ [providersFor("brand-j.com")[0]!]: LOGO_BYTES });
+
+    expect(
+      await fetchCompanyPhotoOrLogoBytes("user-a", { companyId: "co-1", domain: "brand-j.com" }),
+    ).toStrictEqual(png(LOGO_BYTES));
+    expect(loadCompanyPhotoBytes).not.toHaveBeenCalled();
+  });
+
+  it("falls through to the domain walk when the stored photo cannot be read", async () => {
+    fake.seed("companies", [
+      { id: "co-1", user_id: "user-a", logo_url: "https://storage.test/company-photos/gone.png" },
+    ]);
+    loadCompanyPhotoBytes.mockResolvedValue(null);
+    serveLogos({ [providersFor("brand-k.com")[0]!]: LOGO_BYTES });
+
+    expect(
+      await fetchCompanyPhotoOrLogoBytes("user-a", { companyId: "co-1", domain: "brand-k.com" }),
+    ).toStrictEqual(png(LOGO_BYTES));
+  });
+
+  it("goes straight to the domain walk with no company to consult", async () => {
+    serveLogos({ [providersFor("brand-l.com")[0]!]: LOGO_BYTES });
+
+    expect(
+      await fetchCompanyPhotoOrLogoBytes("user-a", { companyId: null, domain: "brand-l.com" }),
+    ).toStrictEqual(png(LOGO_BYTES));
+    expect(fake.calls.selects.some((s) => s.table === "companies")).toBe(false);
+  });
+});
+
+describe("getCompanyLogoVariantShas", () => {
+  const computeSha = (bytes: Uint8Array) => sha256Hex(bytes);
+
+  beforeEach(() => {
+    fake.reset();
+    fetchLogoBytes.mockResolvedValue(null);
+  });
+
+  it("unions the recorded ledger with every provider variant it can fetch", async () => {
+    fake.seed("company_logo_hashes", [
+      { user_id: "user-a", company_id: "co-1", sha256: "recorded-sha" },
+    ]);
+    fake.seed("company_domains", [
+      { user_id: "user-a", company_id: "co-1", domain: "brand-m.com", source: "manual" },
+    ]);
+    serveLogos({
+      [providersFor("brand-m.com")[0]!]: LOGO_BYTES,
+      [providersFor("brand-m.com")[3]!]: COMPANY_BYTES,
+    });
+
+    const shas = await getCompanyLogoVariantShas("user-a", "co-1", computeSha);
+
+    expect([...shas].sort()).toStrictEqual(
+      ["recorded-sha", await sha256Hex(LOGO_BYTES), await sha256Hex(COMPANY_BYTES)].sort(),
+    );
+  });
+
+  it("skips a blocked domain and stops at the 20-fetch budget", async () => {
+    fake.seed("company_domains", [
+      { user_id: "user-a", company_id: "co-1", domain: "acme.internal", source: "manual" },
+      ...Array.from({ length: 6 }, (_, i) => ({
+        user_id: "user-a",
+        company_id: "co-1",
+        domain: `variant-${i}.com`,
+        source: "auto",
+        member_count: 6 - i,
+      })),
+    ]);
+
+    expect([...(await getCompanyLogoVariantShas("user-a", "co-1", computeSha))]).toStrictEqual([]);
+    expect(fetchLogoBytes).toHaveBeenCalledTimes(20);
+    expect(fetchLogoBytes).not.toHaveBeenCalledWith(providersFor("acme.internal")[0]!);
   });
 });
 
