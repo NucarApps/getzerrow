@@ -11,6 +11,11 @@
 //     persists learned_profile, resetting emails_since_learn to 0.
 //   bumpEmailsSinceLearn — atomic RPC first, read-then-write fallback when
 //     the RPC is missing, and it NEVER throws (best-effort by contract).
+//   learnFromLinkedLabel — the one-time seed when a folder is linked to a
+//     Gmail label: guards, local rows seeded without a Gmail roundtrip,
+//     already-known examples skipped, remaining label members fetched and
+//     either claimed or ingested, one bad message never aborting the seed,
+//     and a profile regenerated at the end.
 //   loadOlderFromLabel — ownership/label guards, stored-pageToken vs
 //     date-anchored before: fallback, and stale-token clearing when a token
 //     page yields nothing new.
@@ -60,6 +65,7 @@ import {
   recordManualMove,
   regenerateFolderProfile,
   bumpEmailsSinceLearn,
+  learnFromLinkedLabel,
   loadOlderFromLabel,
 } from "./folder-learn";
 
@@ -300,6 +306,255 @@ describe("bumpEmailsSinceLearn", () => {
       { folder_id: FOLDER_ID },
       expect.any(Error),
     );
+  });
+});
+
+describe("learnFromLinkedLabel", () => {
+  function seedLinkedFolder(overrides: Record<string, unknown> = {}) {
+    fake.seed("folders", [
+      {
+        id: FOLDER_ID,
+        user_id: USER,
+        name: "Receipts",
+        gmail_label_id: "L-1",
+        gmail_account_id: ACC,
+        ai_rule: "receipts and invoices",
+        processing_enabled: true,
+        ...overrides,
+      },
+    ]);
+  }
+
+  /** A parsed Gmail message in the shape toEmailUpsert expects. */
+  function parsed(id: string, over: Record<string, unknown> = {}) {
+    return {
+      gmail_message_id: id,
+      thread_id: `t-${id}`,
+      from_addr: "shop@x.com",
+      from_name: "Shop",
+      to_addrs: "me@x.com",
+      subject: `Subject ${id}`,
+      snippet: `Snippet ${id}`,
+      received_at: "2026-02-01T00:00:00Z",
+      is_read: true,
+      has_attachment: false,
+      raw_labels: ["L-1"],
+      ...over,
+    };
+  }
+
+  it("refuses a missing folder, another user's folder, a paused folder and an unlinked one", async () => {
+    await expect(learnFromLinkedLabel("nope", USER)).rejects.toThrow("Folder not found");
+
+    fake.reset();
+    seedLinkedFolder({ user_id: "someone-else" });
+    await expect(learnFromLinkedLabel(FOLDER_ID, USER)).rejects.toThrow("Not authorized");
+
+    fake.reset();
+    seedLinkedFolder({ processing_enabled: false });
+    await expect(learnFromLinkedLabel(FOLDER_ID, USER)).rejects.toThrow(
+      "Folder is paused — resume filtering & rules to scan its Gmail label",
+    );
+
+    fake.reset();
+    seedLinkedFolder({ gmail_label_id: null });
+    await expect(learnFromLinkedLabel(FOLDER_ID, USER)).rejects.toThrow(
+      "Folder is not linked to a Gmail label",
+    );
+
+    expect(listMessages).not.toHaveBeenCalled();
+    expect(insertFolderExampleEncrypted).not.toHaveBeenCalled();
+  });
+
+  it("seeds local rows without a Gmail roundtrip and asks Gmail only for the label's own members", async () => {
+    seedLinkedFolder();
+    // gm-local is both in the folder locally AND still carries the label.
+    listMessages.mockResolvedValueOnce({ messages: [{ id: "gm-local" }, { id: "gm-remote" }] });
+    fake.seed("emails", [
+      {
+        id: "e-local",
+        gmail_message_id: "gm-local",
+        folder_id: FOLDER_ID,
+        from_addr: "local@x.com",
+        received_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    getMessageMetadata.mockResolvedValue({ raw: true });
+    parseMessage.mockReturnValue(parsed("gm-remote"));
+
+    const res = await learnFromLinkedLabel(FOLDER_ID, USER);
+
+    expect(listMessages).toHaveBeenCalledWith(ACC, { maxResults: 200, labelIds: ["L-1"] });
+    // The local row is seeded from the DB — headers only, no metadata fetch.
+    expect(insertFolderExampleEncrypted).toHaveBeenCalledWith({
+      folder_id: FOLDER_ID,
+      gmail_account_id: ACC,
+      user_id: USER,
+      gmail_message_id: "gm-local",
+      from_addr: "local@x.com",
+      subject: null,
+      snippet: null,
+      source: "seed",
+    });
+    expect(getMessageMetadata.mock.calls.map((c) => c[1])).toStrictEqual(["gm-remote"]);
+    expect(res).toMatchObject({ learned: 2, ingested: 1, claimed: 0, profile: "PROFILE" });
+  });
+
+  it("skips messages that already have an example, on both sources", async () => {
+    seedLinkedFolder();
+    listMessages.mockResolvedValueOnce({ messages: [{ id: "gm-known" }] });
+    fake.seed("emails", [
+      { id: "e-local", gmail_message_id: "gm-local", folder_id: FOLDER_ID, from_addr: "l@x.com" },
+    ]);
+    fake.seed("folder_examples", [
+      { folder_id: FOLDER_ID, gmail_message_id: "gm-known" },
+      { folder_id: FOLDER_ID, gmail_message_id: "gm-local" },
+    ]);
+
+    const res = await learnFromLinkedLabel(FOLDER_ID, USER);
+
+    expect(insertFolderExampleEncrypted).not.toHaveBeenCalled();
+    expect(getMessageMetadata).not.toHaveBeenCalled();
+    expect(res).toMatchObject({ learned: 0, ingested: 0, claimed: 0 });
+  });
+
+  it("claims a label member that already exists in another folder rather than re-ingesting it", async () => {
+    seedLinkedFolder();
+    listMessages.mockResolvedValueOnce({ messages: [{ id: "gm-elsewhere" }] });
+    fake.seed("emails", [
+      { id: "e-other", gmail_message_id: "gm-elsewhere", folder_id: "other-folder" },
+    ]);
+    getMessageMetadata.mockResolvedValue({ raw: true });
+    parseMessage.mockReturnValue(parsed("gm-elsewhere"));
+
+    const res = await learnFromLinkedLabel(FOLDER_ID, USER);
+
+    expect(updateEmailEncrypted).toHaveBeenCalledWith({
+      email_id: "e-other",
+      folder_id: FOLDER_ID,
+      classified_by: "gmail_label",
+      ai_confidence: 1,
+      classification_reason: 'Matched Gmail label "Receipts"',
+    });
+    expect(upsertEmailEncrypted).not.toHaveBeenCalled();
+    expect(res).toMatchObject({ learned: 1, ingested: 0, claimed: 1 });
+  });
+
+  it("leaves a label member that is already in this folder untouched", async () => {
+    seedLinkedFolder();
+    listMessages.mockResolvedValueOnce({ messages: [{ id: "gm-here" }] });
+    // Present in the folder but with no example row yet, so it is still
+    // fetched for its headers — it must not be re-claimed.
+    fake.seed("emails", [
+      { id: "e-here", gmail_message_id: "gm-here", folder_id: FOLDER_ID, from_addr: "h@x.com" },
+    ]);
+    getMessageMetadata.mockResolvedValue({ raw: true });
+    parseMessage.mockReturnValue(parsed("gm-here"));
+
+    const res = await learnFromLinkedLabel(FOLDER_ID, USER);
+
+    // Seeded from the local row; the Gmail copy is then skipped entirely.
+    expect(getMessageMetadata).not.toHaveBeenCalled();
+    expect(updateEmailEncrypted).not.toHaveBeenCalled();
+    expect(res).toMatchObject({ learned: 1, ingested: 0, claimed: 0 });
+  });
+
+  it("ingests a label member with no local row, headers only", async () => {
+    seedLinkedFolder();
+    listMessages.mockResolvedValueOnce({ messages: [{ id: "gm-new" }] });
+    getMessageMetadata.mockResolvedValue({ raw: true });
+    parseMessage.mockReturnValue(parsed("gm-new"));
+
+    const res = await learnFromLinkedLabel(FOLDER_ID, USER);
+
+    expect(upsertEmailEncrypted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        gmail_message_id: "gm-new",
+        user_id: USER,
+        gmail_account_id: ACC,
+        classified_by: "gmail_label",
+        body_text: null,
+        body_html: null,
+      }),
+    );
+    expect(updateEmailEncrypted).toHaveBeenCalledWith({
+      email_id: "new-1",
+      folder_id: FOLDER_ID,
+      ai_confidence: 1,
+      classification_reason: 'Matched Gmail label "Receipts"',
+    });
+    expect(res).toMatchObject({ learned: 1, ingested: 1, claimed: 0 });
+  });
+
+  it("logs a failed ingest and keeps the rest of the seed", async () => {
+    seedLinkedFolder();
+    listMessages.mockResolvedValueOnce({ messages: [{ id: "gm-a" }, { id: "gm-b" }] });
+    getMessageMetadata.mockResolvedValue({ raw: true });
+    parseMessage.mockImplementation((raw) => parsed((raw as { id: string }).id));
+    getMessageMetadata.mockImplementation(async (_acc: string, id: string) => ({ id }));
+    upsertEmailEncrypted.mockImplementation(async (input: { gmail_message_id: string }) =>
+      input.gmail_message_id === "gm-a"
+        ? { id: null, error: "duplicate key" }
+        : { id: "new-b", error: null },
+    );
+
+    const res = await learnFromLinkedLabel(FOLDER_ID, USER);
+
+    expect(logError).toHaveBeenCalledWith(
+      "folder_learn.ingest_failed",
+      { folder_id: FOLDER_ID, account_id: ACC, gmail_message_id: "gm-a" },
+      { message: "duplicate key" },
+    );
+    expect(res).toMatchObject({ learned: 2, ingested: 1 });
+  });
+
+  it("logs a message whose metadata fetch throws and keeps going", async () => {
+    seedLinkedFolder();
+    listMessages.mockResolvedValueOnce({ messages: [{ id: "gm-gone" }, { id: "gm-ok" }] });
+    getMessageMetadata.mockImplementation(async (_acc: string, id: string) => {
+      if (id === "gm-gone") throw new Error("404 Not Found");
+      return { id };
+    });
+    parseMessage.mockImplementation((raw) => parsed((raw as { id: string }).id));
+
+    const res = await learnFromLinkedLabel(FOLDER_ID, USER);
+
+    expect(logError).toHaveBeenCalledWith(
+      "folder_learn.seed_example_failed",
+      { folder_id: FOLDER_ID, account_id: ACC, gmail_message_id: "gm-gone" },
+      expect.any(Error),
+    );
+    expect(res).toMatchObject({ learned: 1, ingested: 1 });
+  });
+
+  it("does not count an example the writer refused", async () => {
+    seedLinkedFolder();
+    listMessages.mockResolvedValueOnce({ messages: [] });
+    fake.seed("emails", [
+      { id: "e-local", gmail_message_id: "gm-local", folder_id: FOLDER_ID, from_addr: "l@x.com" },
+    ]);
+    insertFolderExampleEncrypted.mockResolvedValue({ id: null, error: "unique violation" });
+
+    expect(await learnFromLinkedLabel(FOLDER_ID, USER)).toMatchObject({ learned: 0 });
+  });
+
+  it("regenerates the folder profile once the seed is done", async () => {
+    seedLinkedFolder();
+    fake.seed("folder_examples", [
+      { folder_id: FOLDER_ID, from_addr: "a@x.com", created_at: "2026-01-02T00:00:00Z" },
+    ]);
+
+    const res = await learnFromLinkedLabel(FOLDER_ID, USER);
+
+    expect(buildFolderProfile).toHaveBeenCalledWith("Receipts", "receipts and invoices", [
+      { from_addr: "a@x.com", subject: null, snippet: null },
+    ]);
+    expect(res.profile).toBe("PROFILE");
+    const folderUpdates = fake.calls.updates.filter((u) => u.table === "folders");
+    expect(folderUpdates[0]?.payload).toMatchObject({
+      learned_profile: "PROFILE",
+      emails_since_learn: 0,
+    });
   });
 });
 
