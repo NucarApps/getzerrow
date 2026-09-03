@@ -106,6 +106,11 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "getInboxReport never selects a sender display name, so parseSender's name branch is dead and topSenders can only ever show an address. There is no plaintext from_name column — only from_name_enc — so the fix is a decrypt pass over the window, not a wider select.",
     fixIn: "src/lib/reports.functions.ts — resolve display names via the decrypt reader.",
   },
+  "card-analytics-daily-adds-out-of-window-day": {
+    what: "getMyCardAnalytics prefills one bucket per calendar day but filters the query at a timestamp exactly days*24h ago, so an event from earlier in the day at the far end of the window passes the filter, finds no prefilled bucket and creates one. `daily` then carries rangeDays + 1 entries, and the extra leading day is a partial count the chart draws as if it were a whole one.",
+    fixIn:
+      "src/lib/card-analytics.functions.ts — cut `since` to the start of the oldest prefilled day, or drop events with no prefilled bucket.",
+  },
   "card-lead-public-writes-unthrottled": {
     what: "submitCardLead and logCardEvent are unauthenticated server fns with no rate limit, captcha or per-handle quota. Knowing a public handle is enough to insert contacts and card_events rows for that handle's owner indefinitely; knowing one of the owner's contact addresses as well is enough to append 1000 characters into that contact's encrypted notes on every call, growing the row without bound and burying the owner's real notes.",
     fixIn:
