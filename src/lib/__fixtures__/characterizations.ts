@@ -27,6 +27,26 @@ export type Characterization = {
 };
 
 export const CHARACTERIZATIONS: Record<string, Characterization> = {
+  "reanalyze-overrides-gmail-label-filing": {
+    what: "reanalyzeEmail re-derives the folder with skipGmailLabelMatch:true, so the Gmail label mirror never runs. Mail the user filed by applying a label in Gmail — which the live pipeline files by label on every pass — is silently refiled by whatever rule wins instead, and its Gmail labels are swapped to match.",
+    fixIn:
+      "src/lib/gmail/move.functions.ts — route reanalyze through persistDecision, or run the label mirror during a re-derive.",
+  },
+  "calendar-window-hides-colour-skipped-events": {
+    what: 'listCalendarEventsWindow drops colour-skipped events in the same filter that removes all-day and hidden-type entries, before annotateEvent runs. annotateEvent\'s `colorSkipped` is therefore always false, the ladder\'s `skipReason = "color"` branch is dead, and the UI\'s "Event color turned off" copy can never be shown. A user who switches a colour off sees those meetings vanish from the calendar list with no explanation.',
+    fixIn:
+      "src/lib/meetings-autojoin.server.ts — keep colour-skipped events in the window listing and let the skip ladder label them (the upcoming-list filter can stay).",
+  },
+  "etag-conflict-ignores-google-reason": {
+    what: "PeopleApiError.isEtagConflict matches only against `message`, while its siblings isExpiredSyncToken and isMissingScope match against message + googleReason. `call()` builds the message from the response body truncated to 400 characters, so a long People API error pushes Google's FAILED_PRECONDITION out of the message even though parseReason still captured it — the push loop then treats a stale-etag rejection as a hard failure instead of pulling and retrying.",
+    fixIn:
+      "src/lib/google-contacts/people-client.server.ts — read googleReason in isEtagConflict like the other two predicates do.",
+  },
+  "role-address-filter-matches-substrings": {
+    what: "isLikelyHuman rejects an address when its local part CONTAINS any banned word (`local.includes(b)`) rather than when it IS one, so real people whose local part happens to contain 'help', 'info', 'hello' or 'support' — othello@, s.helpman@, reinfo@ — are silently never turned into contacts. There is no signal anywhere that the sender was dropped.",
+    fixIn:
+      "src/lib/contacts-helpers.server.ts — compare the local part (or its dot/dash-separated tokens) for equality instead of substring containment.",
+  },
   "reclassify-skips-gmail-labels": {
     what: "reclassifyEmails writes emails.folder_id but never swaps the Gmail labels, so the DB and the mailbox drift apart. Its single-message sibling reanalyzeEmail does swap them.",
     fixIn: "src/lib/gmail/rules.functions.ts — route the bulk path through performMove.",

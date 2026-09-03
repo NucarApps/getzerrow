@@ -15,10 +15,8 @@
 //   - a message deleted in Gmail (404 → getMessageLabels null / getMessage
 //     throw) deletes the local row (resync/reconcile) or is skipped (ingest).
 //
-// The reanalyzeEmail characterization at the bottom covers the audit §2
-// finding for this same path 6 (the function itself now lives in
-// move.functions.ts): reanalyze re-derives with skipGmailLabelMatch, so a
-// message previously filed BY GMAIL LABEL can silently change folder.
+// reanalyzeEmail belongs to this same audit path but lives in
+// move.functions.ts, and so do its tests (move.functions.test.ts).
 //
 // Harness: __fixtures__/server-fn-stub makes each createServerFn export a
 // plain callable with context.userId = TEST_USER (overridable per call for
@@ -119,7 +117,7 @@ vi.mock("../sync.server", () => ({
   loadAccountContext: (accountId: string, userId: string) => loadAccountContext(accountId, userId),
 }));
 
-// move.functions.ts (reanalyzeEmail) pulls these in too.
+// Siblings pulled in through gmail-helpers.server / the sync barrel.
 vi.mock("../move-email.server", () => ({
   performMove: vi.fn(async () => ({ ok: true })),
 }));
@@ -166,7 +164,6 @@ import {
   resyncMessage,
   reconcileInboxFromGmail,
 } from "./reprocess.functions";
-import { reanalyzeEmail } from "./move.functions";
 
 const ACC = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const EMAIL_1 = "11111111-1111-4111-8111-111111111111";
@@ -683,91 +680,5 @@ describe("reconcileInboxFromGmail", () => {
     expect(updates[0]!.filters).toEqual([{ op: "eq", col: "id", value: EMAIL_1 }]);
     // g6 has no local row → normal ingestion pipeline, owner-scoped.
     expect(enqueueMessageJob).toHaveBeenCalledWith(ACC, TEST_USER, "g6");
-  });
-});
-
-describe("reanalyzeEmail (audit path 6 — clear-then-refile precedence)", () => {
-  // CHARACTERIZATION, docs/rules-engine-audit.md §2: "Reprocess re-derives
-  // from rules with skipGmailLabelMatch, so a message filed by a Gmail label
-  // can silently change folder on reprocess." Pinned as-is: the fix belongs
-  // to Phase B (route through persistDecision), not to this test.
-  it("passes skipGmailLabelMatch, so a message previously filed BY GMAIL LABEL is refiled by rules", async () => {
-    getEmailsDecrypted.mockResolvedValueOnce({
-      rows: [
-        {
-          id: EMAIL_1,
-          user_id: TEST_USER,
-          gmail_account_id: ACC,
-          gmail_message_id: "gm-1",
-          from_addr: "news@acme.com",
-          from_name: "News",
-          to_addrs: "me@x.com",
-          subject: "s",
-          snippet: "",
-          body_text: "b",
-          body_html: "",
-          has_attachment: false,
-          received_at: "2026-01-01T00:00:00Z",
-          // Filed under folder A because the user labeled it in Gmail.
-          raw_labels: ["L-A"],
-          folder_id: FOLDER_A,
-        },
-      ],
-      error: null,
-    });
-    loadAccountContext.mockResolvedValueOnce({ folders: [], filters: [] });
-    // With the label match skipped, the rules ladder picks folder B instead.
-    classifyParsedEmail.mockResolvedValueOnce({
-      folder_id: FOLDER_B,
-      classified_by: "domain_rule",
-      classification_reason: "Domain rule: acme.com",
-      ai_confidence: 1,
-      ai_summary: "sum",
-      matched_filter_ids: ["ff-1"],
-    });
-    fake.seed("folders", [
-      folderRow(FOLDER_A, { gmail_label_id: "L-A", name: "Labeled" }),
-      folderRow(FOLDER_B, { gmail_label_id: "L-B", name: "Rules" }),
-    ]);
-
-    const res = await reanalyzeEmail({ data: { email_id: EMAIL_1 } });
-
-    expect(classifyParsedEmail).toHaveBeenCalledWith(
-      expect.objectContaining({ raw_labels: ["L-A"] }),
-      TEST_USER,
-      ACC,
-      expect.objectContaining({ skipGmailLabelMatch: true }),
-    );
-    // The row is refiled away from the folder the Gmail label had chosen...
-    const updates = fake.calls.updates.filter((u) => u.table === "emails");
-    expect(updates).toHaveLength(1);
-    expect(updates[0]!.payload).toMatchObject({
-      folder_id: FOLDER_B,
-      classified_by: "domain_rule",
-    });
-    expect(updates[0]!.filters).toEqual([{ op: "eq", col: "id", value: EMAIL_1 }]);
-    // ...and Gmail's labels are swapped to match the new answer.
-    expect(modifyMessage).toHaveBeenCalledWith(ACC, "gm-1", ["L-B"], ["L-A"]);
-    expect(res).toMatchObject({ ok: true, folder_id: FOLDER_B, changed: true });
-  });
-
-  it("denies an impersonated caller before classifying or writing", async () => {
-    getEmailsDecrypted.mockResolvedValueOnce({
-      rows: [
-        {
-          id: EMAIL_1,
-          user_id: TEST_USER,
-          gmail_account_id: ACC,
-          gmail_message_id: "gm-1",
-        },
-      ],
-      error: null,
-    });
-    await expectDeniedCrossUser({
-      fake,
-      call: () => impersonate(reanalyzeEmail, "intruder")({ data: { email_id: EMAIL_1 } }),
-      rejects: "Email not found",
-    });
-    expect(classifyParsedEmail).not.toHaveBeenCalled();
   });
 });
