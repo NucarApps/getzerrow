@@ -106,6 +106,11 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     what: "getInboxReport never selects a sender display name, so parseSender's name branch is dead and topSenders can only ever show an address. There is no plaintext from_name column — only from_name_enc — so the fix is a decrypt pass over the window, not a wider select.",
     fixIn: "src/lib/reports.functions.ts — resolve display names via the decrypt reader.",
   },
+  "card-lead-public-writes-unthrottled": {
+    what: "submitCardLead and logCardEvent are unauthenticated server fns with no rate limit, captcha or per-handle quota. Knowing a public handle is enough to insert contacts and card_events rows for that handle's owner indefinitely; knowing one of the owner's contact addresses as well is enough to append 1000 characters into that contact's encrypted notes on every call, growing the row without bound and burying the owner's real notes.",
+    fixIn:
+      "src/lib/cards.functions.ts and src/lib/card-analytics.functions.ts — throttle per handle and per source address (a product decision: quota, captcha, or an owner-facing approval queue).",
+  },
   "vcard-esc-leaves-carriage-return": {
     what: "cards.server's esc() folds \\ , ; and \\n but not \\r, while buildVCard joins its lines with CRLF. A card field containing a carriage return (nothing in the my_cards validators forbids one) is emitted raw into the vCard, so the file a recipient imports carries a stray CR mid-value. Its sibling escaper in carddav/vcard.ts folds the whole CRLF pair (/\\r?\\n/), which is what this one should do.",
     fixIn: "src/lib/cards.server.ts — drop or escape \\r in esc() alongside \\n.",

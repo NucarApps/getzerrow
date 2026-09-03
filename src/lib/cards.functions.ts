@@ -206,12 +206,9 @@ export const submitCardLead = createServerFn({ method: "POST" })
       .maybeSingle();
 
     if (existing) {
-      const { data: decRows } = await supabaseAdmin.rpc("get_contacts_list_fields_decrypted", {
-        p_ids: [existing.id],
-        p_key: emailEncKey(),
-      });
-      const existingNotes = decRows?.[0] as { relationship_summary?: string | null } | undefined;
-      // get_contacts_list_fields_decrypted doesn't expose notes; fetch full decrypted row instead.
+      // Notes live only in an encrypted column, so they come back through the
+      // SECURITY DEFINER decrypt RPC rather than a plaintext SELECT. One
+      // round trip: the list-fields RPC does not expose notes at all.
       const { data: fullRows } = await supabaseAdmin.rpc("get_contact_decrypted", {
         p_contact_id: existing.id,
         p_key: emailEncKey(),
@@ -230,7 +227,6 @@ export const submitCardLead = createServerFn({ method: "POST" })
       ].filter(Boolean);
       const leadBlock = `${note}${detailLines.length ? `\n${detailLines.join("\n")}` : ""}`;
       const merged = prevNotes ? `${prevNotes}\n\n${leadBlock}` : leadBlock;
-      void existingNotes;
       await setContactEncryptedFields({
         contact_id: existing.id,
         notes: merged,
