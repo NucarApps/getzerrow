@@ -32,6 +32,11 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     fixIn:
       "src/lib/gmail/move.functions.ts — route reanalyze through persistDecision, or run the label mirror during a re-derive.",
   },
+  "calendar-window-hides-colour-skipped-events": {
+    what: 'listCalendarEventsWindow drops colour-skipped events in the same filter that removes all-day and hidden-type entries, before annotateEvent runs. annotateEvent\'s `colorSkipped` is therefore always false, the ladder\'s `skipReason = "color"` branch is dead, and the UI\'s "Event color turned off" copy can never be shown. A user who switches a colour off sees those meetings vanish from the calendar list with no explanation.',
+    fixIn:
+      "src/lib/meetings-autojoin.server.ts — keep colour-skipped events in the window listing and let the skip ladder label them (the upcoming-list filter can stay).",
+  },
   "reclassify-skips-gmail-labels": {
     what: "reclassifyEmails writes emails.folder_id but never swaps the Gmail labels, so the DB and the mailbox drift apart. Its single-message sibling reanalyzeEmail does swap them.",
     fixIn: "src/lib/gmail/rules.functions.ts — route the bulk path through performMove.",
