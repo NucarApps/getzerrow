@@ -27,6 +27,11 @@ export type Characterization = {
 };
 
 export const CHARACTERIZATIONS: Record<string, Characterization> = {
+  "reanalyze-overrides-gmail-label-filing": {
+    what: "reanalyzeEmail re-derives the folder with skipGmailLabelMatch:true, so the Gmail label mirror never runs. Mail the user filed by applying a label in Gmail — which the live pipeline files by label on every pass — is silently refiled by whatever rule wins instead, and its Gmail labels are swapped to match.",
+    fixIn:
+      "src/lib/gmail/move.functions.ts — route reanalyze through persistDecision, or run the label mirror during a re-derive.",
+  },
   "reclassify-skips-gmail-labels": {
     what: "reclassifyEmails writes emails.folder_id but never swaps the Gmail labels, so the DB and the mailbox drift apart. Its single-message sibling reanalyzeEmail does swap them.",
     fixIn: "src/lib/gmail/rules.functions.ts — route the bulk path through performMove.",
