@@ -80,10 +80,10 @@ export default defineConfig({
           lines: 82,
         },
         "src/routes/api/**": {
-          statements: 19,
-          branches: 11,
-          functions: 42,
-          lines: 17,
+          statements: 33,
+          branches: 25,
+          functions: 54,
+          lines: 31,
         },
         "src/{components,hooks}/**": {
           statements: 13,

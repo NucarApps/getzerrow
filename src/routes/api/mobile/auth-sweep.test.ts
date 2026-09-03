@@ -29,9 +29,15 @@ vi.mock("@supabase/supabase-js", () => ({ createClient }));
 
 const ROUTES_DIR = path.dirname(fileURLToPath(import.meta.url));
 
+// Every file here must be a route: the sweep demands a `Route` export, so
+// anything else living in this directory fails it. Test files and shared
+// fixtures are the two exceptions — a helper belongs in `__fixtures__/`,
+// which is skipped rather than reported as a route missing its guard.
 const ALL_ROUTE_FILES = (readdirSync(ROUTES_DIR, { recursive: true }) as string[])
   .map((p) => p.split(path.sep).join("/"))
-  .filter((rel) => /\.tsx?$/.test(rel) && !/\.test\.tsx?$/.test(rel))
+  .filter(
+    (rel) => /\.tsx?$/.test(rel) && !/\.test\.tsx?$/.test(rel) && !rel.startsWith("__fixtures__/"),
+  )
   .sort();
 
 /** Mobile routes that are intentionally reachable without a user token.
