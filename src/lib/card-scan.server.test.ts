@@ -1,7 +1,14 @@
-// Tests for saveScannedContact (src/lib/card-scan.server.ts) — the mobile
-// business-card save path. Mirrors the web scanner's save semantics: upsert on
-// (user_id, email) so a re-scan updates rather than duplicating, sensitive
-// fields go through the encrypted RPC, and phones are replaced in full.
+// Tests for src/lib/card-scan.server.ts — the business-card scanner shared by
+// the mobile API and the web's /contacts/scan server fns.
+//
+// extractCardDraft: the structured -> lenient-JSON -> smaller/larger model
+// cascade. Each rung is exercised in order, and the give-up case asserts that
+// a total failure surfaces as one readable Error naming the last cause rather
+// than a provider exception escaping to the caller.
+//
+// saveScannedContact: the save semantics — upsert on (user_id, email) so a
+// re-scan updates rather than duplicating, sensitive fields written only
+// through the encrypted RPC, and phones replaced in full.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { makeSupabaseFake, mockSupabaseAdmin } from "@/lib/__fixtures__/supabase-fake";
@@ -17,11 +24,183 @@ vi.mock("./sync/encrypted-writer", () => ({
   setContactEncryptedFields: (...args: unknown[]) => setContactEncryptedFields(...args),
 }));
 
-import { saveScannedContact } from "./card-scan.server";
+/** One `generateText` call the cascade made. */
+type Attempt = { model: string; structured: boolean };
+/** What the next call should do: hand back a structured object, hand back
+ * text, or fail the way a provider SDK does. */
+type PlanEntry = { output: CardScanDraft } | { text: string } | { error: string };
+
+type GenerateArgs = {
+  model: { modelId: string };
+  output?: unknown;
+  messages: Array<{ role: string; content: Array<Record<string, unknown>> }>;
+};
+
+const ai = vi.hoisted(() => ({
+  generateText: vi.fn<(args: unknown) => Promise<{ output?: unknown; text?: string }>>(),
+}));
+vi.mock("ai", () => ({
+  generateText: ai.generateText,
+  Output: { object: (opts: unknown) => opts },
+}));
+
+vi.mock("./ai-gateway", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./ai-gateway")>()),
+  // The real getModel builds a gateway client from env; the cascade only
+  // cares which model id each rung asked for.
+  getModel: (modelId: string) => ({ modelId }),
+}));
+
+import { extractCardDraft, saveScannedContact, type CardScanDraft } from "./card-scan.server";
+
+const attempts: Attempt[] = [];
+let plan: PlanEntry[] = [];
+
+const IMAGE = "data:image/jpeg;base64,AAAA";
+
+const DRAFT: CardScanDraft = {
+  name: "Jane Doe",
+  title: "CTO",
+  company: "Acme",
+  email: "jane@acme.test",
+  phone: "+1 555 0100",
+  website: "https://acme.test",
+  linkedin: null,
+  twitter: null,
+};
+const DRAFT_JSON = JSON.stringify(DRAFT);
+
+function rungs() {
+  return attempts.map((a) => `${a.structured ? "structured" : "text"}:${a.model}`);
+}
 
 beforeEach(() => {
   fake.reset();
   setContactEncryptedFields.mockClear();
+  attempts.length = 0;
+  plan = [];
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  ai.generateText.mockImplementation(async (raw) => {
+    const args = raw as GenerateArgs;
+    attempts.push({ model: args.model.modelId, structured: args.output !== undefined });
+    const entry = plan.shift();
+    if (!entry) throw new Error("no planned outcome for this attempt");
+    if ("error" in entry) throw Object.assign(new Error(entry.error), { name: "AI_APICallError" });
+    if ("output" in entry) return { output: entry.output };
+    return { text: entry.text };
+  });
+});
+
+describe("extractCardDraft", () => {
+  it("returns the structured output of the first model when it succeeds", async () => {
+    plan = [{ output: DRAFT }];
+    await expect(extractCardDraft(IMAGE)).resolves.toStrictEqual(DRAFT);
+    expect(rungs()).toStrictEqual(["structured:google/gemini-2.5-flash"]);
+  });
+
+  it("sends the instruction and the image as one user message", async () => {
+    plan = [{ output: DRAFT }];
+    await extractCardDraft(IMAGE);
+    const args = ai.generateText.mock.calls[0]?.[0] as GenerateArgs;
+    expect(args.messages).toHaveLength(1);
+    expect(args.messages[0]?.role).toBe("user");
+    expect(args.messages[0]?.content[1]).toStrictEqual({ type: "image", image: IMAGE });
+    expect(String(args.messages[0]?.content[0]?.text)).toContain("business card photo");
+  });
+
+  it("falls back to plain-JSON text on the same model when structured output fails", async () => {
+    plan = [{ error: "no tool support" }, { text: DRAFT_JSON }];
+    await expect(extractCardDraft(IMAGE)).resolves.toStrictEqual(DRAFT);
+    expect(rungs()).toStrictEqual([
+      "structured:google/gemini-2.5-flash",
+      "text:google/gemini-2.5-flash",
+    ]);
+  });
+
+  it("parses a fenced, chatty JSON response leniently", async () => {
+    plan = [{ error: "no tool support" }, { text: `Sure!\n\`\`\`json\n${DRAFT_JSON}\n\`\`\`\n` }];
+    await expect(extractCardDraft(IMAGE)).resolves.toStrictEqual(DRAFT);
+  });
+
+  it("drops to the lite model when both attempts on the first model fail", async () => {
+    plan = [{ error: "429" }, { text: "not json at all" }, { output: DRAFT }];
+    await expect(extractCardDraft(IMAGE)).resolves.toStrictEqual(DRAFT);
+    expect(rungs()).toStrictEqual([
+      "structured:google/gemini-2.5-flash",
+      "text:google/gemini-2.5-flash",
+      "structured:google/gemini-2.5-flash-lite",
+    ]);
+  });
+
+  it("treats JSON that does not satisfy the schema as a failed attempt", async () => {
+    // Valid JSON, wrong shape: `name` is nullable but not optional.
+    plan = [
+      { error: "429" },
+      { text: '{"company":"Acme"}' },
+      { error: "429" },
+      { text: DRAFT_JSON },
+    ];
+    await expect(extractCardDraft(IMAGE)).resolves.toStrictEqual(DRAFT);
+    expect(rungs()).toStrictEqual([
+      "structured:google/gemini-2.5-flash",
+      "text:google/gemini-2.5-flash",
+      "structured:google/gemini-2.5-flash-lite",
+      "text:google/gemini-2.5-flash-lite",
+    ]);
+  });
+
+  it("tries the pro model last, and only as plain JSON", async () => {
+    plan = [
+      { error: "429" },
+      { error: "429" },
+      { error: "429" },
+      { error: "429" },
+      { text: DRAFT_JSON },
+    ];
+    await expect(extractCardDraft(IMAGE)).resolves.toStrictEqual(DRAFT);
+    expect(rungs()).toStrictEqual([
+      "structured:google/gemini-2.5-flash",
+      "text:google/gemini-2.5-flash",
+      "structured:google/gemini-2.5-flash-lite",
+      "text:google/gemini-2.5-flash-lite",
+      "text:google/gemini-2.5-pro",
+    ]);
+  });
+
+  it("gives up after five attempts with one Error naming the last cause", async () => {
+    plan = [
+      { error: "flash structured died" },
+      { error: "flash text died" },
+      { error: "lite structured died" },
+      { error: "lite text died" },
+      { error: "pro text died" },
+    ];
+    // No provider exception escapes: the caller sees one readable failure.
+    await expect(extractCardDraft(IMAGE)).rejects.toThrow(
+      /^Couldn't read the card: AI vision returned no parseable response \(last error: .*pro text died.*\)$/,
+    );
+    expect(attempts).toHaveLength(5);
+  });
+
+  it("reports an unparseable last response rather than an exception", async () => {
+    plan = [
+      { error: "429" },
+      { error: "429" },
+      { error: "429" },
+      { error: "429" },
+      { text: "I could not read that card." },
+    ];
+    await expect(extractCardDraft(IMAGE)).rejects.toThrow(/empty\/non-JSON response \(len=27\)/);
+  });
+
+  it("labels its log lines with the caller-supplied label", async () => {
+    plan = [{ error: "boom" }, { text: DRAFT_JSON }];
+    await extractCardDraft(IMAGE, "web card scan");
+    expect(console.error).toHaveBeenCalledWith(
+      "web card scan structured failed (google/gemini-2.5-flash)",
+      expect.stringContaining("boom"),
+    );
+  });
 });
 
 describe("saveScannedContact", () => {
