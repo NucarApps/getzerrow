@@ -42,6 +42,11 @@ export const CHARACTERIZATIONS: Record<string, Characterization> = {
     fixIn:
       "src/lib/google-contacts/people-client.server.ts — read googleReason in isEtagConflict like the other two predicates do.",
   },
+  "role-address-filter-matches-substrings": {
+    what: "isLikelyHuman rejects an address when its local part CONTAINS any banned word (`local.includes(b)`) rather than when it IS one, so real people whose local part happens to contain 'help', 'info', 'hello' or 'support' — othello@, s.helpman@, reinfo@ — are silently never turned into contacts. There is no signal anywhere that the sender was dropped.",
+    fixIn:
+      "src/lib/contacts-helpers.server.ts — compare the local part (or its dot/dash-separated tokens) for equality instead of substring containment.",
+  },
   "reclassify-skips-gmail-labels": {
     what: "reclassifyEmails writes emails.folder_id but never swaps the Gmail labels, so the DB and the mailbox drift apart. Its single-message sibling reanalyzeEmail does swap them.",
     fixIn: "src/lib/gmail/rules.functions.ts — route the bulk path through performMove.",
