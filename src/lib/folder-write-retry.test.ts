@@ -51,8 +51,13 @@ describe("backoffDelayMs", () => {
 });
 
 describe("resolveRetryConfig", () => {
-  it("falls back to defaults when env vars are unset", () => {
-    expect(resolveRetryConfig({})).toEqual(DEFAULT_RETRY_CONFIG);
+  it("falls back to three attempts and a 100 ms base when env vars are unset", () => {
+    // Spelled out rather than compared against DEFAULT_RETRY_CONFIG:
+    // importing the implementation's own constant makes the assertion
+    // move with it, so a default silently changed to 1 attempt would
+    // still pass.
+    expect(resolveRetryConfig({})).toEqual({ maxAttempts: 3, baseMs: 100 });
+    expect(DEFAULT_RETRY_CONFIG).toEqual({ maxAttempts: 3, baseMs: 100 });
   });
 
   it("reads max attempts and backoff base from the environment", () => {
@@ -82,7 +87,10 @@ describe("resolveRetryConfig", () => {
 
   it("ignores invalid (non-integer / empty) values and uses defaults", () => {
     for (const bad of ["", "  ", "abc", "1.5", "NaN"]) {
-      expect(resolveRetryConfig({ FOLDER_WRITE_MAX_ATTEMPTS: bad })).toEqual(DEFAULT_RETRY_CONFIG);
+      expect(resolveRetryConfig({ FOLDER_WRITE_MAX_ATTEMPTS: bad }), bad).toEqual({
+        maxAttempts: 3,
+        baseMs: 100,
+      });
     }
   });
 });

@@ -167,6 +167,22 @@ DB level: 1 of ~18 `SECURITY DEFINER` functions is tested (`discover_company_dom
 
 ## 5. Test-quality findings (theater, tautology, duplication)
 
+> **Cleared 2026-09-04.** `isAuthorizedCron` (dead code with 13 tests while
+> the live `isAuthorizedCronRequest` had none) deleted, its DB fallback now
+> covered; `company-domains:83` self-comparison, `constant-time:32`
+> `+ "x".slice(0,0)` (its comment claimed "different bytes — must not equal"
+> while asserting `true`; now a real NFC/NFD pair), `folder-write-retry`
+> comparing against the implementation's own `DEFAULT_RETRY_CONFIG`, and
+> `realtime-belongs:129` naming a legacy branch it short-circuited past —
+> all rewritten to assert something that can fail, each verified by
+> mutating the implementation. `meetings-in-person-transcript`'s 4×3 fixture
+> matrix collapsed to 3 (the pipeline posts the bytes without inspecting
+> them, so the container shape could not affect any assertion) and the three
+> unreferenced `.m4a` fixtures deleted. `filter-engine`, `rule-query`,
+> `categorize-senders` and `company-logo-cleanup` were dealt with earlier.
+> **Still open** in this section: the weak-assertion list below, `sync-backoff`,
+> and `reanalyzeEmail`'s 5 uncovered branches.
+
 **Tests that cannot fail.**
 
 - `meetings-in-person-transcript.test.ts:145-251`: 13 of 22 tests loop 4 `.m4a` fixtures × 3 patterns, but `fetch` is stubbed to return `state.transcriptResponse` regardless of body — only the sanitizer (already snapshot-tested) is exercised. ~1.3 MB of binary fixtures affect no assertion. `tasks/extract.server` and `supabaseAdmin.auth` are unmocked; `maybeExtractMeetingTasks` throws and is swallowed.

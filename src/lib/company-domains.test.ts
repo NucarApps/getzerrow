@@ -69,20 +69,20 @@ describe("emailDomain", () => {
   // The regression that motivated all of this: the value an override is WRITTEN
   // with must equal the value the classifier later COMPUTES for the same
   // sender. One helper for both sides is what guarantees it.
-  it("is stable between writer and reader for every malformed shape", () => {
-    const senders = [
-      "jane@acme.com",
-      "Jane Doe <jane@acme.com>",
-      'Jane "JD" Doe <jane@acme.com>',
-      "Jane <jane@acme.com> (Sales)",
-      "Jane Doe <a@acme.com>, Bob <b@other.com>",
-      "jane@acme.com>",
-    ];
-    for (const s of senders) {
-      // writer side (gmail/move.functions) and reader side (sync/classify)
-      expect(emailDomain(s)).toBe(emailDomain(s));
-      expect(emailDomain(s)).toBe("acme.com");
-    }
+  it.each([
+    "jane@acme.com",
+    "Jane Doe <jane@acme.com>",
+    'Jane "JD" Doe <jane@acme.com>',
+    "Jane <jane@acme.com> (Sales)",
+    "Jane Doe <a@acme.com>, Bob <b@other.com>",
+    "jane@acme.com>",
+  ])("reads acme.com out of %j", (sender) => {
+    // Both sides of a domain rule call this one function — the writer
+    // (gmail/move.functions) when the rule is saved and the reader
+    // (sync/classify) on every incoming message — so a From header these
+    // disagreed on would create a rule that can never match the mail it
+    // was built from.
+    expect(emailDomain(sender)).toBe("acme.com");
   });
 });
 

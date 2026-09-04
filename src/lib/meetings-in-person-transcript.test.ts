@@ -69,6 +69,16 @@ describe("collapseRunawayRepeats", () => {
   });
 });
 
+/** The recording fixture, as the bytes the upload path receives. */
+function sampleBytes(): Uint8Array<ArrayBuffer> {
+  const raw = readFileSync(
+    fileURLToPath(new URL("./__fixtures__/ios-recording-sample.m4a", import.meta.url)),
+  );
+  const bytes = new Uint8Array(raw.byteLength);
+  bytes.set(raw);
+  return bytes;
+}
+
 describe("finalizeInPersonMeeting regression — iOS-style problematic recording", () => {
   beforeEach(() => {
     vi.stubEnv("LOVABLE_API_KEY", "test-key");
@@ -77,11 +87,7 @@ describe("finalizeInPersonMeeting regression — iOS-style problematic recording
       { id: "meeting-1", user_id: "user-1", audio_storage_path: "user-1/meeting-1.m4a" },
     ]);
     state.transcriptResponse = HALLUCINATED_TRANSCRIPT;
-    state.sampleBytes = new Uint8Array(
-      readFileSync(
-        fileURLToPath(new URL("./__fixtures__/ios-recording-sample.m4a", import.meta.url)),
-      ),
-    );
+    state.sampleBytes = sampleBytes();
 
     vi.stubGlobal(
       "fetch",
@@ -142,25 +148,9 @@ describe("finalizeInPersonMeeting regression — iOS-style problematic recording
   });
 });
 
-// iOS Safari emits fragmented MP4 (ftyp/moov/moof.../mdat), and the number of
-// moof/mdat fragments varies with clip length and the browser's flush cadence.
-// Short or heavily fragmented clips are exactly what triggered the STT to
-// hallucinate runaway loops. These fixtures span 1, 2, 3, and 12 fragments so
-// the regression proves the sanitizer holds regardless of fragmentation length.
-const FRAGMENTATION_FIXTURES: Array<{ name: string; file: string; fragments: number }> = [
-  { name: "single fragment", file: "ios-recording-sample.m4a", fragments: 1 },
-  { name: "two fragments (short clip)", file: "ios-recording-short.m4a", fragments: 2 },
-  {
-    name: "three fragments (long frag duration)",
-    file: "ios-recording-long-fragments.m4a",
-    fragments: 3,
-  },
-  { name: "many small fragments", file: "ios-recording-many-fragments.m4a", fragments: 12 },
-];
-
 // A few distinct runaway shapes the STT model produces on undecodable audio:
 // a single stuck sentence, an alternating two-sentence loop, and a longer
-// three-sentence block. Each must be collapsed no matter the fixture.
+// three-sentence block. Each must be collapsed.
 const RUNAWAY_PATTERNS: Array<{ name: string; text: string }> = [
   { name: "single-sentence loop", text: "Thank you. ".repeat(40).trim() },
   {
@@ -173,30 +163,24 @@ const RUNAWAY_PATTERNS: Array<{ name: string; text: string }> = [
   },
 ];
 
-/** Read a fragmented-MP4 fixture and count its moof (fragment) boxes. */
-function readFixture(file: string): { bytes: Uint8Array<ArrayBuffer>; fragments: number } {
-  const raw = readFileSync(fileURLToPath(new URL(`./__fixtures__/${file}`, import.meta.url)));
-  const bytes = new Uint8Array(raw.byteLength);
-  bytes.set(raw);
-  let i = 0;
-  let fragments = 0;
-  while (i + 8 <= bytes.byteLength) {
-    const size = (bytes[i]! << 24) | (bytes[i + 1]! << 16) | (bytes[i + 2]! << 8) | bytes[i + 3]!;
-    const type = String.fromCharCode(bytes[i + 4]!, bytes[i + 5]!, bytes[i + 6]!, bytes[i + 7]!);
-    if (type === "moof") fragments += 1;
-    if (size < 8) break;
-    i += size;
-  }
-  return { bytes, fragments };
-}
-
-describe("finalizeInPersonMeeting regression — fragmentation lengths", () => {
+// This used to run every pattern against four fragmented-MP4 fixtures of
+// different lengths — twelve tests where three would do.
+//
+// The container shape cannot influence the outcome: finalizeInPersonMeeting
+// downloads the object and posts the bytes straight to the transcription
+// API without inspecting them, and the API is stubbed here to answer with
+// `state.transcriptResponse` whatever it is sent. So the four fixtures
+// produced four identical runs of each pattern, and the three that are not
+// referenced anywhere else were ~47 KB of binaries no assertion could see.
+// One realistic payload is kept so the upload path still carries real bytes.
+describe("finalizeInPersonMeeting collapses a runaway transcript", () => {
   beforeEach(() => {
     vi.stubEnv("LOVABLE_API_KEY", "test-key");
     fake.reset();
     fake.seed("meetings", [
       { id: "meeting-1", user_id: "user-1", audio_storage_path: "user-1/meeting-1.m4a" },
     ]);
+    state.sampleBytes = sampleBytes();
 
     vi.stubGlobal(
       "fetch",
@@ -213,40 +197,25 @@ describe("finalizeInPersonMeeting regression — fragmentation lengths", () => {
     );
   });
 
-  for (const fixture of FRAGMENTATION_FIXTURES) {
-    it(`fixture has the expected fragment count: ${fixture.name}`, () => {
-      const { bytes, fragments } = readFixture(fixture.file);
-      expect(bytes.byteLength).toBeGreaterThan(1000);
-      expect(fragments).toBe(fixture.fragments);
-    });
+  it.each(RUNAWAY_PATTERNS)("$name never reaches the saved transcript", async (pattern) => {
+    state.transcriptResponse = pattern.text;
+    // The simulated model output really is a runaway loop.
+    expect(maxConsecutiveBlockRepeats(pattern.text)).toBeGreaterThanOrEqual(10);
 
-    for (const pattern of RUNAWAY_PATTERNS) {
-      it(`prevents runaway repetition — ${fixture.name} + ${pattern.name}`, async () => {
-        const { bytes } = readFixture(fixture.file);
-        state.sampleBytes = bytes;
-        state.transcriptResponse = pattern.text;
+    const { finalizeInPersonMeeting } = await import("./meetings.server");
+    await expect(finalizeInPersonMeeting("meeting-1")).resolves.toBe("done");
 
-        // The simulated model output really is a runaway loop.
-        expect(maxConsecutiveBlockRepeats(pattern.text)).toBeGreaterThanOrEqual(10);
+    const saved = fake.calls.updates.find(
+      (u) => u.table === "meetings" && (u.payload as Record<string, unknown>).status === "done",
+    );
+    expect(saved, "meeting should be saved as done").toBeTruthy();
 
-        const { finalizeInPersonMeeting } = await import("./meetings.server");
-        const status = await finalizeInPersonMeeting("meeting-1");
-        expect(status).toBe("done");
+    const segments = (saved!.payload as Record<string, unknown>).transcript as Array<{
+      text: string;
+    }>;
+    const savedText = segments.map((s) => s.text).join(" ");
 
-        const saved = fake.calls.updates.find(
-          (u) => u.table === "meetings" && (u.payload as Record<string, unknown>).status === "done",
-        );
-        expect(saved, "meeting should be saved as done").toBeTruthy();
-
-        const segments = (saved!.payload as Record<string, unknown>).transcript as Array<{
-          text: string;
-        }>;
-        const savedText = segments.map((s) => s.text).join(" ");
-
-        // Persisted transcript must not carry the loop through to the UI.
-        expect(maxConsecutiveBlockRepeats(savedText)).toBeLessThanOrEqual(2);
-        expect(savedText.length).toBeLessThan(pattern.text.length / 4);
-      });
-    }
-  }
+    expect(maxConsecutiveBlockRepeats(savedText)).toBeLessThanOrEqual(2);
+    expect(savedText.length).toBeLessThan(pattern.text.length / 4);
+  });
 });

@@ -9,16 +9,13 @@ import { constantTimeEqual } from "@/lib/constant-time.server";
 // Any pg_cron job must be configured to send the CRON_SECRET as a Bearer
 // token in the Authorization header.
 
-export function isAuthorizedCron(request: Request): boolean {
+/** The secret a request offers, from either accepted header. Bearer wins
+ * so a request carrying both is judged on the one an operator would have
+ * set deliberately. */
+function providedSecret(request: Request): string | null {
   const auth = request.headers.get("authorization");
   const bearer = auth?.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : null;
-  const cronHeader = request.headers.get("x-cron-secret");
-  const provided = bearer ?? cronHeader;
-  if (!provided) return false;
-
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return false;
-  return constantTimeEqual(provided, cronSecret);
+  return bearer ?? request.headers.get("x-cron-secret");
 }
 
 type CronSecretRpcClient = {
@@ -46,10 +43,7 @@ async function matchesDatabaseCronSecret(provided: string): Promise<boolean> {
 }
 
 export async function isAuthorizedCronRequest(request: Request): Promise<boolean> {
-  const auth = request.headers.get("authorization");
-  const bearer = auth?.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : null;
-  const cronHeader = request.headers.get("x-cron-secret");
-  const provided = bearer ?? cronHeader;
+  const provided = providedSecret(request);
   if (!provided) return false;
 
   const cronSecret = process.env.CRON_SECRET;

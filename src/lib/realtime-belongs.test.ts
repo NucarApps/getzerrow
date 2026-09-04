@@ -126,7 +126,26 @@ describe("rowBelongsInList", () => {
     expect(rowBelongsInList(row({ raw_labels: ["INBOX"] }), key)).toBe(true);
   });
 
-  it("legacy ['emails', '<scope>'] keys still work when accountId not present in row", () => {
+  it("reads a legacy ['emails', '<scope>'] key as a scope, not an account id", () => {
+    // The legacy branch only runs for a row that DOES carry an account
+    // id which fails to match the tag — a row with a null account id
+    // skips the whole account check and never reaches it, so passing one
+    // here would name a path it does not take.
+    expect(rowBelongsInList(row({ raw_labels: ["INBOX"] }), ["emails", "all"])).toBe(true);
+    expect(rowBelongsInList(row({ is_archived: true }), ["emails", "archived"])).toBe(true);
+    // …and the scope still has to match.
+    expect(rowBelongsInList(row({ is_archived: false }), ["emails", "archived"])).toBe(false);
+  });
+
+  it("honours only the recognised scope words, never an arbitrary string", () => {
+    // An unrecognised tag at [1] is another account's id, so the row
+    // belongs to somebody else's list.
+    expect(rowBelongsInList(row({ raw_labels: ["INBOX"] }), ["emails", "some-other-account"])).toBe(
+      false,
+    );
+  });
+
+  it("lets scope decide when the row payload carries no account id", () => {
     expect(
       rowBelongsInList(row({ gmail_account_id: null, raw_labels: ["INBOX"] }), ["emails", "all"]),
     ).toBe(true);

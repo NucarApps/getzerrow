@@ -24,10 +24,16 @@ describe("constantTimeEqual", () => {
     expect(constantTimeEqual(null, null)).toBe(false);
   });
 
-  it("handles multibyte UTF-8 without throwing or false-matching", () => {
-    expect(constantTimeEqual("café", "café")).toBe(true);
-    // Same JS length, different bytes — must not equal.
-    expect(constantTimeEqual("café", "café".normalize("NFC") + "x".slice(0, 0))).toBe(true);
-    expect(constantTimeEqual("naïve", "naive")).toBe(false);
+  it("compares multibyte text by its bytes, not its appearance", () => {
+    const nfc = "caf\u00e9"; // e-acute as one code point
+    const nfd = "cafe\u0301"; // e + combining acute -- renders identically
+    expect(nfc).not.toBe(nfd);
+
+    expect(constantTimeEqual(nfc, nfc)).toBe(true);
+    // Two strings a human cannot tell apart must still not open a gate: a
+    // secret is bytes, and normalizing before comparing would let a
+    // visually identical value through.
+    expect(constantTimeEqual(nfc, nfd)).toBe(false);
+    expect(constantTimeEqual("na\u00efve", "naive")).toBe(false);
   });
 });
