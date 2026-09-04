@@ -5,6 +5,8 @@
 // same-named group" style tests unfalsifiable.
 
 import { describe, it, expect } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
 import { makeSupabaseFake, mockSupabaseAdmin, PGRST_NO_ROWS } from "./supabase-fake";
 
 const T = "contact_groups" as const;
@@ -375,5 +377,75 @@ describe("column projection", () => {
       .select("id")
       .single();
     expect(data).toEqual({ id: "1" });
+  });
+});
+
+describe("rlsScope", () => {
+  it("hides another user's rows from every read of that table", async () => {
+    const fake = makeSupabaseFake();
+    fake.seedRaw("contacts", [
+      { id: "mine", user_id: "u1" },
+      { id: "theirs", user_id: "u2" },
+    ]);
+    fake.rlsScope("contacts", "u1");
+
+    // A handler that leans on RLS adds no user_id filter of its own.
+    const all = await fake.supabaseAdmin.from("contacts").select("*");
+    expect(all.data?.map((r) => r.id)).toEqual(["mine"]);
+
+    const byId = await fake.supabaseAdmin
+      .from("contacts")
+      .select("*")
+      .eq("id", "theirs")
+      .maybeSingle();
+    expect(byId.data).toBeNull();
+  });
+
+  it("leaves other tables alone", async () => {
+    const fake = makeSupabaseFake();
+    fake.seedRaw("contacts", [{ id: "c", user_id: "u2" }]);
+    fake.seedRaw("companies", [{ id: "co", user_id: "u2" }]);
+    fake.rlsScope("contacts", "u1");
+    const companies = await fake.supabaseAdmin.from("companies").select("*");
+    expect(companies.data).toHaveLength(1);
+  });
+});
+
+describe("catalog relations", () => {
+  it("seeds and reads a relation outside the public schema", async () => {
+    // The health check reads pg_views / information_schema.columns
+    // directly; those are not in the generated Database type.
+    const fake = makeSupabaseFake();
+    fake.seedRaw("pg_views", [{ viewname: "email_search_index" }]);
+    fake.onSelect("information_schema.columns", () => ({
+      data: [{ table_name: "emails", column_name: "origin_addr" }],
+    }));
+
+    const views = await fake.supabaseAdmin.from("pg_views").select("viewname");
+    expect(views.data).toEqual([{ viewname: "email_search_index" }]);
+
+    const cols = await fake.supabaseAdmin.from("information_schema.columns").select("*");
+    expect(cols.data?.[0]).toMatchObject({ column_name: "origin_addr" });
+  });
+
+  it("exposes raw rows for a relation `rows` cannot type", async () => {
+    const fake = makeSupabaseFake();
+    fake.seedRaw("pg_proc", [{ proname: "search_emails" }]);
+    expect(fake.rowsRaw("pg_proc")).toEqual([{ proname: "search_emails" }]);
+  });
+});
+
+describe("asClient", () => {
+  it("hands the fake to code that takes a SupabaseClient parameter", async () => {
+    const fake = makeSupabaseFake();
+    fake.seedRaw("contacts", [{ id: "c1", user_id: "u1" }]);
+
+    // Shape of the real call sites: a plain function given a client.
+    async function countContacts(client: SupabaseClient<Database>, userId: string) {
+      const { data } = await client.from("contacts").select("id").eq("user_id", userId);
+      return data?.length ?? 0;
+    }
+
+    expect(await countContacts(fake.asClient(), "u1")).toBe(1);
   });
 });

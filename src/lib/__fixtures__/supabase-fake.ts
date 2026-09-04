@@ -21,9 +21,16 @@
 // `calls.auth`.
 //
 // Table names given to `seed` / `on*` are typed against the generated
-// `Database` type so a typo fails typecheck instead of seeding a table
-// nothing reads. `from(table)` itself stays `string` because production
-// code is what calls it.
+// `Database` type (plus the `CatalogRelation` names for pg_* and
+// information_schema, which production health checks read directly) so a
+// typo fails typecheck instead of seeding a table nothing reads.
+// `from(table)` itself stays `string` because production code is what
+// calls it.
+//
+// `rlsScope(table, userId)` makes one table behave as RLS would, which is
+// what a handler taking `context.supabase` relies on for isolation;
+// `asClient()` hands the fake to code that takes a `SupabaseClient`
+// parameter rather than importing the mocked module.
 //
 // Lives in __fixtures__ so it is excluded from the coverage/test globs and
 // never ships. Consume it from a test like this — the deferred wrapper is
@@ -37,6 +44,7 @@
 // (`mockSupabaseAdmin` takes a thunk for the same hoisting reason; it
 // forwards `from`/`rpc`/`auth`/`storage` lazily on every call.)
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 
 type PublicTables = Database["public"]["Tables"];
@@ -48,6 +56,24 @@ export type RowOf<T extends TableName> = PublicTables[T]["Row"];
  * the point: a typo can no longer seed a column nothing reads. */
 export type SeedRow<T extends TableName> = { [K in keyof RowOf<T>]?: RowOf<T>[K] | null };
 export type RpcName = keyof Database["public"]["Functions"];
+
+/** Relations OUTSIDE the `public` schema that production code reads
+ * directly — Postgres catalog views and information_schema. They are not in
+ * the generated `Database` type, so they are enumerated here rather than
+ * widening every table parameter to `string`, which would give back the
+ * typo protection those parameters exist for. Add a name when a module
+ * starts reading it. */
+export type CatalogRelation =
+  | "pg_views"
+  | "pg_proc"
+  | "pg_indexes"
+  | "pg_tables"
+  | "information_schema.columns"
+  | "information_schema.tables";
+
+/** Anything `from()` may address: a real table, or one of the catalog
+ * relations above. */
+export type FakeTable = TableName | CatalogRelation;
 
 export type FakeRow = Record<string, unknown>;
 
@@ -277,9 +303,10 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
       rows.map((r) => ({ ...(r as FakeRow) })),
     );
   }
-  /** Escape hatch for a table the generated types don't know (a view, or a
-   * table added by a migration newer than types.ts). Prefer `seed`. */
-  function seedRaw(table: string, rows: FakeRow[]) {
+  /** Escape hatch for a relation the generated types don't know (a view, a
+   * catalog relation, or a table added by a migration newer than
+   * types.ts). Prefer `seed`. */
+  function seedRaw(table: FakeTable | (string & {}), rows: FakeRow[]) {
     tables.set(
       table,
       rows.map((r) => ({ ...r })),
@@ -289,6 +316,11 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
    * a test observes the post-write state. */
   function rows<T extends TableName>(table: T): Array<Partial<RowOf<T>>> {
     return (tables.get(table) ?? []).map((r) => ({ ...r })) as Array<Partial<RowOf<T>>>;
+  }
+  /** Raw contents of any relation, including one outside the generated
+   * types. `rows` is the typed form and the one to prefer. */
+  function rowsRaw(table: FakeTable | (string & {})): FakeRow[] {
+    return (tables.get(table) ?? []).map((r) => ({ ...r }));
   }
 
   for (const [table, seedRows] of Object.entries(init?.tables ?? {})) {
@@ -301,19 +333,19 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
   function onRpc(fn: RpcName | (string & {}), handler: RpcHandler) {
     rpcHandlers.set(fn, handler);
   }
-  function onSelect(table: TableName, handler: SelectHandler) {
+  function onSelect(table: FakeTable, handler: SelectHandler) {
     selectHandlers.set(table, handler);
   }
-  function onInsert(table: TableName, handler: WriteHandler) {
+  function onInsert(table: FakeTable, handler: WriteHandler) {
     writeHandlers.set(`insert:${table}`, handler);
   }
-  function onUpdate(table: TableName, handler: WriteHandler) {
+  function onUpdate(table: FakeTable, handler: WriteHandler) {
     writeHandlers.set(`update:${table}`, handler);
   }
-  function onUpsert(table: TableName, handler: WriteHandler) {
+  function onUpsert(table: FakeTable, handler: WriteHandler) {
     writeHandlers.set(`upsert:${table}`, handler);
   }
-  function onDelete(table: TableName, handler: WriteHandler) {
+  function onDelete(table: FakeTable, handler: WriteHandler) {
     writeHandlers.set(`delete:${table}`, handler);
   }
   function onAuth(
@@ -340,7 +372,7 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
    *
    *   fake.onEmbed("contact_group_members", "contacts", { table: "contacts" });
    */
-  function onEmbed(table: TableName, alias: string, spec: EmbedSpec) {
+  function onEmbed(table: FakeTable, alias: string, spec: EmbedSpec) {
     embeds.set(`${table}:${alias}`, spec);
   }
 
@@ -872,15 +904,36 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
     },
   };
 
+  /** Emulate row-level security for one table: rows whose `user_id` is not
+   * `userId` become invisible to every read of it.
+   *
+   * Handlers that take the user-scoped client (`context.supabase`) lean on
+   * RLS for tenant isolation and add no `user_id` filter of their own.
+   * Without this a seeded foreign row comes back and the "not found" branch
+   * can never be reached honestly — the test would pass while proving
+   * nothing. Do NOT apply it to a table a handler reads with the
+   * service-role client on purpose (a global uniqueness check, say). */
+  function rlsScope(table: FakeTable, userId: string) {
+    onSelect(table, () => ({
+      data: rowsRaw(table).filter((r) => r["user_id"] === userId),
+    }));
+  }
+
   return {
     supabaseAdmin,
     /** The same object under the user-scoped client's name, for hooks and
      * RLS-client server fns (`context.supabase`). */
     client: supabaseAdmin,
+    /** The fake typed as a real `SupabaseClient`, for the handful of call
+     * sites that take one as a parameter rather than importing the module
+     * this fake mocks. The cast is here so it is written once. */
+    asClient: () => supabaseAdmin as unknown as SupabaseClient<Database>,
     calls,
     seed,
     seedRaw,
     rows,
+    rowsRaw,
+    rlsScope,
     reset,
     onRpc,
     onSelect,

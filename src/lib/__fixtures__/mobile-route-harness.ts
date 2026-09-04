@@ -24,7 +24,7 @@
 //   const res = await POST(mobileRequest("/api/mobile/meetings", { body: { kind: "upcoming" } }));
 
 import { expect } from "vitest";
-import type { SupabaseFake, FakeRow, TableName } from "./supabase-fake";
+import type { SupabaseFake, TableName } from "./supabase-fake";
 
 /** The signed-in user every mobile route suite runs as. A real uuid, because
  * several route schemas validate ids with `z.string().uuid()`. */
@@ -109,17 +109,12 @@ export async function jsonBody<T = unknown>(res: Response, expectedStatus?: numb
 }
 
 /**
- * Emulate row-level security for one table on the shared fake: rows whose
- * `user_id` is not `userId` become invisible to every read of that table.
+ * Emulate row-level security for one table on the shared fake.
  *
- * The mobile routes that take `context.supabase` rely on RLS for tenant
- * isolation and add no `user_id` filter of their own; without this a seeded
- * foreign row would be returned and the "not found" branch could never be
- * reached honestly. Do NOT apply it to a table the route reads with the
- * service-role client on purpose (my_cards' handle-uniqueness check).
+ * Thin alias for `fake.rlsScope`, which is where the behaviour lives now —
+ * kept because the mobile route tests read better with the fake as the
+ * first argument, matching the other helpers in this harness.
  */
 export function rlsScoped(fake: SupabaseFake, table: TableName, userId: string) {
-  fake.onSelect(table, () => ({
-    data: (fake.rows(table) as FakeRow[]).filter((r) => r["user_id"] === userId),
-  }));
+  fake.rlsScope(table, userId);
 }

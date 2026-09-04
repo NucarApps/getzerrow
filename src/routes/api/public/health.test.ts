@@ -161,6 +161,120 @@ describe("schema probes", () => {
   });
 });
 
+describe("view probes", () => {
+  // EXPECTED_VIEWS is empty today, so the view loops are unreachable by
+  // data. Adding a name for the duration of a test exercises the code that
+  // goes live the moment a view IS listed — otherwise the first entry
+  // anyone adds would be running untested.
+  const withExpectedView = async (name: string, run: () => Promise<void>) => {
+    EXPECTED_VIEWS.push(name);
+    try {
+      await run();
+    } finally {
+      EXPECTED_VIEWS.length = 0;
+    }
+  };
+
+  it("passes when the catalog lists the view", async () => {
+    await withExpectedView("email_search_index", async () => {
+      seedHealthySchema();
+      fake.seedRaw("pg_views", [{ schemaname: "public", viewname: "email_search_index" }]);
+
+      const { status, body } = await callCron<HealthBody>(Route, "health");
+
+      expect(status).toBe(200);
+      expect(body.missing).toStrictEqual([]);
+      expect(body.checks.views).toBe(1);
+    });
+  });
+
+  it("names a view the catalog does not list", async () => {
+    await withExpectedView("email_search_index", async () => {
+      seedHealthySchema();
+
+      const { status, body } = await callCron<HealthBody>(Route, "health");
+
+      expect(status).toBe(503);
+      expect(body.missing).toStrictEqual([{ kind: "view", name: "email_search_index" }]);
+    });
+  });
+
+  it("scopes the view query to the public schema", async () => {
+    await withExpectedView("email_search_index", async () => {
+      seedHealthySchema();
+      await callCron<HealthBody>(Route, "health");
+      expect(fake.calls.selects.find((s) => s.table === "pg_views")?.filters).toStrictEqual([
+        { op: "eq", col: "schemaname", value: "public", extra: undefined },
+        { op: "in", col: "viewname", value: ["email_search_index"], extra: undefined },
+      ]);
+    });
+  });
+
+  it("falls back to a to_regclass probe when pg_views is not exposed", async () => {
+    // PostgREST does not expose pg_views by default; the fallback is the
+    // only thing keeping the view check alive on such a deployment.
+    await withExpectedView("email_search_index", async () => {
+      seedHealthySchema();
+      fake.onSelect("pg_views", () => {
+        throw new Error("relation pg_views is not exposed");
+      });
+      fake.onRpc("to_regclass", () => ({ data: "public.email_search_index" }));
+
+      const { status, body } = await callCron<HealthBody>(Route, "health");
+
+      expect(status).toBe(200);
+      expect(body.missing).toStrictEqual([]);
+      expect(fake.calls.rpcs).toContainEqual({
+        fn: "to_regclass",
+        args: { obj: "public.email_search_index" },
+      });
+    });
+  });
+
+  it("reports the view missing when the fallback probe finds nothing", async () => {
+    await withExpectedView("email_search_index", async () => {
+      seedHealthySchema();
+      fake.onSelect("pg_views", () => {
+        throw new Error("relation pg_views is not exposed");
+      });
+      fake.onRpc("to_regclass", () => ({ data: null }));
+
+      const { status, body } = await callCron<HealthBody>(Route, "health");
+
+      expect(status).toBe(503);
+      expect(body.missing).toStrictEqual([{ kind: "view", name: "email_search_index" }]);
+    });
+  });
+});
+
+describe("catalog probes that are not exposed", () => {
+  it("skips the function check rather than reporting false missing", async () => {
+    // pg_proc unreachable must not be read as "every function is gone" —
+    // that would page someone for a healthy database.
+    seedHealthySchema();
+    fake.onSelect("pg_proc", () => {
+      throw new Error("relation pg_proc is not exposed");
+    });
+
+    const { status, body } = await callCron<HealthBody>(Route, "health");
+
+    expect(status).toBe(200);
+    expect(body.missing).toStrictEqual([]);
+  });
+
+  it("skips the column check rather than reporting false missing", async () => {
+    seedHealthySchema();
+    fake.onSelect("information_schema.columns", () => {
+      throw new Error("information_schema is not exposed");
+    });
+
+    const { status, body } = await callCron<HealthBody>(Route, "health");
+
+    expect(status).toBe(200);
+    expect(body.missing).toStrictEqual([]);
+  });
+});
+
 describe("encryption-leak audit", () => {
   it("fails the health check when any leak counter is non-zero", async () => {
     seedHealthySchema();
@@ -186,6 +300,43 @@ describe("encryption-leak audit", () => {
 
     expect(status).toBe(200);
     expect(body.encryption_leaks).toStrictEqual({ oauth_missing_ct: 0 });
+  });
+
+  it("accepts a single row rather than an array from the audit RPC", async () => {
+    seedHealthySchema();
+    fake.onRpc("audit_encryption_leaks", () => ({ data: { emails_missing_ct: 2 } }));
+
+    const { status, body } = await callCron<HealthBody>(Route, "health");
+
+    expect(status).toBe(503);
+    expect(body.encryption_leaks).toStrictEqual({ emails_missing_ct: 2 });
+  });
+
+  it("reads a null counter as zero rather than NaN", async () => {
+    seedHealthySchema();
+    fake.onRpc("audit_encryption_leaks", () => ({ data: [{ emails_missing_ct: null }] }));
+
+    const { status, body } = await callCron<HealthBody>(Route, "health");
+
+    expect(status).toBe(200);
+    expect(body.encryption_leaks).toStrictEqual({ emails_missing_ct: 0 });
+  });
+
+  it("ignores a counter that does not parse as a number", async () => {
+    // A non-numeric column would otherwise make the sum NaN, and NaN !== 0
+    // fails the health check for every deployment.
+    seedHealthySchema();
+    fake.onRpc("audit_encryption_leaks", () => ({
+      data: [{ measured_at: "2026-09-04T00:00:00Z", emails_missing_ct: 0 }],
+    }));
+
+    const { status, body } = await callCron<HealthBody>(Route, "health");
+
+    // The point is the 200: a non-numeric column must not make the leak
+    // sum NaN, which is never === 0 and would fail every deployment. (It
+    // reaches the client as null — NaN has no JSON spelling.)
+    expect(status).toBe(200);
+    expect(body.encryption_leaks).toStrictEqual({ measured_at: null, emails_missing_ct: 0 });
   });
 
   it("treats a missing audit RPC as no leaks rather than a failure", async () => {
