@@ -81,7 +81,19 @@ Each of these has no test today. Each should be fixed by writing the failing tes
 | D8  | P2               | `pull.server.ts` `MAX_PAGES=20` hit → `nextSyncToken` never minted → accounts >10k contacts get a partial pull _and_ a full re-pull every tick. Pull runs before push in `runGoogleContactsSync`, so a full resync after a local delete recreates the contact (resurrection).                                                                                                                                                                                                    | `google-contacts/pull.server.ts:40`; `reconcile.server.ts:114-117`                                                                                                                     | Scenario tests                                                                                                                                       |
 | D9  | P2               | `reports.functions.ts` never selects `from_name` so `topSenders` is always the address; `card-analytics` daily buckets out-of-window days; `cards.server.ts:30` `esc` misses `\r`.                                                                                                                                                                                                                                                                                               | `reports.functions.ts:64`; `card-analytics.functions.ts:106`; `cards.server.ts:30`                                                                                                     | Pin each                                                                                                                                             |
 
-**Engine v2 divergences with no test** (from the rules-engine cutover): calendar cold-email guard absent from `adapt`/`guardrails`/`bridge` (memory #3, only an `engineDelta`); `resolve.ts:51` applies `threadMessages` to every rule while legacy gates on `run_on_threads` (`filter-engine.ts:403`); `adapt.ts:40-48` collapses `AND(a, OR(b,c))` into `[a,b,c]`; `adapt.ts` stamps `created_at = EPOCH` so the age tiebreak is a no-op; `replay.ts:78-82` runs with `skipGmailLabelMatch:true` and `applyMoves` (0 %) would move label-filed mail to Inbox. All need declared `engineDelta` entries or bridge/resolve/adapt tests before the cutover.
+> **Audited 2026-09-04.** Three of the five below are closed: the calendar
+> cold-email guard is in `adapt.ts:150` and `guardrails.ts:78`; `resolve.ts:89`
+> now gates thread scope on `run_on_threads`, with tests in `resolve.test.ts`
+> and `bridge.test.ts`; and the `AND(a, OR(b,c))` flattening is pinned in
+> `adapt.test.ts` with its direction stated (the engine matches strictly
+> LESS than the legacy walker, so a folder can only under-match). The EPOCH
+> tiebreak now has a test: `compareRules`' three rungs below specificity —
+> condition count, age, then id — are specified in `resolve.test.ts`, each
+> verified against a mutation, including that an EPOCH-stamped tree rule
+> wins every same-level tie so Phase D's real timestamp column changes that
+> outcome loudly. Still open: `replay.ts`'s `applyMoves` (0%).
+
+**Engine v2 divergences** (from the rules-engine cutover), as originally found: calendar cold-email guard absent from `adapt`/`guardrails`/`bridge` (memory #3, only an `engineDelta`); `resolve.ts:51` applies `threadMessages` to every rule while legacy gates on `run_on_threads` (`filter-engine.ts:403`); `adapt.ts:40-48` collapses `AND(a, OR(b,c))` into `[a,b,c]`; `adapt.ts` stamps `created_at = EPOCH` so the age tiebreak is a no-op; `replay.ts:78-82` runs with `skipGmailLabelMatch:true` and `applyMoves` (0 %) would move label-filed mail to Inbox. All need declared `engineDelta` entries or bridge/resolve/adapt tests before the cutover.
 
 ---
 

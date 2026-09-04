@@ -280,3 +280,88 @@ describe("resolveRules — thread scope is opt-in", () => {
     expect(res.winner).toBeNull();
   });
 });
+
+// The ladder's last two rungs, specified rather than merely exercised.
+//
+// `compareRules` runs level → condition count → age → id. The first rung
+// has its own tests above; the rest were only ever reached indirectly, so
+// nothing said what SHOULD happen when two rules tie. That matters most
+// for `created_at`: `adapt` stamps a filter_tree rule with EPOCH because a
+// tree is a JSON column with no authoring timestamp of its own, which
+// makes it the oldest thing in the set and the winner of every same-level
+// tie. Phase D gives tree rules a real `created_at` in the `rules` table —
+// at which point the folder that wins these ties changes, and this is what
+// should notice.
+describe("compareRules — the tiebreaks below specificity", () => {
+  const at = (created_at: string, id: string, folder_id: string, conditions = 1): Rule =>
+    rule({
+      id,
+      folder_id,
+      created_at,
+      groups: [
+        Array.from({ length: conditions }, (_, i) => ({
+          field: "subject",
+          op: "contains",
+          value: i === 0 ? "receipt" : `extra-${i}`,
+        })),
+      ],
+    });
+
+  /** Which folder wins, given rules that all match the same message. */
+  const winner = (rules: Rule[]) =>
+    resolveRules(msg({ subject: "receipt extra-1 extra-2" }), rules, folders).winner?.rule
+      .folder_id;
+
+  it("prefers the rule with MORE conditions at the same level", () => {
+    // More conditions is a narrower rule, so it is the more specific
+    // author intent even though both sit on the same rung.
+    expect(
+      winner([
+        at("2020-01-01T00:00:00.000Z", "a", "receipts", 1),
+        at("2026-01-01T00:00:00.000Z", "b", "shipping", 3),
+      ]),
+    ).toBe("shipping");
+  });
+
+  it("prefers the older rule when level and condition count both tie", () => {
+    // Age is the tiebreak because the rule that has been filing this mail
+    // longest is the one the user is used to.
+    expect(
+      winner([
+        at("2026-06-01T00:00:00.000Z", "newer", "shipping"),
+        at("2020-01-01T00:00:00.000Z", "older", "receipts"),
+      ]),
+    ).toBe("receipts");
+  });
+
+  it("is stable on a same-timestamp tie, ordering by id", () => {
+    // Without this the winner would depend on array order, and two
+    // identical runs could file the same message differently.
+    const same = "2026-01-01T00:00:00.000Z";
+    const a = at(same, "aaa", "receipts");
+    const b = at(same, "bbb", "shipping");
+    expect(winner([a, b])).toBe("receipts");
+    expect(winner([b, a])).toBe("receipts");
+  });
+
+  it("treats a missing created_at as beatable, not as the oldest", () => {
+    // Date.parse("") is NaN, so a comparison against it is never negative
+    // — an undated rule must not silently outrank a dated one.
+    const undated = rule({
+      id: "undated",
+      folder_id: "shipping",
+      created_at: "",
+      groups: [[{ field: "subject", op: "contains", value: "receipt" }]],
+    });
+    expect(winner([undated, at("2026-01-01T00:00:00.000Z", "dated", "receipts")])).toBe("receipts");
+  });
+
+  it("lets an EPOCH-stamped tree rule win every same-level tie", () => {
+    // adapt.ts gives filter_tree rules `1970-01-01`, so they are older
+    // than anything a user could have authored. Phase D's real timestamp
+    // column changes this outcome — deliberately, but not silently.
+    const tree = at("1970-01-01T00:00:00.000Z", "tree:shipping", "shipping");
+    const authored = at("2020-01-01T00:00:00.000Z", "filter:receipts", "receipts");
+    expect(winner([authored, tree])).toBe("shipping");
+  });
+});
