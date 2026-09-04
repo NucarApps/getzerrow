@@ -188,9 +188,13 @@ DB level: 1 of ~18 `SECURITY DEFINER` functions is tested (`discover_company_dom
 > different truthy ids was the failure that would actually hurt. The
 > dropdown smoke test compares the destructive variant's class list against
 > the default's instead of matching a literal Tailwind token.
-> **Still open** in this section: the remaining weak assertions (CardDAV
-> ETag/`deleted_at` windows, `process-message`'s soft matchers, the push 412
-> case) and `reanalyzeEmail`'s 5 uncovered branches.
+> The rest of this section is **closed**, and several entries were stale:
+> the CardDAV ETag `toBeTruthy()`s and the `deleted_at` ±1s window are gone,
+> `process-message` has no soft matchers left, the push 412 case is a typed
+> table row, and `reanalyzeEmail` has all six exits covered (move.functions
+> is at 98% lines / 100% functions, not the "1 of 6 branches" recorded
+> here). Verified 2026-09-04; the prose below is kept as the record of what
+> the review originally found.
 
 **Tests that cannot fail.**
 
