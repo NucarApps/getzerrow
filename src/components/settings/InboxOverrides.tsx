@@ -164,8 +164,11 @@ export function InboxOverrides({
       </div>
 
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+        {/* A Radix trigger takes no htmlFor, so without an explicit name
+            these read as unlabelled comboboxes announcing only their current
+            value. */}
         <Select value={matchType} onValueChange={(v) => setMatchType(v as "email" | "domain")}>
-          <SelectTrigger className="sm:w-36">
+          <SelectTrigger aria-label="Match type" className="sm:w-36">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -379,7 +382,7 @@ function ExceptionEditor({
       </div>
       <div className="mt-2 flex flex-col gap-1.5 sm:flex-row sm:items-center">
         <Select value={field} onValueChange={setField}>
-          <SelectTrigger className="h-8 text-xs sm:w-32">
+          <SelectTrigger aria-label="Exception field" className="h-8 text-xs sm:w-32">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -391,7 +394,7 @@ function ExceptionEditor({
           </SelectContent>
         </Select>
         <Select value={op} onValueChange={setOp}>
-          <SelectTrigger className="h-8 text-xs sm:w-36">
+          <SelectTrigger aria-label="Exception operator" className="h-8 text-xs sm:w-36">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

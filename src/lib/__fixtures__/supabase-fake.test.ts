@@ -449,3 +449,39 @@ describe("asClient", () => {
     expect(await countContacts(fake.asClient(), "u1")).toBe(1);
   });
 });
+
+describe("browser auth surface", () => {
+  it("answers signed-out in the real client's shape, not a bare null", async () => {
+    // Components destructure `data.user` unconditionally; a bare null
+    // would throw where the real client returns the signed-out branch.
+    const fake = makeSupabaseFake();
+    expect(await fake.supabaseAdmin.auth.getUser()).toEqual({
+      data: { user: null },
+      error: null,
+    });
+    expect(await fake.supabaseAdmin.auth.getSession()).toEqual({
+      data: { session: null },
+      error: null,
+    });
+  });
+
+  it("signedInAs answers as that user, and null goes back to signed out", async () => {
+    const fake = makeSupabaseFake();
+    fake.signedInAs("user-1");
+
+    const { data } = await fake.supabaseAdmin.auth.getUser();
+    expect((data as { user: { id: string } }).user.id).toBe("user-1");
+    const session = await fake.supabaseAdmin.auth.getSession();
+    expect((session.data as { session: { user: { id: string } } }).session.user.id).toBe("user-1");
+
+    fake.signedInAs(null);
+    expect((await fake.supabaseAdmin.auth.getUser()).data).toEqual({ user: null });
+  });
+
+  it("records the browser auth reads alongside the admin ones", async () => {
+    const fake = makeSupabaseFake();
+    await fake.supabaseAdmin.auth.getUser();
+    await fake.supabaseAdmin.auth.admin.listUsers();
+    expect(fake.calls.auth.map((c) => c.method)).toEqual(["getUser", "listUsers"]);
+  });
+});

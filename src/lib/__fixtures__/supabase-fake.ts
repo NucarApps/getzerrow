@@ -349,10 +349,23 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
     writeHandlers.set(`delete:${table}`, handler);
   }
   function onAuth(
-    method: "listUsers" | "getUserById" | "deleteUser" | (string & {}),
+    method: "listUsers" | "getUserById" | "deleteUser" | "getUser" | "getSession" | (string & {}),
     handler: AuthHandler,
   ) {
     authHandlers.set(method, handler);
+  }
+  /** Make `auth.getUser()` / `auth.getSession()` answer as this user, the
+   * way the browser client does for a signed-in session. Pass null to go
+   * back to signed out. */
+  function signedInAs(userId: string | null) {
+    if (userId === null) {
+      authHandlers.delete("getUser");
+      authHandlers.delete("getSession");
+      return;
+    }
+    const user = { id: userId, aud: "authenticated", role: "authenticated" };
+    onAuth("getUser", () => ({ data: { user } }));
+    onAuth("getSession", () => ({ data: { session: { user, access_token: "test-token" } } }));
   }
   /** Stub one storage method on one bucket, e.g.
    * `onStorage("contact-cards", "createSignedUrl", () => ({ data: { signedUrl: "…" } }))`.
@@ -835,10 +848,16 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
     return { data: result ?? null, error: null };
   }
 
+  /** Signed-out replies, in the shape the real browser client returns. */
+  const AUTH_DEFAULTS: Record<string, { data: unknown }> = {
+    getUser: { data: { user: null } },
+    getSession: { data: { session: null } },
+  };
+
   async function authCall(method: string, args: unknown) {
     calls.auth.push({ method, args });
     const handler = authHandlers.get(method);
-    if (!handler) return { data: null, error: null };
+    if (!handler) return { ...(AUTH_DEFAULTS[method] ?? { data: null }), error: null };
     const result = handler(args);
     if (result && typeof result === "object" && ("data" in result || "error" in result)) {
       const r = result as { data?: unknown; error?: FakeError | null };
@@ -877,6 +896,18 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
         getUserById: (id: string) => authCall("getUserById", id),
         deleteUser: (id: string) => authCall("deleteUser", id),
       },
+      // The BROWSER client's surface. Components read the signed-in user
+      // straight off it before writing (`supabase.auth.getUser()` then an
+      // insert carrying `user_id`), so a fake without these cannot reach
+      // the write at all.
+      //
+      // The default is a signed-OUT reply with the real client's shape
+      // (`{ data: { user: null } }`, never a bare null) — production
+      // destructures `data.user` unconditionally, so a bare null would
+      // throw where the real client returns the "not signed in" branch.
+      // `signedInAs(id)` switches it.
+      getUser: () => authCall("getUser", undefined),
+      getSession: () => authCall("getSession", undefined),
     },
     storage: {
       from(bucket: string) {
@@ -942,6 +973,7 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
     onUpsert,
     onDelete,
     onAuth,
+    signedInAs,
     onStorage,
     onEmbed,
   };
