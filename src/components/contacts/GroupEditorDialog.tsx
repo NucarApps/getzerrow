@@ -227,12 +227,18 @@ export function GroupEditorDialog({
               </div>
             </div>
             <div>
-              <Label className="text-xs text-muted-foreground">Parent group</Label>
+              <Label className="text-xs text-muted-foreground" id="group-parent-label">
+                Parent group
+              </Label>
               <Select
                 value={parentId || NONE}
                 onValueChange={(v) => setParentId(v === NONE ? "" : v)}
               >
-                <SelectTrigger className="mt-1 w-full">
+                {/* The caption is a plain <Label> with nothing to point at —
+                    a Radix trigger takes no htmlFor — so name the trigger by
+                    it explicitly, or a screen reader announces only the
+                    selected value with no idea what it selects. */}
+                <SelectTrigger aria-labelledby="group-parent-label" className="mt-1 w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -249,12 +255,14 @@ export function GroupEditorDialog({
               </p>
             </div>
             <div>
-              <Label className="text-xs text-muted-foreground">Linked folder</Label>
+              <Label className="text-xs text-muted-foreground" id="group-folder-label">
+                Linked folder
+              </Label>
               <Select
                 value={folderId || NONE}
                 onValueChange={(v) => setFolderId(v === NONE ? "" : v)}
               >
-                <SelectTrigger className="mt-1 w-full">
+                <SelectTrigger aria-labelledby="group-folder-label" className="mt-1 w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
