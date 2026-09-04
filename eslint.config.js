@@ -62,6 +62,10 @@ export default tseslint.config(
       "src/lib/account-selection.tsx",
       "src/lib/folder-selection.tsx",
       "src/components/cards/themes.tsx",
+      // Test fixtures never ship, so Fast Refresh cannot apply to them;
+      // the jsdom harness deliberately exports render wrappers alongside
+      // the vi.mock factory bodies they belong with.
+      "src/**/__fixtures__/**/*.tsx",
     ],
     rules: {
       "react-refresh/only-export-components": "off",
@@ -79,7 +83,7 @@ export default tseslint.config(
     // Test-only rules. The assertion helpers in __fixtures__ count as
     // assertions for expect-expect; direct process.env mutation is banned
     // in favour of vi.stubEnv (the global teardown only unstubs).
-    files: ["src/**/*.test.{ts,tsx}", "tests/**/*.ts", "src/**/__fixtures__/**/*.ts"],
+    files: ["src/**/*.test.{ts,tsx}", "tests/**/*.ts", "src/**/__fixtures__/**/*.{ts,tsx}"],
     plugins: { vitest },
     rules: {
       ...vitest.configs.recommended.rules,

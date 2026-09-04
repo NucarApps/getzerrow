@@ -109,17 +109,27 @@ export function FilterLikeThisDrawer({
   const [decisionLoading, setDecisionLoading] = useState(false);
   const [markRead, setMarkRead] = useState<boolean | null>(null);
 
-  // Reset state when reopened or seed changes.
+  // Reset state when reopened or the EMAIL changes.
+  //
+  // The dependencies are the incoming props, never `senderAddr` / `domain`:
+  // those derive from `useOrigin`, so keying the reset on them made every
+  // sender toggle re-run this effect — which set `useOrigin` straight back
+  // to its default and cleared the chosen folder. The "Forwarded by" tab
+  // could not be selected at all, and picking "Inbox — always show" for
+  // forwarded mail silently deselected itself (the inbox-mode effect turns
+  // `useOrigin` off, which re-entered this reset).
   useEffect(() => {
     if (!open) return;
-    setUseOrigin(forwarded);
-    const initialField: Field = senderAddr ? "from" : subject ? "subject" : "domain";
+    const initialUseOrigin = forwarded;
+    const initialSender = initialUseOrigin && originAddr ? originAddr : fromAddr;
+    setUseOrigin(initialUseOrigin);
+    const initialField: Field = initialSender ? "from" : subject ? "subject" : "domain";
     setField(initialField);
     setValue(
       initialField === "from"
-        ? (senderAddr ?? "")
+        ? (initialSender ?? "")
         : initialField === "domain"
-          ? (domain ?? "")
+          ? (emailDomain(initialSender) ?? "")
           : (subject ?? ""),
     );
     setOp(initialField === "subject" ? "starts_with" : "contains");
@@ -127,7 +137,7 @@ export function FilterLikeThisDrawer({
     setApplyToPast(false);
     setArchivePast(false);
     setCount(null);
-  }, [open, senderAddr, subject, domain, forwarded]);
+  }, [open, fromAddr, originAddr, subject, forwarded]);
 
   // When the user switches field, repopulate the value with the email's value
   // for that field.
@@ -135,6 +145,15 @@ export function FilterLikeThisDrawer({
     setField(f);
     setValue(f === "from" ? (senderAddr ?? "") : f === "domain" ? (domain ?? "") : (subject ?? ""));
     setOp(f === "subject" ? "starts_with" : "contains");
+  }
+
+  /** Switch between the original sender and the forwarder, repopulating the
+   * value so it stays the address the saved rule will match on. */
+  function pickSender(next: boolean) {
+    setUseOrigin(next);
+    const addr = next && originAddr ? originAddr : fromAddr;
+    if (field === "from") setValue(addr ?? "");
+    else if (field === "domain") setValue(emailDomain(addr) ?? "");
   }
 
   // The rule field actually saved: origin_* variants match the forwarded-from
@@ -176,8 +195,14 @@ export function FilterLikeThisDrawer({
   // Inbox overrides only support sender or domain matches; auto-switch from subject.
   useEffect(() => {
     if (!isInboxMode) return;
-    // Inbox overrides match the delivered sender, so origin matching is off here.
-    if (useOrigin) setUseOrigin(false);
+    // Inbox overrides match the delivered sender, so origin matching is off
+    // here — and the shown value has to follow, or the override would be
+    // saved for an address the inbox matcher never sees.
+    if (useOrigin) {
+      setUseOrigin(false);
+      if (field === "from") setValue(fromAddr ?? "");
+      else if (field === "domain") setValue(emailDomain(fromAddr) ?? "");
+    }
     if (field === "subject") {
       const nextField: Field = fromAddr ? "from" : domain ? "domain" : "from";
       setField(nextField);
@@ -364,13 +389,13 @@ export function FilterLikeThisDrawer({
               <div className="grid grid-cols-2 gap-1.5">
                 <FieldTab
                   active={useOrigin}
-                  onClick={() => setUseOrigin(true)}
+                  onClick={() => pickSender(true)}
                   icon={<AtSign className="h-3.5 w-3.5" />}
                   label={via ? `Original: ${via.originName}` : "Original sender"}
                 />
                 <FieldTab
                   active={!useOrigin}
-                  onClick={() => setUseOrigin(false)}
+                  onClick={() => pickSender(false)}
                   icon={<Forward className="h-3.5 w-3.5" />}
                   label={via ? `Via ${via.forwarderName}` : "Forwarded by"}
                 />
