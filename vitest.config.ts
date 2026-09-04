@@ -74,9 +74,9 @@ export default defineConfig({
       // yet: their logic is being extracted into src/lib first.
       thresholds: {
         "src/lib/**": {
-          statements: 87,
+          statements: 88,
           branches: 76,
-          functions: 89,
+          functions: 90,
           lines: 90,
         },
         "src/routes/api/**": {

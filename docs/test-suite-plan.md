@@ -1,23 +1,37 @@
 # Test suite review and improvement plan
 
-> **Status (2026-09-01, second pass).** Phase 0 and Phase 1 are done, plus
-> the highest-risk items from Phases 2–4. Landed: the CI bootstrap migration
-> and dependency bumps; S1–S9 (both cross-tenant IDORs, the account-erasure
-> gap, prompt-injection sanitisation, the Gmail 404 sniff, the ownership
-> checks on client-supplied group/company/rule ids, the self-hook base URL,
-> the webhook replay window, header-injection, ILIKE escaping and the IPv6
-> guard); D1–D7 (vCard `;` corruption, the Google `address_line2` loss, the
-> four job-queue completion bugs, the catch-up job release, the backfill
-> status query, the domain recheck); the encrypted-field clear sentinel and
-> the Google phone-wipe; the folder-write registry scan with `applyMoves`
-> registered as path 13; the mobile API auth sweep; the meeting abort/dedup
-> fixes; and the two rule-editor bugs. The Supabase fake, the lint rules,
-> the `vi.stubEnv` migration, per-area coverage floors and the
-> integration/live split are all in place. **Not yet done:** the broad IDOR
-> sweep over the remaining ~60 server fns (§4), the CardDAV handler/PHOTO
-> work (§7 Phase 4 item 13), the v2 engine divergences (§1 end), the ladder
-> consolidation and theater deletions (§5, §7 Phase 3), and the UI logic
-> extraction (§7 Phase 5).
+> **Status (2026-09-04, third pass).** Phases 0–4 are done, and Phase 5 is
+> well under way. Since the second pass: eight untested server modules
+> covered (`email-body.functions`, `company-groups.functions`,
+> `mobile-gmail.server`, `companies/company-photo.server`,
+> `company-logo.functions`, `gmail/origin-backfill.functions`,
+> `contacts/label-resolve.server`, `contacts/photos.server`), six dialog
+> and settings components (`MergeContactsDialog`, `FilterLikeThisDrawer`,
+> `MoveSimilarDialog`, `GroupEditorDialog`, `InboxOverrides`,
+> `AddFolderDialog`, `ContactPhotoUploader`, `CompanyCombobox`), and the
+> health check's catalog probes.
+>
+> Two bugs were found by writing those tests and fixed: the
+> `FilterLikeThisDrawer` sender toggle (its reset effect keyed on values
+> derived from the toggle, so "Forwarded by" could not be selected and
+> the inbox override silently deselected itself), and a systemic
+> accessibility defect — 21 Radix Select triggers and 22 form captions
+> with no association, all now named and guarded by
+> `src/components/form-labels.test.ts`.
+>
+> The Supabase fake gained: PostgREST embedded-column filters, opt-in
+> column projection (`projectColumns`), catalog relations (`pg_views`,
+> `information_schema.columns`), `rlsScope`, `asClient`, and the browser
+> `auth.getUser`/`getSession` surface with `signedInAs`. A shared jsdom
+> harness lives at `src/lib/__fixtures__/ui.tsx`.
+>
+> **Not yet done:** the broad IDOR sweep over the remaining server fns
+> (§4), the CardDAV handler/PHOTO work (§7 Phase 4 item 13), the v2 engine
+> divergences (§1 end), the ladder consolidation and theater deletions
+> (§5, §7 Phase 3), the remaining Phase 5 logic extractions, and the four
+> big route components (`inbox.tsx`, `meetings.tsx`, `contacts.index.tsx`,
+> `contacts.companies.$companyId.tsx`), which are still at 0 % and are the
+> largest single gap left.
 
 Review of the suite as of `d157e9ba` (2026-09-01): 157 test files, 1,997 tests, ~33.6k test lines against ~460 source files. Unit suite runs in 6.5 s; typecheck and lint are clean. Coverage (lib only — routes/components excluded): 48.5 % lines, 47.0 % statements, 46.2 % functions, 41.7 % branches; 91 of 268 measured files are at 0 %.
 
@@ -305,14 +319,14 @@ Component tests worth writing with the existing harness: `RuleSentenceEditor` re
 
 | Metric                               | Now                          | After P1        | After P4 | Steady          |
 | ------------------------------------ | ---------------------------- | --------------- | -------- | --------------- |
-| lib lines %                          | 48.5 → **73.9**              | 50              | 62       | 70              |
-| routes/api lines %                   | excluded → **15.6**          | measured        | 70       | 80              |
-| components lines %                   | excluded                     | measured        | —        | 30 (P5)         |
-| 0 %-covered lib files (≥40 lines)    | 36 → **13**                  | 85              | <20      | <10             |
-| server fns with cross-user test      | ~11 → **50 cases**           | 15              | 80       | 100 % (PR gate) |
-| `CHARACTERIZATION` pins (open bugs)  | 0 tagged → **14 registered** | ≈25             | ≈15      | trending to 0   |
+| lib lines %                          | 48.5 → **90.4**              | 50              | 62       | 70              |
+| routes/api lines %                   | excluded → **93.4**          | measured        | 70       | 80              |
+| components lines %                   | excluded → **32.9**          | measured        | —        | 30 (P5) ✓       |
+| 0 %-covered lib files (≥40 lines)    | 36 → **1**                   | 85              | <20      | <10             |
+| server fns with cross-user test      | ~11 → **60+ cases**          | 15              | 80       | 100 % (PR gate) |
+| `CHARACTERIZATION` pins (open bugs)  | 0 tagged → **22 registered** | ≈25             | ≈15      | trending to 0   |
 | source-grep / tautological tests     | 12                           | 0               | 0        | 0 (lint)        |
 | `toStrictEqual` share                | 0 %                          | ratchet         | 50 %     | 100 % new code  |
 | direct `process.env` writes in tests | 46                           | 0               | 0        | 0 (lint)        |
-| suite wall time                      | 6.5 s                        | ~4 s            | <10 s    | <15 s           |
-| CI integration job                   | red → **bootstrapped**       | green, required | green    | green           |
+| suite wall time                      | 6.5 s → **~19 s**            | ~4 s            | <10 s    | <15 s           |
+| CI integration job                   | red → **green**              | green, required | green    | green           |
