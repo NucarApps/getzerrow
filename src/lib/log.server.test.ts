@@ -74,6 +74,9 @@ describe("withCronRun", () => {
   const endLine = (lines: Record<string, unknown>[]) =>
     lines.find((l) => String(l.scope ?? "").endsWith(".end"));
 
+  /** A real v4 uuid, not merely a non-empty string. */
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
   it("logs ok:true and the status for a successful run", async () => {
     const { lines, restore } = captureLines();
     try {
@@ -100,7 +103,11 @@ describe("withCronRun", () => {
     expect(endLine(lines)).toMatchObject({ ok: false, status: 500 });
   });
 
-  it("threads a stable run_id into the handler and the logs", async () => {
+  it("threads one uuid run_id through the handler and both log lines", async () => {
+    // The run id is how an operator ties a cron run's start line, end line
+    // and error response together. `toBeTruthy` would accept "x" — and
+    // two DIFFERENT truthy ids would satisfy it just as well, which is
+    // the failure that would actually hurt.
     const { lines, restore } = captureLines();
     let seen = "";
     try {
@@ -111,8 +118,11 @@ describe("withCronRun", () => {
     } finally {
       restore();
     }
-    expect(seen).toBeTruthy();
+    expect(seen).toMatch(UUID);
     expect(endLine(lines)).toMatchObject({ run_id: seen });
+    // Every line the run emitted carries the same id.
+    const ids = new Set(lines.map((l) => l.run_id).filter(Boolean));
+    expect(ids).toEqual(new Set([seen]));
   });
 
   // The bug: withCronRun rethrew, and 14 of the 21 wrapped routes have no outer
@@ -142,7 +152,9 @@ describe("withCronRun", () => {
     } finally {
       restore();
     }
-    expect((await res!.json()).run_id).toBeTruthy();
+    // An operator reads this id off the 500 and greps the logs for it, so
+    // it has to be the real one rather than merely present.
+    expect((await res!.json()).run_id).toMatch(UUID);
   });
 
   it("truncates a huge error message", async () => {

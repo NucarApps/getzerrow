@@ -180,8 +180,17 @@ DB level: 1 of ~18 `SECURITY DEFINER` functions is tested (`discover_company_dom
 > them, so the container shape could not affect any assertion) and the three
 > unreferenced `.m4a` fixtures deleted. `filter-engine`, `rule-query`,
 > `categorize-senders` and `company-logo-cleanup` were dealt with earlier.
-> **Still open** in this section: the weak-assertion list below, `sync-backoff`,
-> and `reanalyzeEmail`'s 5 uncovered branches.
+> `sync-backoff` was rewritten in an earlier pass (Math.random stubbed so
+> every expectation is exact, index 1 used because both tables start at 30s,
+> the sub-table-index NaN clamped and tested); this entry was stale.
+> `log.server`'s two `toBeTruthy()` run ids now match a v4 uuid and are
+> asserted to be the SAME id across every line the run emitted — two
+> different truthy ids was the failure that would actually hurt. The
+> dropdown smoke test compares the destructive variant's class list against
+> the default's instead of matching a literal Tailwind token.
+> **Still open** in this section: the remaining weak assertions (CardDAV
+> ETag/`deleted_at` windows, `process-message`'s soft matchers, the push 412
+> case) and `reanalyzeEmail`'s 5 uncovered branches.
 
 **Tests that cannot fail.**
 
