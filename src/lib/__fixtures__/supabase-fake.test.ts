@@ -328,3 +328,52 @@ describe("embeds and query metadata", () => {
     expect(fake.calls.selects[1]).toMatchObject({ range: [10, 19], filters: [] });
   });
 });
+
+describe("column projection", () => {
+  it("returns the whole seeded row by default", async () => {
+    const fake = makeSupabaseFake();
+    fake.seedRaw("emails", [{ id: "1", user_id: "u1", subject: "hi", body_text: "secret" }]);
+    const { data } = await fake.supabaseAdmin.from("emails").select("id, subject");
+    // The default is deliberately loose: suites written against it seed
+    // whole rows and read fields the query never named.
+    expect(data?.[0]).toHaveProperty("body_text", "secret");
+  });
+
+  it("narrows a read to the columns the select named", async () => {
+    const fake = makeSupabaseFake({ projectColumns: true });
+    fake.seedRaw("emails", [{ id: "1", user_id: "u1", subject: "hi", body_text: "secret" }]);
+    const { data } = await fake.supabaseAdmin.from("emails").select("id, subject");
+    expect(data?.[0]).toEqual({ id: "1", subject: "hi" });
+  });
+
+  it("keeps every column for `*` and for an absent select", async () => {
+    const fake = makeSupabaseFake({ projectColumns: true });
+    fake.seedRaw("emails", [{ id: "1", user_id: "u1", subject: "hi" }]);
+    const star = await fake.supabaseAdmin.from("emails").select("*");
+    expect(star.data?.[0]).toEqual({ id: "1", user_id: "u1", subject: "hi" });
+    const mixed = await fake.supabaseAdmin.from("emails").select("*, id");
+    expect(mixed.data?.[0]).toHaveProperty("user_id", "u1");
+  });
+
+  it("keeps a renamed column under its source name and keeps embeds", async () => {
+    const fake = makeSupabaseFake({ projectColumns: true });
+    fake.seedRaw("contact_group_members", [{ group_id: "g1", contact_id: "c1", added_by: "u1" }]);
+    fake.seedRaw("contacts", [{ id: "c1", company: "Acme" }]);
+    fake.onEmbed("contact_group_members", "contacts", { table: "contacts" });
+
+    const { data } = await fake.supabaseAdmin
+      .from("contact_group_members")
+      .select("cid:contact_id, contacts:contacts(company)");
+    expect(data?.[0]).toEqual({ contact_id: "c1", contacts: { id: "c1", company: "Acme" } });
+  });
+
+  it("narrows the rows a returning write resolves", async () => {
+    const fake = makeSupabaseFake({ projectColumns: true, applyWrites: true });
+    const { data } = await fake.supabaseAdmin
+      .from("emails")
+      .insert({ id: "1", user_id: "u1", subject: "hi" })
+      .select("id")
+      .single();
+    expect(data).toEqual({ id: "1" });
+  });
+});

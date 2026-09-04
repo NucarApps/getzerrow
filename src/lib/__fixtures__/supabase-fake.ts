@@ -164,6 +164,11 @@ export type SupabaseFakeInit = {
   rpc?: Partial<Record<RpcName, RpcHandler>>;
   /** Apply writes to the seeded rows (default false: record only). */
   applyWrites?: boolean;
+  /** Narrow each read to the columns its `select()` named, the way
+   * PostgREST does (default false). Worth turning on for a suite that
+   * asserts a returned row's SHAPE — without it a test can assert a field
+   * the query never selected and pass. */
+  projectColumns?: boolean;
   /** Throw on any filter/modifier the fake does not implement (default:
    * record it as a pass-through). */
   strict?: boolean;
@@ -252,6 +257,7 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
   const storageHandlers = new Map<string, StorageHandler>(); // key: `${bucket}:${method}`
   const embeds = new Map<string, EmbedSpec>(); // key: `${table}:${alias}`
   const applyWrites = init?.applyWrites === true;
+  const projectColumns = init?.projectColumns === true;
   const strict = init?.strict === true;
 
   const calls = {
@@ -349,8 +355,25 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
     for (const arr of Object.values(calls)) arr.length = 0;
   }
 
+  /** Read a filter's column off a row, following one level of embed —
+   * PostgREST lets a filter address an embedded table's column
+   * (`.is("contacts.avatar_url", null)`), and reading that as a flat key
+   * made the predicate a pass-through that matched everything. */
+  function columnValue(row: FakeRow, col: string): unknown {
+    if (col in row) return row[col];
+    const dot = col.indexOf(".");
+    if (dot < 0) return undefined;
+    const outer = row[col.slice(0, dot)];
+    const rest = col.slice(dot + 1);
+    if (Array.isArray(outer)) {
+      return (outer as FakeRow[]).map((r) => columnValue(r, rest))[0];
+    }
+    if (outer && typeof outer === "object") return columnValue(outer as FakeRow, rest);
+    return undefined;
+  }
+
   function matchOne(row: FakeRow, f: Filter): boolean {
-    const v = f.col !== undefined ? row[f.col] : undefined;
+    const v = f.col !== undefined ? columnValue(row, f.col) : undefined;
     switch (f.op) {
       case "eq":
         return looseEq(v, f.value);
@@ -387,7 +410,9 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
         if (typeof v === "string") return v.includes(String(f.value));
         return false;
       case "match":
-        return Object.entries((f.value ?? {}) as FakeRow).every(([k, x]) => looseEq(row[k], x));
+        return Object.entries((f.value ?? {}) as FakeRow).every(([k, x]) =>
+          looseEq(columnValue(row, k), x),
+        );
       case "not": {
         // `.not(col, op, value)` negates the inner op.
         const inner = { op: String(f.extra ?? "is"), col: f.col, value: f.value };
@@ -442,6 +467,55 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
         return push(op, col, value);
       },
     };
+  }
+
+  /** Top-level columns a `select()` string asks for, or null for `*` /
+   * absent. Embeds are handled separately by `withEmbeds`. */
+  function projectedColumns(columns: string | undefined): string[] | null {
+    if (!columns) return null;
+    const out: string[] = [];
+    let depth = 0;
+    let cur = "";
+    let star = false;
+    const flush = () => {
+      const t = cur.trim();
+      cur = "";
+      // A bare `*` anywhere at the top level widens the whole select, even
+      // alongside named columns (`"*, id"` is every column, not just `id`).
+      if (t === "*") star = true;
+      if (!t || t === "*" || t.includes("(")) return;
+      // `alias:column` renames a plain column; the row still carries the
+      // source name, so keep that.
+      const parts = t.split(":");
+      out.push((parts.length > 1 ? parts[1]! : parts[0]!).trim());
+    };
+    for (const ch of columns) {
+      if (ch === "(") depth++;
+      if (ch === ")") depth--;
+      if (ch === "," && depth === 0) {
+        flush();
+        continue;
+      }
+      cur += ch;
+    }
+    flush();
+    return !star && out.length > 0 ? out : null;
+  }
+
+  /** Narrow a row to the columns its `select()` named, keeping the embed
+   * aliases `withEmbeds` resolved. `*` (or an absent select) keeps
+   * everything, as PostgREST does. Opt-in via `projectColumns`: without it
+   * a test can assert a field its query never selected and still pass,
+   * which is false safety — but many existing suites seed whole rows and
+   * read unselected fields, so the looser behaviour stays the default. */
+  function project(columns: string | undefined, row: FakeRow): FakeRow {
+    const cols = projectedColumns(columns);
+    if (!cols) return row;
+    const out: FakeRow = {};
+    for (const key of [...cols, ...embedAliases(columns)]) {
+      if (key in row) out[key] = row[key];
+    }
+    return out;
   }
 
   /** Aliases named by a `select()` string: `"a, alias:tbl(x,y), b"`. */
@@ -505,7 +579,8 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
       }
       let out = base
         .filter((r) => rowMatches(r, filters))
-        .map((r) => withEmbeds(table, columns, r));
+        .map((r) => withEmbeds(table, columns, r))
+        .map((r) => (projectColumns ? project(columns, r) : r));
       const total = out.length;
       if (orderBy) {
         const { col, ascending } = orderBy;
@@ -672,22 +747,28 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
       return settled;
     }
 
-    function selectBuilder(): WriteSelectBuilder {
+    /** `columns` is what a returning write asked for — `.insert(x).select("id")`
+     * resolves to `{ id }` alone under `projectColumns`, as PostgREST does. */
+    function selectBuilder(columns?: string): WriteSelectBuilder {
+      const narrow = (rows: FakeRow[]) =>
+        projectColumns ? rows.map((r) => project(columns, r)) : rows;
       return {
         async single() {
           const { data, error } = await settle();
           if (error) return { data: null, error };
-          return { data: data[0] ?? null, error: null };
+          return { data: narrow(data)[0] ?? null, error: null };
         },
         async maybeSingle() {
           const { data, error } = await settle();
           if (error) return { data: null, error };
-          return { data: data[0] ?? null, error: null };
+          return { data: narrow(data)[0] ?? null, error: null };
         },
         then(resolve, reject) {
           return settle()
             .then(({ data, error, count }): ManyResult =>
-              error ? { data: null, error, count: null } : { data, error: null, count },
+              error
+                ? { data: null, error, count: null }
+                : { data: narrow(data), error: null, count },
             )
             .then(resolve, reject);
         },
@@ -696,7 +777,7 @@ export function makeSupabaseFake(init?: SupabaseFakeInit) {
 
     const builder: WriteBuilder = {
       ...filterMethods(filters, () => builder),
-      select: () => selectBuilder(),
+      select: (columns) => selectBuilder(columns),
       then(resolve, reject) {
         return settle()
           .then(({ error, count }): WriteResult => ({
