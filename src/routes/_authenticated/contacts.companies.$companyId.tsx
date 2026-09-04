@@ -749,37 +749,6 @@ function CompanyDetailPage() {
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
-              <AlertDialog
-                open={!!domainConflict}
-                onOpenChange={(o) => !o && setDomainConflict(null)}
-              >
-                <AlertDialogContent className="w-[calc(100vw-2rem)] max-w-lg">
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Domain already in use</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      <span className="font-mono">{domainConflict?.domain}</span> is already
-                      assigned to <span className="font-medium">{domainConflict?.companyName}</span>
-                      . Two companies can't share a domain. Merge{" "}
-                      <span className="font-medium">{domainConflict?.companyName}</span> into{" "}
-                      <span className="font-medium">{form.name || "this company"}</span>?
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel disabled={mergeConflictMut.isPending}>
-                      Cancel
-                    </AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={(e) => {
-                        e.preventDefault();
-                        mergeConflictMut.mutate();
-                      }}
-                    >
-                      <Merge className="mr-2 h-4 w-4" />
-                      {mergeConflictMut.isPending ? "Merging…" : "Merge companies"}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
               <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
                 <AlertDialogContent>
                   <AlertDialogHeader>
@@ -813,6 +782,37 @@ function CompanyDetailPage() {
             </section>
           </TabsContent>
         </Tabs>
+
+        {/* Outside <Tabs>: the domain that raises this conflict is added on
+            the Domains tab, but the dialog used to live inside the Details
+            tab's content — which Radix unmounts while another tab is open,
+            so the add silently did nothing and the user was never told why. */}
+        <AlertDialog open={!!domainConflict} onOpenChange={(o) => !o && setDomainConflict(null)}>
+          <AlertDialogContent className="w-[calc(100vw-2rem)] max-w-lg">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Domain already in use</AlertDialogTitle>
+              <AlertDialogDescription>
+                <span className="font-mono">{domainConflict?.domain}</span> is already assigned to{" "}
+                <span className="font-medium">{domainConflict?.companyName}</span>. Two companies
+                can't share a domain. Merge{" "}
+                <span className="font-medium">{domainConflict?.companyName}</span> into{" "}
+                <span className="font-medium">{form.name || "this company"}</span>?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={mergeConflictMut.isPending}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  mergeConflictMut.mutate();
+                }}
+              >
+                <Merge className="mr-2 h-4 w-4" />
+                {mergeConflictMut.isPending ? "Merging…" : "Merge companies"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

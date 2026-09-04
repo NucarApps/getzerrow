@@ -91,7 +91,7 @@ Each of these has no test today. Each should be fixed by writing the failing tes
 > condition count, age, then id — are specified in `resolve.test.ts`, each
 > verified against a mutation, including that an EPOCH-stamped tree rule
 > wins every same-level tie so Phase D's real timestamp column changes that
-> outcome loudly. Still open: `replay.ts`'s `applyMoves` (0%).
+> outcome loudly. The fifth is closed too: `replay.ts` and `planner-apply.server.ts` are both at 100%, and the skipGmailLabelMatch consequence is registered as a characterization pin. All five audited.
 
 **Engine v2 divergences** (from the rules-engine cutover), as originally found: calendar cold-email guard absent from `adapt`/`guardrails`/`bridge` (memory #3, only an `engineDelta`); `resolve.ts:51` applies `threadMessages` to every rule while legacy gates on `run_on_threads` (`filter-engine.ts:403`); `adapt.ts:40-48` collapses `AND(a, OR(b,c))` into `[a,b,c]`; `adapt.ts` stamps `created_at = EPOCH` so the age tiebreak is a no-op; `replay.ts:78-82` runs with `skipGmailLabelMatch:true` and `applyMoves` (0 %) would move label-filed mail to Inbox. All need declared `engineDelta` entries or bridge/resolve/adapt tests before the cutover.
 
