@@ -203,8 +203,11 @@ export function GroupEditorDialog({
           </ResponsiveDialogHeader>
           <div className="space-y-3">
             <div>
-              <Label className="text-xs text-muted-foreground">Name</Label>
+              <Label htmlFor="group-name" className="text-xs text-muted-foreground">
+                Name
+              </Label>
               <Input
+                id="group-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Work, Personal, Investors…"

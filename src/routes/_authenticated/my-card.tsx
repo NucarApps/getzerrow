@@ -220,13 +220,14 @@ function MyCardPage() {
         </div>
 
         <div className="mt-4">
-          <Label className="mb-1 block text-xs text-muted-foreground">Tagline</Label>
-          <Textarea
-            rows={2}
-            value={form.tagline}
-            onChange={(e) => setForm({ ...form, tagline: e.target.value })}
-            placeholder="A short pitch or status…"
-          />
+          <Field label="Tagline">
+            <Textarea
+              rows={2}
+              value={form.tagline}
+              onChange={(e) => setForm({ ...form, tagline: e.target.value })}
+              placeholder="A short pitch or status…"
+            />
+          </Field>
         </div>
 
         <div className="mt-6 flex flex-wrap items-center gap-3">

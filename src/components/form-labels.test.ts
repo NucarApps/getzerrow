@@ -1,4 +1,8 @@
-// Every Radix Select trigger in the app must carry an accessible name.
+// Every form control in the app must carry an accessible name.
+//
+// Two static sweeps, one per way this codebase gets it wrong.
+//
+// ── Select triggers ──────────────────────────────────────────────────
 //
 // This one keeps coming back. A `<Select>` is captioned by a `<Label>` or
 // a `<span>` sitting above it, which LOOKS labelled — but a Radix trigger
@@ -83,6 +87,72 @@ describe("Select triggers are named", () => {
         "or aria-labelledby pointing at the visible caption:\n" +
         unnamed.join("\n"),
     ).toEqual([]);
+  });
+});
+
+// ── Captions that associate with nothing ─────────────────────────────
+//
+// The other half of the same mistake, on plain inputs: a shadcn `<Label>`
+// sitting above an `<Input>` / `<Textarea>` with no `htmlFor`. It looks
+// labelled and reads as an unlabelled edit box — clicking the caption
+// focuses nothing, and a screen reader announces only the placeholder, if
+// there even is one.
+//
+// The fix is either `htmlFor` + `id`, or the `Field` wrapper
+// (components/contacts/Field.tsx), which nests the control INSIDE its
+// label so the association holds whatever the control renders. Nesting is
+// why this sweep cannot simply flag every unlabelled `<Input>`: most of
+// them are correctly wrapped, and only a *sibling* caption is a defect.
+
+/** Each `<Label …>text</Label>` immediately followed by an Input/Textarea,
+ * with nothing between them that would nest the control. */
+function orphanCaptions(source: string): Array<{ line: number; text: string }> {
+  const out: Array<{ line: number; text: string }> = [];
+  const re =
+    /<Label\b([^>]*)>([\s\S]{0,160}?)<\/Label>\s*\n([\s\S]{0,320}?)<(?:Input|Textarea)\b([^>]*)>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(source))) {
+    const [, labelAttrs = "", caption = "", between = "", controlAttrs = ""] = m;
+    if (/htmlFor=/.test(labelAttrs)) continue;
+    if (/\bid=|\baria-label(ledby)?=/.test(controlAttrs)) continue;
+    // A Field or a raw <label> between the two nests the control instead.
+    if (between.includes("<Field") || between.includes("<label")) continue;
+    out.push({
+      line: source.slice(0, m.index).split("\n").length,
+      text: caption.replace(/\s+/g, " ").trim().slice(0, 40),
+    });
+  }
+  return out;
+}
+
+describe("captions are associated with their control", () => {
+  it("no Label sits beside an Input or Textarea it does not name", () => {
+    const orphans: string[] = [];
+    for (const rel of FILES) {
+      const source = readFileSync(path.join(SRC, rel), "utf8");
+      for (const { line, text } of orphanCaptions(source)) {
+        orphans.push(`${rel}:${line}  "${text}"`);
+      }
+    }
+    expect(
+      orphans,
+      "these captions associate with nothing — add htmlFor + id, or wrap the " +
+        "control in <Field label=…> so the label nests it:\n" +
+        orphans.join("\n"),
+    ).toEqual([]);
+  });
+
+  it("accepts htmlFor, an id on the control, and Field nesting", () => {
+    const withHtmlFor = `<Label htmlFor="a">A</Label>\n<Input />\n`;
+    const withId = `<Label>A</Label>\n<Input id="a" />\n`;
+    const nested = `<Label>A</Label>\n<Field label="A">\n<Input />\n`;
+    for (const source of [withHtmlFor, withId, nested]) {
+      expect(orphanCaptions(source)).toEqual([]);
+    }
+  });
+
+  it("still catches a bare sibling caption", () => {
+    expect(orphanCaptions(`<Label>Notes</Label>\n<Textarea rows={4} />\n`)).toHaveLength(1);
   });
 });
 

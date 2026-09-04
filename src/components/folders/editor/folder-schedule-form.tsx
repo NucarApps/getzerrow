@@ -70,8 +70,14 @@ export function ScheduleForm({
   return (
     <div className="rounded-md border border-border bg-background p-3 space-y-2.5">
       <div>
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground">Name</Label>
+        <Label
+          htmlFor="schedule-name"
+          className="text-xs uppercase tracking-wider text-muted-foreground"
+        >
+          Name
+        </Label>
         <Input
+          id="schedule-name"
           className="mt-1"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -110,8 +116,14 @@ export function ScheduleForm({
           </Select>
         </div>
         <div>
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Timezone</Label>
+          <Label
+            htmlFor="schedule-timezone"
+            className="text-xs uppercase tracking-wider text-muted-foreground"
+          >
+            Timezone
+          </Label>
           <Input
+            id="schedule-timezone"
             className="mt-1"
             value={tz}
             onChange={(e) => setTz(e.target.value)}
@@ -121,7 +133,10 @@ export function ScheduleForm({
       </div>
       <div>
         <div className="flex items-center justify-between">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+          <Label
+            htmlFor="schedule-instructions"
+            className="text-xs uppercase tracking-wider text-muted-foreground"
+          >
             Instructions
           </Label>
           <span
@@ -131,6 +146,7 @@ export function ScheduleForm({
           </span>
         </div>
         <Textarea
+          id="schedule-instructions"
           className="mt-1"
           rows={6}
           value={instructions}

@@ -677,42 +677,44 @@ export function ContactDetailView({ id, onDeleted, onDirtyChange, flushRef }: Pr
         <Label className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest text-muted-foreground">
           <MapPin className="h-3.5 w-3.5" /> Address
         </Label>
+        {/* Field nests the control inside its <label>, which is what gives
+            these an accessible name — a sibling <Label> carries no htmlFor
+            and associates with nothing. Same wrapper the add-contact form
+            uses. */}
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="sm:col-span-2">
-            <Label className="text-xs text-muted-foreground">Address line 1</Label>
-            <Input
-              value={form.address_line1}
-              onChange={(e) => patchForm({ address_line1: e.target.value })}
-              placeholder="Street address"
-            />
+            <Field label="Address line 1">
+              <Input
+                value={form.address_line1}
+                onChange={(e) => patchForm({ address_line1: e.target.value })}
+                placeholder="Street address"
+              />
+            </Field>
           </div>
           <div className="sm:col-span-2">
-            <Label className="text-xs text-muted-foreground">Address line 2</Label>
-            <Input
-              value={form.address_line2}
-              onChange={(e) => patchForm({ address_line2: e.target.value })}
-              placeholder="Apt, suite, floor (optional)"
-            />
+            <Field label="Address line 2">
+              <Input
+                value={form.address_line2}
+                onChange={(e) => patchForm({ address_line2: e.target.value })}
+                placeholder="Apt, suite, floor (optional)"
+              />
+            </Field>
           </div>
-          <div>
-            <Label className="text-xs text-muted-foreground">City</Label>
+          <Field label="City">
             <Input value={form.city} onChange={(e) => patchForm({ city: e.target.value })} />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground">State / region</Label>
+          </Field>
+          <Field label="State / region">
             <Input value={form.region} onChange={(e) => patchForm({ region: e.target.value })} />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground">Postal code</Label>
+          </Field>
+          <Field label="Postal code">
             <Input
               value={form.postal_code}
               onChange={(e) => patchForm({ postal_code: e.target.value })}
             />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground">Country</Label>
+          </Field>
+          <Field label="Country">
             <Input value={form.country} onChange={(e) => patchForm({ country: e.target.value })} />
-          </div>
+          </Field>
         </div>
       </div>
 
@@ -795,8 +797,11 @@ export function ContactDetailView({ id, onDeleted, onDirtyChange, flushRef }: Pr
       ) : null}
 
       <div className="mt-6">
-        <Label className="text-xs text-muted-foreground">Notes</Label>
+        <Label htmlFor="contact-notes" className="text-xs text-muted-foreground">
+          Notes
+        </Label>
         <Textarea
+          id="contact-notes"
           rows={4}
           value={form.notes}
           onChange={(e) => patchForm({ notes: e.target.value })}
@@ -965,8 +970,11 @@ function ShareContactDialog({
 
           <TabsContent value="email" className="space-y-3 pt-3">
             <div>
-              <Label className="mb-1 block text-xs text-muted-foreground">Recipient email</Label>
+              <Label htmlFor="send-card-email" className="mb-1 block text-xs text-muted-foreground">
+                Recipient email
+              </Label>
               <Input
+                id="send-card-email"
                 type="email"
                 placeholder="friend@example.com"
                 value={toEmail}
@@ -974,10 +982,11 @@ function ShareContactDialog({
               />
             </div>
             <div>
-              <Label className="mb-1 block text-xs text-muted-foreground">
+              <Label htmlFor="send-card-note" className="mb-1 block text-xs text-muted-foreground">
                 Personal note (optional)
               </Label>
               <Textarea
+                id="send-card-note"
                 rows={3}
                 placeholder="Thought you two should connect…"
                 value={note}
@@ -999,10 +1008,11 @@ function ShareContactDialog({
 
           <TabsContent value="sms" className="space-y-3 pt-3">
             <div>
-              <Label className="mb-1 block text-xs text-muted-foreground">
+              <Label htmlFor="send-card-phone" className="mb-1 block text-xs text-muted-foreground">
                 Send to phone number
               </Label>
               <Input
+                id="send-card-phone"
                 type="tel"
                 placeholder="+1 555 123 4567"
                 value={toPhone}

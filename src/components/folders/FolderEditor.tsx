@@ -892,10 +892,14 @@ export function FolderEditor({
           </div>
 
           <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <Label
+              htmlFor="folder-purpose"
+              className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5"
+            >
               <Sparkles className="h-3 w-3" /> Describe the purpose
             </Label>
             <Textarea
+              id="folder-purpose"
               className="mt-1.5"
               rows={2}
               placeholder='e.g. "An invitation folder for Google Meet, Zoom, and similar meeting invitations"'
@@ -926,10 +930,14 @@ export function FolderEditor({
           </div>
 
           <div className="mt-4">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+            <Label
+              htmlFor="folder-ai-rule"
+              className="text-xs uppercase tracking-wider text-muted-foreground"
+            >
               AI rule (natural language)
             </Label>
             <Textarea
+              id="folder-ai-rule"
               className="mt-1.5"
               rows={2}
               placeholder='e.g. "Newsletters, marketing emails"'
@@ -1239,10 +1247,14 @@ export function FolderEditor({
                     value={local.surface_ai_rule ?? ""}
                     onChange={(e) => setLocal({ ...local, surface_ai_rule: e.target.value })}
                   />
-                  <Label className="mt-3 block text-xs uppercase tracking-wider text-muted-foreground">
+                  <Label
+                    htmlFor="folder-surface-names"
+                    className="mt-3 block text-xs uppercase tracking-wider text-muted-foreground"
+                  >
                     Names / aliases (optional)
                   </Label>
                   <Input
+                    id="folder-surface-names"
                     className="mt-1.5"
                     placeholder="e.g. Jane Doe, JD, jane"
                     value={local.surface_names ?? ""}
@@ -1256,10 +1268,14 @@ export function FolderEditor({
 
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                   <div className="rounded-md border border-border p-3 text-sm">
-                    <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                    <Label
+                      htmlFor="folder-forward-to"
+                      className="text-xs uppercase tracking-wider text-muted-foreground"
+                    >
                       Auto-forward to
                     </Label>
                     <Input
+                      id="folder-forward-to"
                       className="mt-1.5 h-8"
                       type="email"
                       placeholder="someone@example.com"
@@ -1271,10 +1287,14 @@ export function FolderEditor({
                     </p>
                   </div>
                   <div className="rounded-md border border-border p-3 text-sm">
-                    <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                    <Label
+                      htmlFor="folder-snooze-hours"
+                      className="text-xs uppercase tracking-wider text-muted-foreground"
+                    >
                       Snooze on arrival (hours)
                     </Label>
                     <Input
+                      id="folder-snooze-hours"
                       className="mt-1.5 h-8"
                       type="number"
                       min={0}
@@ -1289,10 +1309,14 @@ export function FolderEditor({
                     </p>
                   </div>
                   <div className="rounded-md border border-border p-3 text-sm">
-                    <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                    <Label
+                      htmlFor="folder-min-confidence"
+                      className="text-xs uppercase tracking-wider text-muted-foreground"
+                    >
                       Min AI confidence (%)
                     </Label>
                     <Input
+                      id="folder-min-confidence"
                       className="mt-1.5 h-8"
                       type="number"
                       min={0}

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ArrowLeft, Camera, Save, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Field } from "@/components/contacts/Field";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { scanCard, createContactFromScan } from "@/lib/contacts.functions";
@@ -385,10 +386,12 @@ function DraftField({
   value: string | null;
   onChange: (v: string) => void;
 }) {
+  // Field nests the input inside its <label>. The caption used to be a
+  // sibling <Label> with no htmlFor, which associated with nothing — every
+  // field on a scanned card read as an unlabelled edit box.
   return (
-    <div>
-      <Label className="mb-1 block text-xs text-muted-foreground">{label}</Label>
+    <Field label={label}>
       <Input value={value ?? ""} onChange={(e) => onChange(e.target.value)} />
-    </div>
+    </Field>
   );
 }
