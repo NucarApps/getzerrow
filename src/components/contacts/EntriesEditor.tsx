@@ -93,7 +93,10 @@ export function EntriesEditor<T extends EntryRow>({
             <div key={idx} className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
                 <Select value={entry.label} onValueChange={(v) => update(idx, { label: v })}>
-                  <SelectTrigger className="w-[110px] shrink-0">
+                  <SelectTrigger
+                    aria-label={`${noun} ${idx + 1} label`}
+                    className="w-[110px] shrink-0"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

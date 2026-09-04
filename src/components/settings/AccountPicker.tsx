@@ -52,7 +52,7 @@ export function AccountPicker({ value, onChange, label = "Account" }: Props) {
           if (a) onChange(a.id, a.email_address);
         }}
       >
-        <SelectTrigger className="h-8 flex-1 text-sm">
+        <SelectTrigger aria-label={label} className="h-8 flex-1 text-sm">
           <SelectValue placeholder="Pick an account" />
         </SelectTrigger>
         <SelectContent>

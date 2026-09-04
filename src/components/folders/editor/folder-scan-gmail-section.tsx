@@ -81,7 +81,7 @@ export function ScanGmailSection({
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Select value={months} onValueChange={(v) => setMonths(v as "1" | "3" | "6" | "12")}>
-            <SelectTrigger className="h-8 w-28 text-xs">
+            <SelectTrigger aria-label="How far back to scan" className="h-8 w-28 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

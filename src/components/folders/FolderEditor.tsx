@@ -811,7 +811,7 @@ export function FolderEditor({
               })}
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Select value={newF.field} onValueChange={(v) => setNewF({ ...newF, field: v })}>
-                  <SelectTrigger className="w-full sm:w-32">
+                  <SelectTrigger aria-label="New filter field" className="w-full sm:w-32">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -827,7 +827,7 @@ export function FolderEditor({
                   </SelectContent>
                 </Select>
                 <Select value={newF.op} onValueChange={(v) => setNewF({ ...newF, op: v })}>
-                  <SelectTrigger className="w-full sm:w-36">
+                  <SelectTrigger aria-label="New filter operator" className="w-full sm:w-36">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -878,7 +878,7 @@ export function FolderEditor({
               value={local.gmail_label_id ?? ""}
               onValueChange={(v) => setLocal({ ...local, gmail_label_id: v || null })}
             >
-              <SelectTrigger>
+              <SelectTrigger aria-label="Gmail label">
                 <SelectValue placeholder="Not linked" />
               </SelectTrigger>
               <SelectContent>

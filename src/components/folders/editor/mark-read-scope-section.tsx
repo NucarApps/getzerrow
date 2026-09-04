@@ -69,7 +69,7 @@ export function MarkReadScopeSection({ folderId, mode, onModeChange }: Props) {
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm text-muted-foreground">Mark read for</span>
         <Select value={mode} onValueChange={(v) => onModeChange(v as MarkReadMode)}>
-          <SelectTrigger className="h-8 w-56 text-sm">
+          <SelectTrigger aria-label="Mark read for" className="h-8 w-56 text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

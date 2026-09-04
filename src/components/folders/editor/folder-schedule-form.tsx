@@ -82,7 +82,7 @@ export function ScheduleForm({
         <div>
           <Label className="text-xs uppercase tracking-wider text-muted-foreground">Hour</Label>
           <Select value={String(hour)} onValueChange={(v) => setHour(parseInt(v, 10))}>
-            <SelectTrigger className="mt-1">
+            <SelectTrigger aria-label="Hour" className="mt-1">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -97,7 +97,7 @@ export function ScheduleForm({
         <div>
           <Label className="text-xs uppercase tracking-wider text-muted-foreground">Minute</Label>
           <Select value={String(minute)} onValueChange={(v) => setMinute(parseInt(v, 10))}>
-            <SelectTrigger className="mt-1">
+            <SelectTrigger aria-label="Minute" className="mt-1">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

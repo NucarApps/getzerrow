@@ -376,7 +376,7 @@ function CardDavSettings() {
             onValueChange={(v) => settingsMut.mutate({ group_name_style: v as GroupNameStyle })}
             disabled={settingsQuery.isLoading || settingsMut.isPending}
           >
-            <SelectTrigger>
+            <SelectTrigger aria-label="Display format">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

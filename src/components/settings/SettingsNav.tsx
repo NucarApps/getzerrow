@@ -46,7 +46,7 @@ export function SettingsNav() {
       {/* Mobile: single select */}
       <div className="md:hidden">
         <Select value={pathname} onValueChange={(to) => navigate({ to })}>
-          <SelectTrigger className="w-full">
+          <SelectTrigger aria-label="Settings section" className="w-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

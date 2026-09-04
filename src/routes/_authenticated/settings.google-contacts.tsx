@@ -333,7 +333,7 @@ function AccountRow({
               onValueChange={(v) => intervalMut.mutate(Number(v) as 5 | 15 | 60)}
               disabled={intervalMut.isPending || needsReconnect}
             >
-              <SelectTrigger className="w-[140px]">
+              <SelectTrigger aria-label="Sync interval" className="w-[140px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

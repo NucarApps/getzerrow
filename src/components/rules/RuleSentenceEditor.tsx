@@ -149,7 +149,10 @@ export function RuleSentenceEditor({
               {group.map((c, ci) => (
                 <div key={ci} className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Select value={c.field} onValueChange={(v) => setCondition(gi, ci, { field: v })}>
-                    <SelectTrigger className="h-8 w-full text-xs sm:w-64">
+                    <SelectTrigger
+                      aria-label="Condition field"
+                      className="h-8 w-full text-xs sm:w-64"
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -165,7 +168,10 @@ export function RuleSentenceEditor({
                       value={(c.value || "true").toLowerCase() === "false" ? "false" : "true"}
                       onValueChange={(v) => setCondition(gi, ci, { op: "equals", value: v })}
                     >
-                      <SelectTrigger className="h-8 w-full text-xs sm:w-28">
+                      <SelectTrigger
+                        aria-label="Condition value"
+                        className="h-8 w-full text-xs sm:w-28"
+                      >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -176,7 +182,10 @@ export function RuleSentenceEditor({
                   ) : (
                     <>
                       <Select value={c.op} onValueChange={(v) => setCondition(gi, ci, { op: v })}>
-                        <SelectTrigger className="h-8 w-full text-xs sm:w-40">
+                        <SelectTrigger
+                          aria-label="Condition operator"
+                          className="h-8 w-full text-xs sm:w-40"
+                        >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>

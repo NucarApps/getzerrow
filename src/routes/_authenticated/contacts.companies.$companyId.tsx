@@ -606,7 +606,10 @@ function CompanyDetailPage() {
               </h2>
               <div className="mb-4 flex flex-col gap-2 sm:flex-row">
                 <Select value={mergeTargetId} onValueChange={setMergeTargetId}>
-                  <SelectTrigger className="w-full sm:max-w-sm">
+                  <SelectTrigger
+                    aria-label="Merge into another company"
+                    className="w-full sm:max-w-sm"
+                  >
                     <SelectValue placeholder="Merge into another company…" />
                   </SelectTrigger>
                   <SelectContent>

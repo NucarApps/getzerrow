@@ -131,7 +131,7 @@ function RuleActivitySettings() {
           </div>
           <div className="flex gap-2 self-start md:self-auto">
             <Select value={folderId} onValueChange={setFolderId}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger aria-label="Filter by folder" className="w-[180px]">
                 <SelectValue placeholder="All folders" />
               </SelectTrigger>
               <SelectContent>
@@ -255,6 +255,7 @@ function RuleActivitySettings() {
                                   onValueChange={(v) => flagWrong(r, v)}
                                 >
                                   <SelectTrigger
+                                    aria-label="Move this email to the right folder"
                                     className="h-7 w-56 text-xs"
                                     onClick={(e) => e.stopPropagation()}
                                   >

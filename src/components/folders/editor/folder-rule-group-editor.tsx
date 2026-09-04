@@ -50,7 +50,7 @@ export function RuleGroupEditor({
     return (
       <div className="flex flex-col gap-2 rounded-md border border-border bg-background px-2 py-1.5 text-sm sm:flex-row sm:items-center">
         <Select value={node.field} onValueChange={(v) => onChange({ ...node, field: v })}>
-          <SelectTrigger className="h-7 w-full text-xs sm:w-32">
+          <SelectTrigger aria-label="Condition field" className="h-7 w-full text-xs sm:w-32">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -62,7 +62,7 @@ export function RuleGroupEditor({
           </SelectContent>
         </Select>
         <Select value={node.op} onValueChange={(v) => onChange({ ...node, op: v })}>
-          <SelectTrigger className="h-7 w-full text-xs sm:w-36">
+          <SelectTrigger aria-label="Condition operator" className="h-7 w-full text-xs sm:w-36">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
