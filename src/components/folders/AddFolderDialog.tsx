@@ -234,10 +234,17 @@ export function AddFolderDialog({
             </div>
 
             <div>
-              <label className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+              {/* htmlFor/id rather than a bare caption: without it the
+                  textarea has no accessible name and reads as an unlabelled
+                  edit box. */}
+              <label
+                htmlFor="add-folder-description"
+                className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground"
+              >
                 What belongs here?
               </label>
               <Textarea
+                id="add-folder-description"
                 rows={3}
                 maxLength={2000}
                 value={description}
@@ -256,8 +263,11 @@ export function AddFolderDialog({
                 Gmail label
               </label>
               <div className="mt-1.5 space-y-2">
+                {/* Named explicitly: a Radix trigger takes no htmlFor, so
+                    the caption above points at nothing and both pickers
+                    would announce only their current value. */}
                 <Select value={labelChoice} onValueChange={setLabelChoice}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Gmail label">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -275,7 +285,7 @@ export function AddFolderDialog({
                     value={parentLabelId || NONE}
                     onValueChange={(v) => setParentLabelId(v === NONE ? "" : v)}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger aria-label="Parent Gmail label">
                       <SelectValue placeholder="Parent label (optional)" />
                     </SelectTrigger>
                     <SelectContent>
